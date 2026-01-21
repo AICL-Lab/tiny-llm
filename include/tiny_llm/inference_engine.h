@@ -60,7 +60,10 @@ private:
     void prefill(const std::vector<int>& tokens, int seq_id);
     
     // Decode phase: generate one token
-    int decodeStep(int seq_id, int position, const GenerationConfig& config);
+    int decodeStep(int seq_id, int position, int token_id, const GenerationConfig& config);
+
+    // Sample from a single hidden state
+    int sampleFromHidden(half* hidden_state, const GenerationConfig& config);
     
     // Sample from logits based on config
     int sample(const half* logits, const GenerationConfig& config);

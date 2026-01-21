@@ -19,9 +19,9 @@ TEST_F(QuantizedWeightTest, ScaleDimensionsCalculation) {
     weight.cols = 512;
     weight.group_size = 128;
     
-    // Expected: scale cols = ceil(512 / 128) = 4
-    EXPECT_EQ(weight.scaleRows(), 256);
-    EXPECT_EQ(weight.scaleCols(), 4);
+    // Expected: scale rows = ceil(256 / 128) = 2
+    EXPECT_EQ(weight.scaleRows(), 2);
+    EXPECT_EQ(weight.scaleCols(), 512);
 }
 
 TEST_F(QuantizedWeightTest, ScaleDimensionsWithNonDivisible) {
@@ -30,9 +30,9 @@ TEST_F(QuantizedWeightTest, ScaleDimensionsWithNonDivisible) {
     weight.cols = 300;
     weight.group_size = 128;
     
-    // Expected: scale cols = ceil(300 / 128) = 3
-    EXPECT_EQ(weight.scaleRows(), 100);
-    EXPECT_EQ(weight.scaleCols(), 3);
+    // Expected: scale rows = ceil(100 / 128) = 1
+    EXPECT_EQ(weight.scaleRows(), 1);
+    EXPECT_EQ(weight.scaleCols(), 300);
 }
 
 TEST_F(QuantizedWeightTest, MemorySizeCalculation) {
@@ -44,9 +44,9 @@ TEST_F(QuantizedWeightTest, MemorySizeCalculation) {
     EXPECT_EQ(weight.weightElements(), 256 * 512);
     EXPECT_EQ(weight.weightBytes(), 256 * 512 * sizeof(int8_t));
     
-    // scale elements = 256 * 4 = 1024
-    EXPECT_EQ(weight.scaleElements(), 256 * 4);
-    EXPECT_EQ(weight.scaleBytes(), 256 * 4 * sizeof(half));
+    // scale elements = 2 * 512 = 1024
+    EXPECT_EQ(weight.scaleElements(), 2 * 512);
+    EXPECT_EQ(weight.scaleBytes(), 2 * 512 * sizeof(half));
 }
 
 // Property-based tests for Weight-Scale Dimension Consistency
@@ -65,18 +65,18 @@ RC_GTEST_PROP(QuantizedWeightProperty, ScaleDimensionsAreConsistent,
     weight.cols = cols;
     weight.group_size = group_size;
     
-    // Property: scale tensor must have shape [rows, ceil(cols / group_size)]
-    int expected_scale_rows = rows;
-    int expected_scale_cols = (cols + group_size - 1) / group_size;
+    // Property: scale tensor must have shape [ceil(rows / group_size), cols]
+    int expected_scale_rows = (rows + group_size - 1) / group_size;
+    int expected_scale_cols = cols;
     
     RC_ASSERT(weight.scaleRows() == expected_scale_rows);
     RC_ASSERT(weight.scaleCols() == expected_scale_cols);
     
-    // Property: scale elements must cover all weight columns
-    RC_ASSERT(weight.scaleCols() * group_size >= cols);
+    // Property: scale elements must cover all weight rows
+    RC_ASSERT(weight.scaleRows() * group_size >= rows);
     
     // Property: scale elements should not be more than necessary
-    RC_ASSERT((weight.scaleCols() - 1) * group_size < cols);
+    RC_ASSERT((weight.scaleRows() - 1) * group_size < rows);
 }
 
 RC_GTEST_PROP(QuantizedWeightProperty, TotalBytesIsCorrect,

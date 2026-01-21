@@ -32,14 +32,14 @@ struct QuantizationParams {
 // Quantized weight tensor
 struct QuantizedWeight {
     int8_t* data = nullptr;     // INT8 quantized weights [rows, cols]
-    half* scales = nullptr;     // Scale factors [rows, cols/group_size]
+    half* scales = nullptr;     // Scale factors [ceil(rows/group_size), cols]
     int rows = 0;
     int cols = 0;
     int group_size = 128;
 
     // Calculate expected scale dimensions
-    int scaleRows() const { return rows; }
-    int scaleCols() const { return (cols + group_size - 1) / group_size; }
+    int scaleRows() const { return (rows + group_size - 1) / group_size; }
+    int scaleCols() const { return cols; }
     
     // Total elements
     size_t weightElements() const { return static_cast<size_t>(rows) * cols; }

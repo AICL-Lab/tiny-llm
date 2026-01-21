@@ -89,16 +89,38 @@ std::vector<int> InferenceEngine::generate(
     // Decode phase
     auto decode_start = std::chrono::high_resolution_clock::now();
     int position = static_cast<int>(prompt_tokens.size());
-    
-    for (int i = 0; i < config.max_new_tokens; ++i) {
-        if (position >= config_.max_seq_len) break;
-        
-        int next_token = decodeStep(seq_id, position, config);
+    int prev_token = prompt_tokens.empty() ? config_.bos_token_id : prompt_tokens.back();
+    int generated = 0;
+
+    if (!prompt_tokens.empty() && position > 0 && generated < config.max_new_tokens) {
+        half* last_hidden = hidden_states_ + (position - 1) * config_.hidden_dim;
+        int next_token = sampleFromHidden(last_hidden, config);
         output_tokens.push_back(next_token);
-        
+        ++generated;
+
+        if (next_token == config_.eos_token_id) {
+            CUDA_CHECK(cudaStreamSynchronize(stream_));
+            auto decode_end = std::chrono::high_resolution_clock::now();
+            stats_.decode_time_ms = std::chrono::duration<float, std::milli>(decode_end - decode_start).count();
+            stats_.tokens_generated = static_cast<int>(output_tokens.size());
+            if (stats_.decode_time_ms > 0) {
+                stats_.tokens_per_second = stats_.tokens_generated / (stats_.decode_time_ms / 1000.0f);
+            }
+            kv_cache_->releaseSequence(seq_id);
+            return output_tokens;
+        }
+        prev_token = next_token;
+    }
+
+    while (generated < config.max_new_tokens && position < config_.max_seq_len) {
+        int next_token = decodeStep(seq_id, position, prev_token, config);
+        output_tokens.push_back(next_token);
+        ++generated;
+
         // Check for EOS
         if (next_token == config_.eos_token_id) break;
-        
+
+        prev_token = next_token;
         ++position;
     }
     
@@ -134,27 +156,32 @@ void InferenceEngine::prefill(const std::vector<int>& tokens, int seq_id) {
     }
 }
 
-int InferenceEngine::decodeStep(int seq_id, int position, const GenerationConfig& config) {
-    // Get last hidden state (already computed in prefill or previous decode)
-    // For decode, we need to embed the last generated token and run forward
-    
+int InferenceEngine::decodeStep(int seq_id, int position, int token_id, const GenerationConfig& config) {
+    DeviceBuffer<int> d_token(1);
+    d_token.copyFromHost(&token_id, 1, stream_);
+
+    half* token_state = hidden_states_ + position * config_.hidden_dim;
+    embedTokens(d_token.data(), 1, token_state);
+
     // Forward through all layers for single token
     for (auto& layer : layers_) {
-        layer->forward(hidden_states_, *kv_cache_, seq_id, position, stream_);
+        layer->forward(token_state, *kv_cache_, seq_id, position, stream_);
     }
-    
-    // Final norm and compute logits
-    finalNorm(hidden_states_, hidden_states_, 1);
-    computeLogits(hidden_states_, 1, logits_);
-    
+
+    return sampleFromHidden(token_state, config);
+}
+
+int InferenceEngine::sampleFromHidden(half* hidden_state, const GenerationConfig& config) {
+    finalNorm(hidden_state, hidden_state, 1);
+    computeLogits(hidden_state, 1, logits_);
+
     CUDA_CHECK(cudaStreamSynchronize(stream_));
-    
-    // Copy logits to host and sample
+
     std::vector<half> h_logits(config_.vocab_size);
-    CUDA_CHECK(cudaMemcpy(h_logits.data(), logits_, 
-                          config_.vocab_size * sizeof(half), 
+    CUDA_CHECK(cudaMemcpy(h_logits.data(), logits_,
+                          config_.vocab_size * sizeof(half),
                           cudaMemcpyDeviceToHost));
-    
+
     return sample(h_logits.data(), config);
 }
 

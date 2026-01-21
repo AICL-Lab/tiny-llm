@@ -3,6 +3,7 @@
 #include "rmsnorm.cuh"
 #include "attention.cuh"
 #include "w8a16_matmul.cuh"
+#include "elementwise.cuh"
 #include <cmath>
 
 namespace tiny_llm {
@@ -126,23 +127,19 @@ void TransformerLayer::forward(
 ) {
     // Single token decode
     const int num_tokens = 1;
+    const int hidden_dim = config_.hidden_dim;
     
     // Attention sublayer with residual
     // x = x + attention(rms_norm(x))
     rmsNorm(hidden_states, weights_.rms_att_weight, norm_output_, num_tokens, stream);
     attention(norm_output_, attn_output_, kv_cache, seq_id, position, num_tokens, stream);
-    
-    // Add residual: hidden_states += attn_output
-    // For simplicity, we'll do this in the attention output directly
-    // In production, use a fused kernel
+    kernels::add_inplace(hidden_states, attn_output_, num_tokens * hidden_dim, stream);
     
     // FFN sublayer with residual
     // x = x + ffn(rms_norm(x))
     rmsNorm(hidden_states, weights_.rms_ffn_weight, norm_output_, num_tokens, stream);
     feedForward(norm_output_, ffn_output_, num_tokens, stream);
-    
-    // Add residual (simplified - in production use fused kernel)
-    // hidden_states = hidden_states + attn_output + ffn_output
+    kernels::add_inplace(hidden_states, ffn_output_, num_tokens * hidden_dim, stream);
 }
 
 void TransformerLayer::forwardPrefill(
@@ -154,14 +151,20 @@ void TransformerLayer::forwardPrefill(
 ) {
     // Multiple tokens prefill
     const int num_tokens = seq_len;
+    if (num_tokens <= 0) {
+        return;
+    }
+    const int hidden_dim = config_.hidden_dim;
     
     // Attention sublayer
     rmsNorm(hidden_states, weights_.rms_att_weight, norm_output_, num_tokens, stream);
     attention(norm_output_, attn_output_, kv_cache, seq_id, 0, num_tokens, stream);
+    kernels::add_inplace(hidden_states, attn_output_, num_tokens * hidden_dim, stream);
     
     // FFN sublayer
     rmsNorm(hidden_states, weights_.rms_ffn_weight, norm_output_, num_tokens, stream);
     feedForward(norm_output_, ffn_output_, num_tokens, stream);
+    kernels::add_inplace(hidden_states, ffn_output_, num_tokens * hidden_dim, stream);
 }
 
 void TransformerLayer::attention(
@@ -255,9 +258,8 @@ void TransformerLayer::feedForward(
         ffn_up_, num_tokens, intermediate_dim, hidden_dim, group_size, stream
     );
     
-    // SiLU activation and element-wise multiply would go here
-    // For now, we skip the activation (would need a separate kernel)
-    // In production: ffn_gate_ = silu(ffn_gate_) * ffn_up_
+    // SiLU activation and element-wise multiply
+    kernels::silu_mul_inplace(ffn_gate_, ffn_up_, num_tokens * intermediate_dim, stream);
     
     // Down projection: [num_tokens, intermediate_dim] @ [intermediate_dim, hidden_dim]
     kernels::w8a16_matmul(
