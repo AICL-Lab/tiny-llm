@@ -1,5 +1,10 @@
 # Tiny-LLM Inference Engine
 
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+![CUDA](https://img.shields.io/badge/CUDA-11.0+-76B900?logo=nvidia&logoColor=white)
+![C++](https://img.shields.io/badge/C%2B%2B-17-00599C?logo=c%2B%2B&logoColor=white)
+![CMake](https://img.shields.io/badge/CMake-3.18+-064F8C?logo=cmake&logoColor=white)
+
 一个轻量级的 LLM 推理引擎，使用 CUDA C++ 实现 W8A16 量化推理。
 
 ## 特性
