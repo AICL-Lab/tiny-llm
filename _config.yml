@@ -36,6 +36,8 @@ exclude:
   - .git
   - .github
   - .kiro
+  - .vscode
+  - .cache
   - include
   - kernels
   - src
@@ -47,6 +49,7 @@ exclude:
   - .clang-format
   - .clang-tidy
   - .editorconfig
+  - .gitattributes
   - .gitignore
   - Gemfile
   - Gemfile.lock

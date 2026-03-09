@@ -1,3 +1,9 @@
+---
+layout: default
+title: "API 参考 — Tiny-LLM"
+description: "Tiny-LLM 推理引擎公共接口文档：ModelConfig、InferenceEngine、KVCacheManager、CUDA Kernel API"
+---
+
 # Tiny-LLM API 文档
 
 ## 数据类型
@@ -305,3 +311,7 @@ public:
     int numStreams() const;
 };
 ```
+
+---
+
+[← 返回首页](../) | [更新日志](../changelog/) | [贡献指南](../CONTRIBUTING)

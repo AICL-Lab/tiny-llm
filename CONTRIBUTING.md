@@ -1,3 +1,9 @@
+---
+layout: default
+title: "贡献指南 — Tiny-LLM"
+description: "如何参与 Tiny-LLM 项目开发：开发流程、构建测试、代码规范、提交格式"
+---
+
 # Contributing
 
 感谢你对本项目的关注！欢迎通过 Issue 和 Pull Request 参与贡献。
@@ -35,3 +41,7 @@ make -j4
 - `docs:` 文档更新
 - `perf:` 性能优化
 - `test:` 测试相关
+
+---
+
+[← 返回首页](./) | [API 参考](docs/API) | [更新日志](changelog/)
