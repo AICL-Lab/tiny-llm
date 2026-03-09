@@ -40,10 +40,14 @@ public:
     // Returns (k_cache, v_cache) pointers
     std::pair<half*, half*> getCache(int seq_id, int layer_idx);
     
-    // Append new KV pairs to cache
+    // Append new KV pairs to cache (does NOT advance seq_len)
     void appendKV(int seq_id, int layer_idx, 
                   const half* new_k, const half* new_v, 
                   int num_tokens, cudaStream_t stream = 0);
+    
+    // Advance sequence length after all layers have appended
+    // Call ONCE per step, after all layers' appendKV calls
+    void advanceSeqLen(int seq_id, int num_tokens);
     
     // Get current sequence length
     int getSeqLen(int seq_id) const;

@@ -128,50 +128,33 @@ void KVCacheManager::appendKV(int seq_id, int layer_idx,
     int slot_idx = it->second;
     auto& slot = slots_[slot_idx];
     
-    // Calculate write position based on current length
-    // Note: For multi-layer append, layer 0 should be called LAST to update length
-    // Or all layers should be called with the same current_len value
-    int write_pos;
-    if (layer_idx == 0) {
-        // Layer 0 uses current position and will update it
-        write_pos = slot.current_len;
-        
-        // Check if we have space
-        if (write_pos + num_tokens > slot.max_len) {
-            return;  // No space, silently fail
-        }
-    } else {
-        // Other layers: if current_len was already updated by layer 0,
-        // we need to write to the position BEFORE the update
-        // This assumes layer 0 is called first
-        write_pos = slot.current_len - num_tokens;
-        if (write_pos < 0) {
-            // Layer 0 hasn't been called yet, use current position
-            write_pos = slot.current_len;
-        }
+    // Write position is always current_len — all layers see the same value
+    // because advanceSeqLen() is called ONCE after all layers have appended.
+    int write_pos = slot.current_len;
+    
+    // Check if we have space
+    if (write_pos + num_tokens > slot.max_len) {
+        return;  // No space
     }
     
     // Calculate destination offsets
     auto [k_cache, v_cache] = getCache(seq_id, layer_idx);
     
-    // Offset to write position
     size_t pos_offset = static_cast<size_t>(write_pos) * 
                         config_.num_heads * config_.head_dim;
-    
-    // Copy size
     size_t copy_size = static_cast<size_t>(num_tokens) * 
                        config_.num_heads * config_.head_dim * sizeof(half);
     
-    // Copy K and V
     CUDA_CHECK(cudaMemcpyAsync(k_cache + pos_offset, new_k, copy_size,
                                cudaMemcpyDeviceToDevice, stream));
     CUDA_CHECK(cudaMemcpyAsync(v_cache + pos_offset, new_v, copy_size,
                                cudaMemcpyDeviceToDevice, stream));
-    
-    // Update length only on layer 0
-    if (layer_idx == 0) {
-        slot.current_len += num_tokens;
-    }
+}
+
+void KVCacheManager::advanceSeqLen(int seq_id, int num_tokens) {
+    auto it = seq_to_slot_.find(seq_id);
+    if (it == seq_to_slot_.end()) return;
+    slots_[it->second].current_len += num_tokens;
 }
 
 int KVCacheManager::getSeqLen(int seq_id) const {
