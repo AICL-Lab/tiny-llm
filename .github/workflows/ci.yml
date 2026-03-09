@@ -1,0 +1,51 @@
+name: CI
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+    branches: [main, master]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    container:
+      image: nvidia/cuda:12.4.1-devel-ubuntu22.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install dependencies
+        run: |
+          apt-get update && apt-get install -y --no-install-recommends cmake ninja-build g++ git
+          rm -rf /var/lib/apt/lists/*
+      - name: Configure
+        run: |
+          if [ -f CMakePresets.json ]; then
+            cmake --preset default
+          else
+            cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+          fi
+      - name: Build
+        run: |
+          if [ -f CMakePresets.json ]; then
+            cmake --build --preset default -j$(nproc)
+          else
+            cmake --build build -j$(nproc)
+          fi
+  format:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install clang-format
+        run: sudo apt-get update && sudo apt-get install -y clang-format-14
+      - name: Check formatting
+        run: |
+          find . -type f \( -name '*.h' -o -name '*.hpp' -o -name '*.cpp' -o -name '*.cu' -o -name '*.cuh' \) \
+            -not -path './build/*' -not -path './third_party/*' -print0 | xargs -0 -r clang-format-14 --dry-run --Werror
