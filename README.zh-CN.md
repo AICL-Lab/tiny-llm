@@ -1,11 +1,13 @@
 # Tiny-LLM Inference Engine
 
-[English](README.md) | 简体中文
-
+[![CI](https://github.com/LessUp/tiny-llm/actions/workflows/ci.yml/badge.svg)](https://github.com/LessUp/tiny-llm/actions/workflows/ci.yml)
+[![Pages](https://github.com/LessUp/tiny-llm/actions/workflows/pages.yml/badge.svg)](https://lessup.github.io/tiny-llm/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 ![CUDA](https://img.shields.io/badge/CUDA-11.0+-76B900?logo=nvidia&logoColor=white)
 ![C++](https://img.shields.io/badge/C%2B%2B-17-00599C?logo=c%2B%2B&logoColor=white)
 ![CMake](https://img.shields.io/badge/CMake-3.18+-064F8C?logo=cmake&logoColor=white)
+
+[English](README.md) | 简体中文 | [项目主页](https://lessup.github.io/tiny-llm/)
 
 一个轻量级的 LLM 推理引擎，使用 CUDA C++ 实现 W8A16 量化推理。
 

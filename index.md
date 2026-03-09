@@ -1,6 +1,7 @@
 ---
 layout: default
-title: Tiny-LLM
+title: "Tiny-LLM — 轻量级 LLM 推理引擎"
+description: "CUDA C++ 实现的 W8A16 量化推理引擎，支持 KV Cache 和多种采样策略"
 ---
 
 # Tiny-LLM Inference Engine
@@ -120,11 +121,25 @@ Tests use Google Test + RapidCheck:
 | Quantization | W8A16 (INT8 weights, FP16 activations) |
 | Testing | Google Test + RapidCheck |
 
-## Documentation
+## 最近更新
 
-- [README](README.md) — Full project overview
-- [API Reference](docs/API.md) — Public interface documentation
+| 日期 | 变更 |
+|------|------|
+| 2026-03-10 | GitHub Pages 优化 — SEO 元数据、kramdown GFM、sparse checkout、changelog 索引 |
+| 2026-03-09 | **v2.0.0 重大重构** — KVCache appendKV 层序依赖修复、CMake 现代化 |
+| 2026-03-09 | 工作流优化 — GitHub Actions CI、clang-format 检查 |
+
+[查看完整更新日志 →](changelog/)
 
 ---
 
-[View on GitHub](https://github.com/LessUp/tiny-llm) · [README](README.md)
+## 文档
+
+- [README](README.md) — 完整项目概述
+- [API 参考](docs/API.md) — 公共接口文档
+- [更新日志](changelog/) — 版本历史
+- [贡献指南](CONTRIBUTING.md) — 如何参与开发
+
+---
+
+[View on GitHub](https://github.com/LessUp/tiny-llm)
