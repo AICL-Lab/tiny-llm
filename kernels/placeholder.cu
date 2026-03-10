@@ -8,7 +8,7 @@ namespace kernels {
 
 // Placeholder kernel
 __global__ void placeholder_kernel() {
-    // Empty placeholder
+  // Empty placeholder
 }
 
 } // namespace kernels
