@@ -1,10 +1,8 @@
 name: CI
 
+# CI disabled: CUDA build requires GPU runners not available on GitHub-hosted runners.
+# To run manually: gh workflow run ci.yml --repo LessUp/tiny-llm
 on:
-  push:
-    branches: [main, master]
-  pull_request:
-    branches: [main, master]
   workflow_dispatch:
 
 permissions:
