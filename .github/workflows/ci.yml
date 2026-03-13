@@ -1,8 +1,10 @@
 name: CI
 
-# CI disabled: CUDA build requires GPU runners not available on GitHub-hosted runners.
-# To run manually: gh workflow run ci.yml --repo LessUp/tiny-llm
 on:
+  push:
+    branches: [main, master]
+  pull_request:
+    branches: [main, master]
   workflow_dispatch:
 
 permissions:
@@ -13,37 +15,17 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  build:
-    runs-on: ubuntu-latest
-    container:
-      image: nvidia/cuda:12.4.1-devel-ubuntu22.04
-    steps:
-      - uses: actions/checkout@v4
-      - name: Install dependencies
-        run: |
-          apt-get update && apt-get install -y --no-install-recommends cmake ninja-build g++ git
-          rm -rf /var/lib/apt/lists/*
-      - name: Configure
-        run: |
-          if [ -f CMakePresets.json ]; then
-            cmake --preset default
-          else
-            cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
-          fi
-      - name: Build
-        run: |
-          if [ -f CMakePresets.json ]; then
-            cmake --build --preset default -j$(nproc)
-          else
-            cmake --build build -j$(nproc)
-          fi
-  format:
+  format-check:
+    name: Format Check
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - name: Install clang-format
-        run: sudo apt-get update && sudo apt-get install -y clang-format
-      - name: Check formatting
-        run: |
-          find . -type f \( -name '*.h' -o -name '*.hpp' -o -name '*.cpp' -o -name '*.cu' -o -name '*.cuh' \) \
-            -not -path './build/*' -not -path './third_party/*' -print0 | xargs -0 -r clang-format --dry-run --Werror
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Check C/C++/CUDA formatting
+        uses: jidicula/clang-format-action@v4.13.0
+        with:
+          clang-format-version: '17'
+          check-path: '.'
+          exclude-regex: '(^|/)(build|third_party|external|vendor|\.git)(/|$)'
+          fallback-style: 'LLVM'
