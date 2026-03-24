@@ -160,7 +160,9 @@ TEST_F(TransformerTest, KVCacheAppendRetrieve) {
   cache.appendKV(seq_id, 0, d_k.data(), d_v.data(), num_tokens);
   cudaDeviceSynchronize();
 
-  // Verify sequence length updated
+  // appendKV writes data but does not advance the visible sequence length.
+  EXPECT_EQ(cache.getSeqLen(seq_id), 0);
+  cache.advanceSeqLen(seq_id, num_tokens);
   EXPECT_EQ(cache.getSeqLen(seq_id), num_tokens);
 
   // Get cache pointers
@@ -389,6 +391,7 @@ RC_GTEST_FIXTURE_PROP(TransformerPropertyTest, SequentialAppendEquivalence,
     cudaDeviceSynchronize();
 
     cache.appendKV(seq_id, 0, d_k.data(), d_v.data(), 1);
+    cache.advanceSeqLen(seq_id, 1);
   }
   cudaDeviceSynchronize();
 

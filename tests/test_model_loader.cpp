@@ -1,10 +1,19 @@
+#include "tiny_llm/inference_engine.h"
 #include "tiny_llm/model_loader.h"
 #include <cstdio>
+#include <cstdlib>
 #include <fstream>
 #include <gtest/gtest.h>
 #include <random>
 #include <rapidcheck.h>
 #include <rapidcheck/gtest.h>
+#include <string>
+#include <vector>
+# ifdef _WIN32
+#include <process.h>
+# else
+#include <unistd.h>
+# endif
 
 using namespace tiny_llm;
 
@@ -12,7 +21,13 @@ using namespace tiny_llm;
 class TempFile {
 public:
   TempFile(const std::string &suffix = ".bin") {
-    path_ = "/tmp/tiny_llm_test_" + std::to_string(rand()) + suffix;
+#ifdef _WIN32
+    int pid = _getpid();
+#else
+    int pid = getpid();
+#endif
+    path_ = "/tmp/tiny_llm_test_" + std::to_string(pid) + "_" +
+            std::to_string(std::random_device{}()) + suffix;
   }
 
   ~TempFile() { std::remove(path_.c_str()); }
@@ -139,6 +154,15 @@ TEST_F(BinLoaderTest, FileNotFound) {
   EXPECT_TRUE(result.isErr());
   EXPECT_TRUE(result.error().find("open") != std::string::npos ||
               result.error().find("Failed") != std::string::npos);
+}
+
+TEST_F(BinLoaderTest, RuntimeLoadRejectsGGUFPath) {
+  ModelConfig config;
+  auto result = InferenceEngine::load("model.gguf", config);
+
+  EXPECT_TRUE(result.isErr());
+  EXPECT_NE(result.error().find("GGUF runtime loading is not supported yet"),
+            std::string::npos);
 }
 
 TEST_F(BinLoaderTest, TruncatedHeader) {

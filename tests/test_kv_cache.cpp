@@ -177,6 +177,94 @@ TEST_F(KVCacheTest, MemoryAccountingIsCorrect) {
   EXPECT_EQ(used_after_two, used_after_one * 2);
 }
 
+TEST_F(KVCacheTest, AppendDoesNotAdvanceVisibleSequenceLength) {
+  auto config = createConfig(2, 4, 8, 32, 2);
+  KVCacheManager cache(config);
+
+  auto result = cache.allocateSequence(16);
+  ASSERT_TRUE(result.isOk());
+  int seq_id = result.value();
+
+  int num_tokens = 3;
+  size_t elements = static_cast<size_t>(num_tokens) * config.num_heads * config.head_dim;
+  std::vector<half> host_k(elements, __float2half(1.0f));
+  std::vector<half> host_v(elements, __float2half(2.0f));
+  half *device_k = nullptr;
+  half *device_v = nullptr;
+  cudaMalloc(&device_k, elements * sizeof(half));
+  cudaMalloc(&device_v, elements * sizeof(half));
+  cudaMemcpy(device_k, host_k.data(), elements * sizeof(half), cudaMemcpyHostToDevice);
+  cudaMemcpy(device_v, host_v.data(), elements * sizeof(half), cudaMemcpyHostToDevice);
+
+  cache.appendKV(seq_id, 0, device_k, device_v, num_tokens);
+  cudaDeviceSynchronize();
+  EXPECT_EQ(cache.getSeqLen(seq_id), 0);
+
+  cache.advanceSeqLen(seq_id, num_tokens);
+  EXPECT_EQ(cache.getSeqLen(seq_id), num_tokens);
+
+  cudaFree(device_k);
+  cudaFree(device_v);
+}
+
+TEST_F(KVCacheTest, InvalidLayerReturnsNullCachePointers) {
+  auto config = createConfig(2, 4, 8, 32, 2);
+  KVCacheManager cache(config);
+
+  auto result = cache.allocateSequence(16);
+  ASSERT_TRUE(result.isOk());
+  int seq_id = result.value();
+
+  auto [k_cache, v_cache] = cache.getCache(seq_id, -1);
+  EXPECT_EQ(k_cache, nullptr);
+  EXPECT_EQ(v_cache, nullptr);
+
+  auto [k_cache2, v_cache2] = cache.getCache(seq_id, config.num_layers);
+  EXPECT_EQ(k_cache2, nullptr);
+  EXPECT_EQ(v_cache2, nullptr);
+}
+
+TEST_F(KVCacheTest, InvalidAppendInputsDoNotAdvanceSequenceLength) {
+  auto config = createConfig(2, 4, 8, 32, 2);
+  KVCacheManager cache(config);
+
+  auto result = cache.allocateSequence(16);
+  ASSERT_TRUE(result.isOk());
+  int seq_id = result.value();
+
+  cache.appendKV(seq_id, -1, nullptr, nullptr, 0);
+  cache.appendKV(seq_id, config.num_layers, nullptr, nullptr, 1);
+  cache.appendKV(seq_id, 0, nullptr, nullptr, 1);
+  cudaDeviceSynchronize();
+
+  EXPECT_EQ(cache.getSeqLen(seq_id), 0);
+}
+
+TEST_F(KVCacheTest, AdvanceSeqLenClampsToSequenceCapacity) {
+  auto config = createConfig(2, 4, 8, 32, 2);
+  KVCacheManager cache(config);
+
+  auto result = cache.allocateSequence(5);
+  ASSERT_TRUE(result.isOk());
+  int seq_id = result.value();
+
+  cache.advanceSeqLen(seq_id, 100);
+  EXPECT_EQ(cache.getSeqLen(seq_id), 5);
+}
+
+TEST_F(KVCacheTest, AdvanceSeqLenIgnoresNonPositiveValues) {
+  auto config = createConfig(2, 4, 8, 32, 2);
+  KVCacheManager cache(config);
+
+  auto result = cache.allocateSequence(5);
+  ASSERT_TRUE(result.isOk());
+  int seq_id = result.value();
+
+  cache.advanceSeqLen(seq_id, 0);
+  cache.advanceSeqLen(seq_id, -3);
+  EXPECT_EQ(cache.getSeqLen(seq_id), 0);
+}
+
 // Property-based tests
 // Feature: tiny-llm-inference-engine, Property 2: KV Cache Invariants
 // Validates: Requirements 3.2, 3.3, 3.4, 3.5, 3.6

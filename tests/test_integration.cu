@@ -240,7 +240,9 @@ TEST_F(IntegrationTest, TransformerLayerDimensions) {
   layer.forward(hidden_states, kv_cache, seq_id, 0);
   cudaDeviceSynchronize();
 
-  // Verify KV cache was updated
+  // TransformerLayer appends KV, but the caller owns seq_len advancement.
+  EXPECT_EQ(kv_cache.getSeqLen(seq_id), 0);
+  kv_cache.advanceSeqLen(seq_id, 1);
   EXPECT_EQ(kv_cache.getSeqLen(seq_id), 1);
 
   // Cleanup
