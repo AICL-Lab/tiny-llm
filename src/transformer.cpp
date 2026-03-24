@@ -210,11 +210,13 @@ void TransformerLayer::attention(const half *x, half *output,
   int current_seq_len = kv_cache.getSeqLen(seq_id);
 
   if (num_tokens == 1) {
-    // Decode: single query against full KV cache
+    // Decode: appendKV() writes the current token into cache but does not make it
+    // visible via getSeqLen() until the caller advances once after all layers.
+    int attended_seq_len = current_seq_len + 1;
     kernels::attention_decode(q_buf_, k_cache, v_cache, attn_output_, scale, 1,
-                              num_heads, current_seq_len, head_dim, stream);
+                              num_heads, attended_seq_len, head_dim, stream);
   } else {
-    // Prefill: full attention with causal mask
+    // Prefill: full attention with causal mask over the current token batch.
     kernels::attention_prefill(q_buf_, k_buf_, v_buf_, attn_output_, scale, 1,
                                num_heads, num_tokens, head_dim, stream);
   }

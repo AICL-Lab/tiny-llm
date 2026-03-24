@@ -1,4 +1,5 @@
 #include "tiny_llm/inference_engine.h"
+#include "elementwise.cuh"
 #include "rmsnorm.cuh"
 #include "tiny_llm/cuda_utils.h"
 #include "tiny_llm/model_loader.h"
@@ -14,6 +15,12 @@ namespace tiny_llm {
 Result<std::unique_ptr<InferenceEngine>>
 InferenceEngine::load(const std::string &model_path,
                       const ModelConfig &config) {
+  if (model_path.size() >= 5 &&
+      model_path.substr(model_path.size() - 5) == ".gguf") {
+    return Result<std::unique_ptr<InferenceEngine>>::err(
+        "GGUF runtime loading is not supported yet; use the test binary format loaded via loadBin().");
+  }
+
   // Load model weights
   auto result = ModelLoader::loadBin(model_path, config);
   if (result.isErr()) {
@@ -57,12 +64,23 @@ InferenceEngine::InferenceEngine(const ModelConfig &config,
 }
 
 InferenceEngine::~InferenceEngine() {
-  if (hidden_states_)
+  layers_.clear();
+  kv_cache_.reset();
+
+  if (hidden_states_) {
     cudaFree(hidden_states_);
-  if (logits_)
+    hidden_states_ = nullptr;
+  }
+  if (logits_) {
     cudaFree(logits_);
-  if (stream_)
+    logits_ = nullptr;
+  }
+  if (stream_) {
     cudaStreamDestroy(stream_);
+    stream_ = nullptr;
+  }
+
+  ModelLoader::freeWeights(weights_);
 }
 
 std::vector<int>
@@ -157,11 +175,14 @@ InferenceEngine::generate(const std::vector<int> &prompt_tokens,
 
 void InferenceEngine::prefill(const std::vector<int> &tokens, int seq_id) {
   int num_tokens = static_cast<int>(tokens.size());
+  if (num_tokens <= 0) {
+    return;
+  }
 
   // Embed tokens
   std::vector<int> h_tokens(tokens);
   DeviceBuffer<int> d_tokens(num_tokens);
-  d_tokens.copyFromHost(h_tokens.data(), num_tokens);
+  d_tokens.copyFromHost(h_tokens.data(), num_tokens, stream_);
 
   embedTokens(d_tokens.data(), num_tokens, hidden_states_);
 
@@ -170,6 +191,8 @@ void InferenceEngine::prefill(const std::vector<int> &tokens, int seq_id) {
     layer->forwardPrefill(hidden_states_, *kv_cache_, seq_id, num_tokens,
                           stream_);
   }
+
+  kv_cache_->advanceSeqLen(seq_id, num_tokens);
 }
 
 int InferenceEngine::decodeStep(int seq_id, int position, int token_id,
@@ -184,6 +207,8 @@ int InferenceEngine::decodeStep(int seq_id, int position, int token_id,
   for (auto &layer : layers_) {
     layer->forward(token_state, *kv_cache_, seq_id, position, stream_);
   }
+
+  kv_cache_->advanceSeqLen(seq_id, 1);
 
   return sampleFromHidden(token_state, config);
 }
@@ -205,25 +230,8 @@ int InferenceEngine::sampleFromHidden(half *hidden_state,
 
 void InferenceEngine::embedTokens(const int *tokens, int num_tokens,
                                   half *output) {
-  // Simple embedding lookup kernel would go here
-  // For now, use a basic CPU implementation with memcpy
-  // In production, this would be a CUDA kernel
-
-  std::vector<int> h_tokens(num_tokens);
-  CUDA_CHECK(cudaMemcpy(h_tokens.data(), tokens, num_tokens * sizeof(int),
-                        cudaMemcpyDeviceToHost));
-
-  std::vector<half> h_output(num_tokens * config_.hidden_dim);
-  for (int i = 0; i < num_tokens; ++i) {
-    int token_id = h_tokens[i];
-    if (token_id >= 0 && token_id < config_.vocab_size &&
-        weights_.token_embedding) {
-      CUDA_CHECK(cudaMemcpy(
-          output + i * config_.hidden_dim,
-          weights_.token_embedding + token_id * config_.hidden_dim,
-          config_.hidden_dim * sizeof(half), cudaMemcpyDeviceToDevice));
-    }
-  }
+  kernels::gather_embeddings(tokens, weights_.token_embedding, output, num_tokens,
+                             config_.hidden_dim, config_.vocab_size, stream_);
 }
 
 void InferenceEngine::computeLogits(const half *hidden_states, int num_tokens,
@@ -266,6 +274,10 @@ int InferenceEngine::sample(const half *logits,
 
 // Greedy sampling: return argmax
 int InferenceEngine::sampleGreedy(const half *logits, int vocab_size) {
+  if (!logits || vocab_size <= 0) {
+    return 0;
+  }
+
   int max_idx = 0;
   float max_val = __half2float(logits[0]);
 
@@ -283,6 +295,11 @@ int InferenceEngine::sampleGreedy(const half *logits, int vocab_size) {
 // Temperature sampling
 int InferenceEngine::sampleTemperature(const half *logits, int vocab_size,
                                        float temperature, unsigned seed) {
+  if (!logits || vocab_size <= 0) {
+    return 0;
+  }
+  temperature = std::max(temperature, 1e-5f);
+
   std::vector<float> probs(vocab_size);
   float max_logit = __half2float(logits[0]);
 
@@ -312,6 +329,12 @@ int InferenceEngine::sampleTemperature(const half *logits, int vocab_size,
 // Top-k sampling
 int InferenceEngine::sampleTopK(const half *logits, int vocab_size, int k,
                                 float temperature, unsigned seed) {
+  if (!logits || vocab_size <= 0) {
+    return 0;
+  }
+  temperature = std::max(temperature, 1e-5f);
+  k = std::max(1, std::min(k, vocab_size));
+
   // Get top-k indices
   std::vector<std::pair<float, int>> logit_pairs(vocab_size);
   for (int i = 0; i < vocab_size; ++i) {
@@ -346,6 +369,12 @@ int InferenceEngine::sampleTopK(const half *logits, int vocab_size, int k,
 // Top-p (nucleus) sampling
 int InferenceEngine::sampleTopP(const half *logits, int vocab_size, float p,
                                 float temperature, unsigned seed) {
+  if (!logits || vocab_size <= 0) {
+    return 0;
+  }
+  temperature = std::max(temperature, 1e-5f);
+  p = std::min(std::max(p, 1e-5f), 1.0f);
+
   // Sort by logit value
   std::vector<std::pair<float, int>> logit_pairs(vocab_size);
   for (int i = 0; i < vocab_size; ++i) {

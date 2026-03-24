@@ -192,6 +192,12 @@ Result<ModelWeights> ModelLoader::loadBin(const std::string &path,
   }
 
   ModelWeights weights;
+  bool success = false;
+  auto cleanup_on_error = [&]() {
+    if (!success) {
+      freeWeights(weights);
+    }
+  };
 
   // Read token embedding [vocab_size, hidden_dim] as FP16
   size_t embed_size =
@@ -200,6 +206,7 @@ Result<ModelWeights> ModelLoader::loadBin(const std::string &path,
   file.read(reinterpret_cast<char *>(embed_host.data()),
             embed_size * sizeof(half));
   if (!file) {
+    cleanup_on_error();
     return Result<ModelWeights>::err("Failed to read token embedding");
   }
 
@@ -232,58 +239,76 @@ Result<ModelWeights> ModelLoader::loadBin(const std::string &path,
 
     // Q, K, V, O projections
     auto r = load_qweight(lw.wq, hidden, hidden);
-    if (r.isErr())
+    if (r.isErr()) {
+      cleanup_on_error();
       return Result<ModelWeights>::err("Layer " + std::to_string(layer) +
                                        " wq: " + r.error());
+    }
 
     r = load_qweight(lw.wk, hidden, kv_dim);
-    if (r.isErr())
+    if (r.isErr()) {
+      cleanup_on_error();
       return Result<ModelWeights>::err("Layer " + std::to_string(layer) +
                                        " wk: " + r.error());
+    }
 
     r = load_qweight(lw.wv, hidden, kv_dim);
-    if (r.isErr())
+    if (r.isErr()) {
+      cleanup_on_error();
       return Result<ModelWeights>::err("Layer " + std::to_string(layer) +
                                        " wv: " + r.error());
+    }
 
     r = load_qweight(lw.wo, hidden, hidden);
-    if (r.isErr())
+    if (r.isErr()) {
+      cleanup_on_error();
       return Result<ModelWeights>::err("Layer " + std::to_string(layer) +
                                        " wo: " + r.error());
+    }
 
     // FFN weights
     r = load_qweight(lw.w1, hidden, inter);
-    if (r.isErr())
+    if (r.isErr()) {
+      cleanup_on_error();
       return Result<ModelWeights>::err("Layer " + std::to_string(layer) +
                                        " w1: " + r.error());
+    }
 
     r = load_qweight(lw.w2, inter, hidden);
-    if (r.isErr())
+    if (r.isErr()) {
+      cleanup_on_error();
       return Result<ModelWeights>::err("Layer " + std::to_string(layer) +
                                        " w2: " + r.error());
+    }
 
     r = load_qweight(lw.w3, hidden, inter);
-    if (r.isErr())
+    if (r.isErr()) {
+      cleanup_on_error();
       return Result<ModelWeights>::err("Layer " + std::to_string(layer) +
                                        " w3: " + r.error());
+    }
 
     // RMSNorm weights (FP16)
     std::vector<half> norm_host(hidden);
 
     file.read(reinterpret_cast<char *>(norm_host.data()),
               hidden * sizeof(half));
-    if (!file)
+    if (!file) {
+      cleanup_on_error();
       return Result<ModelWeights>::err(
           "Failed to read rms_att_weight for layer " + std::to_string(layer));
+    }
     CUDA_CHECK(cudaMalloc(&lw.rms_att_weight, hidden * sizeof(half)));
     CUDA_CHECK(cudaMemcpy(lw.rms_att_weight, norm_host.data(),
                           hidden * sizeof(half), cudaMemcpyHostToDevice));
 
     file.read(reinterpret_cast<char *>(norm_host.data()),
               hidden * sizeof(half));
-    if (!file)
+    if (!file) {
+      cleanup_on_error();
       return Result<ModelWeights>::err(
           "Failed to read rms_ffn_weight for layer " + std::to_string(layer));
+    }
     CUDA_CHECK(cudaMalloc(&lw.rms_ffn_weight, hidden * sizeof(half)));
     CUDA_CHECK(cudaMemcpy(lw.rms_ffn_weight, norm_host.data(),
                           hidden * sizeof(half), cudaMemcpyHostToDevice));
@@ -294,7 +319,7 @@ Result<ModelWeights> ModelLoader::loadBin(const std::string &path,
   file.read(reinterpret_cast<char *>(final_norm_host.data()),
             config.hidden_dim * sizeof(half));
   if (!file) {
-    freeWeights(weights);
+    cleanup_on_error();
     return Result<ModelWeights>::err("Failed to read final norm weight");
   }
   CUDA_CHECK(
@@ -307,12 +332,13 @@ Result<ModelWeights> ModelLoader::loadBin(const std::string &path,
   auto lm_result = loadQuantizedTensor(file, config.hidden_dim,
                                        config.vocab_size, group_size);
   if (lm_result.isErr()) {
-    freeWeights(weights);
+    cleanup_on_error();
     return Result<ModelWeights>::err("Failed to read LM head: " +
                                      lm_result.error());
   }
   weights.lm_head = lm_result.value();
 
+  success = true;
   return Result<ModelWeights>::ok(std::move(weights));
 }
 

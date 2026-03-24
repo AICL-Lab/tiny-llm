@@ -108,7 +108,7 @@ void KVCacheManager::releaseSequence(int seq_id) {
 
 std::pair<half *, half *> KVCacheManager::getCache(int seq_id, int layer_idx) {
   auto it = seq_to_slot_.find(seq_id);
-  if (it == seq_to_slot_.end()) {
+  if (it == seq_to_slot_.end() || layer_idx < 0 || layer_idx >= config_.num_layers) {
     return {nullptr, nullptr};
   }
 
@@ -123,8 +123,9 @@ void KVCacheManager::appendKV(int seq_id, int layer_idx, const half *new_k,
                               const half *new_v, int num_tokens,
                               cudaStream_t stream) {
   auto it = seq_to_slot_.find(seq_id);
-  if (it == seq_to_slot_.end()) {
-    return; // Sequence not found
+  if (it == seq_to_slot_.end() || layer_idx < 0 || layer_idx >= config_.num_layers ||
+      num_tokens <= 0 || !new_k || !new_v) {
+    return; // Invalid input
   }
 
   int slot_idx = it->second;
@@ -141,6 +142,9 @@ void KVCacheManager::appendKV(int seq_id, int layer_idx, const half *new_k,
 
   // Calculate destination offsets
   auto [k_cache, v_cache] = getCache(seq_id, layer_idx);
+  if (!k_cache || !v_cache) {
+    return;
+  }
 
   size_t pos_offset =
       static_cast<size_t>(write_pos) * config_.num_heads * config_.head_dim;
@@ -155,9 +159,11 @@ void KVCacheManager::appendKV(int seq_id, int layer_idx, const half *new_k,
 
 void KVCacheManager::advanceSeqLen(int seq_id, int num_tokens) {
   auto it = seq_to_slot_.find(seq_id);
-  if (it == seq_to_slot_.end())
+  if (it == seq_to_slot_.end() || num_tokens <= 0)
     return;
-  slots_[it->second].current_len += num_tokens;
+
+  auto &slot = slots_[it->second];
+  slot.current_len = std::min(slot.current_len + num_tokens, slot.max_len);
 }
 
 int KVCacheManager::getSeqLen(int seq_id) const {
