@@ -2,10 +2,18 @@ cmake_minimum_required(VERSION 3.18)
 project(tiny-llm
     VERSION 2.0.0
     DESCRIPTION "Lightweight LLM inference engine with W8A16 quantization"
-    LANGUAGES CXX CUDA
+    LANGUAGES CXX
 )
 
+include(CheckLanguage)
+check_language(CUDA)
+if(NOT CMAKE_CUDA_COMPILER)
+    message(FATAL_ERROR "CUDA toolkit with nvcc is required to build tiny-llm. Set CUDAToolkit_ROOT or ensure nvcc is available on PATH.")
+endif()
+enable_language(CUDA)
+
 # ── C++ / CUDA 标准 ──────────────────────────────────────────────
+
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
@@ -75,7 +83,7 @@ if(BUILD_TESTS)
     FetchContent_Declare(
         rapidcheck
         GIT_REPOSITORY https://github.com/emil-e/rapidcheck.git
-        GIT_TAG master
+        GIT_TAG 2023.01
     )
     FetchContent_MakeAvailable(rapidcheck)
 
