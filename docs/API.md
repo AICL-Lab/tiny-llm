@@ -116,11 +116,14 @@ public:
     // 获取 cache 指针
     std::pair<half*, half*> getCache(int seq_id, int layer_idx);
     
-    // 追加 KV 对
-    void appendKV(int seq_id, int layer_idx, 
+    // 追加 KV 对（只写入，不推进可见序列长度）
+    void appendKV(int seq_id, int layer_idx,
                   const half* new_k, const half* new_v, int num_tokens);
-    
-    // 获取序列长度
+
+    // 在所有层都完成 append 后，显式推进序列长度
+    void advanceSeqLen(int seq_id, int num_tokens);
+
+    // 获取当前可见序列长度
     int getSeqLen(int seq_id) const;
     
     // 内存统计
@@ -255,6 +258,9 @@ if (result.isErr()) {
     return 1;
 }
 auto engine = std::move(result.value());
+
+// 注意：运行时当前仅接通项目测试二进制格式。
+// GGUF 头解析已实现一部分，但运行时 GGUF 加载尚未完成。
 ```
 
 ### CUDA_CHECK
