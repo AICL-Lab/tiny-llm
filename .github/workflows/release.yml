@@ -58,35 +58,36 @@ jobs:
   build:
     name: Build Release Artifacts
     needs: validate
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
       - name: Setup CUDA Environment
         run: |
-          # Find CUDA installation
-          CUDA_HOME=""
-          if [ -d "/usr/local/cuda" ]; then
-            CUDA_HOME="/usr/local/cuda"
+          # Check for pre-installed CUDA
+          if command -v nvcc &> /dev/null; then
+            echo "nvcc already in PATH"
+            nvcc --version
+          elif [ -d "/usr/local/cuda" ]; then
+            echo "CUDA_HOME=/usr/local/cuda" >> $GITHUB_ENV
+            echo "/usr/local/cuda/bin" >> $GITHUB_PATH
+            echo "CUDACXX=/usr/local/cuda/bin/nvcc" >> $GITHUB_ENV
+            nvcc --version
+          elif [ -d "/usr/lib/nvidia-cuda-toolkit" ]; then
+            echo "CUDA_HOME=/usr/lib/nvidia-cuda-toolkit" >> $GITHUB_ENV
+            echo "/usr/lib/nvidia-cuda-toolkit/bin" >> $GITHUB_PATH
+            echo "CUDACXX=/usr/lib/nvidia-cuda-toolkit/bin/nvcc" >> $GITHUB_ENV
+            nvcc --version
           else
-            CUDA_CANDIDATE=$(ls -d /usr/local/cuda-* 2>/dev/null | head -1 || true)
-            if [ -n "$CUDA_CANDIDATE" ]; then
-              CUDA_HOME="$CUDA_CANDIDATE"
-            fi
+            echo "CUDA not found, installing..."
+            sudo apt-get update
+            sudo apt-get install -y nvidia-cuda-toolkit
+            echo "CUDA_HOME=/usr/lib/nvidia-cuda-toolkit" >> $GITHUB_ENV
+            echo "/usr/lib/nvidia-cuda-toolkit/bin" >> $GITHUB_PATH
+            echo "CUDACXX=/usr/lib/nvidia-cuda-toolkit/bin/nvcc" >> $GITHUB_ENV
+            nvcc --version
           fi
-          
-          if [ -z "$CUDA_HOME" ]; then
-            echo "CUDA not installed on runner"
-            exit 1
-          fi
-          
-          echo "CUDA_HOME=$CUDA_HOME" >> $GITHUB_ENV
-          echo "$CUDA_HOME/bin" >> $GITHUB_PATH
-          echo "CUDACXX=$CUDA_HOME/bin/nvcc" >> $GITHUB_ENV
-          
-          # Verify
-          $CUDA_HOME/bin/nvcc --version
 
       - name: Configure CMake
         run: |
