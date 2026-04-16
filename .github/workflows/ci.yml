@@ -82,11 +82,10 @@ jobs:
           key: cuda-${{ matrix.cuda }}-${{ runner.os }}
 
       - name: Install CUDA Toolkit
-        uses: Jimver/cuda-toolkit@v0.2.24
+        uses: Jimver/cuda-toolkit@v0.2.29
         with:
           cuda: ${{ matrix.cuda }}
           method: network
-          sub-packages: '["nvcc", "libcudart-dev"]'
 
       - name: Verify CUDA
         run: |
