@@ -1,32 +1,47 @@
 ---
 layout: default
 title: "Quick Start — Tiny-LLM"
-description: "Get started with Tiny-LLM inference engine"
-nav_order: 1
+description: "Get started with Tiny-LLM inference engine in minutes"
+nav_order: 2
 ---
 
 # Quick Start
 
-Get up and running with Tiny-LLM in minutes.
+Get up and running with Tiny-LLM inference engine in minutes.
+
+---
+
+## Table of Contents
+
+- [Prerequisites](#prerequisites)
+- [Installation](#installation)
+- [Quick Example](#quick-example)
+- [Model Format](#model-format)
+- [Next Steps](#next-steps)
 
 ---
 
 ## Prerequisites
 
-| Requirement | Version | Notes |
-|-------------|---------|-------|
-| CUDA Toolkit | 11.0+ | Required for compilation |
-| CMake | 3.18+ | Build system |
-| C++ Compiler | C++17 | GCC 9+, Clang 10+, MSVC 2019+ |
-| NVIDIA GPU | SM 7.0+ | Volta architecture or newer |
+### System Requirements
 
-### Verify GPU Support
+| Component | Minimum | Recommended |
+|-----------|---------|-------------|
+| CUDA Toolkit | 11.0 | 12.0+ |
+| CMake | 3.18 | 3.25+ |
+| C++ Compiler | GCC 9+ / Clang 10+ | GCC 11+ / Clang 14+ |
+| GPU Compute Capability | SM 7.0 (Volta) | SM 8.0+ (Ampere+) |
+| GPU Memory | 4 GB | 8 GB+ |
 
-Check your GPU compute capability:
+### Verify Your GPU
 
 ```bash
+# Check CUDA version
+nvcc --version
+
+# Check GPU compute capability
 nvidia-smi --query-gpu=compute_cap --format=csv
-# Should output 7.0 or higher
+# Output should be 7.0 or higher
 ```
 
 ---
@@ -40,29 +55,34 @@ git clone https://github.com/LessUp/tiny-llm.git
 cd tiny-llm
 ```
 
-### 2. Build
+### 2. Configure Build
 
 ```bash
 mkdir build && cd build
 cmake .. -DCMAKE_BUILD_TYPE=Release
-make -j$(nproc)
 ```
 
-### CMake Options
+#### CMake Options
 
 | Option | Default | Description |
 |--------|---------|-------------|
 | `CMAKE_BUILD_TYPE` | `Release` | Build type: Debug/Release/RelWithDebInfo |
 | `BUILD_TESTS` | `ON` | Build test suite |
-| `CUDA_ARCH` | `native` | CUDA architecture (e.g., `75;80;86`) |
+| `CUDA_ARCH` | `native` | Target CUDA architectures (e.g., `75;80;86`) |
 
-### 3. Run Tests
+### 3. Build
+
+```bash
+make -j$(nproc)
+```
+
+### 4. Run Tests
 
 ```bash
 ctest --output-on-failure
 ```
 
-### 4. Run Demo
+### 5. Run Demo
 
 ```bash
 ./tiny_llm_demo
@@ -70,48 +90,52 @@ ctest --output-on-failure
 
 ---
 
-## Basic Usage
+## Quick Example
 
-### Simple Inference
+### Complete Inference Example
 
 ```cpp
 #include <tiny_llm/inference_engine.h>
 #include <iostream>
 
 int main() {
-    // Configure model
+    // 1. Configure model
     ModelConfig config;
     config.vocab_size = 32000;
     config.hidden_dim = 4096;
     config.num_layers = 32;
     config.num_heads = 32;
+    config.num_kv_heads = 32;      // GQA: use 8 for modern models
+    config.head_dim = 128;
+    config.intermediate_dim = 11008;
     config.max_seq_len = 2048;
+    config.rope_theta = 10000.0f;
     
-    // Load model
+    // 2. Load model
     auto result = InferenceEngine::load("path/to/model.bin", config);
     if (result.isErr()) {
         std::cerr << "Failed to load model: " << result.error() << std::endl;
         return 1;
     }
-    
     auto engine = std::move(result.value());
     
-    // Configure generation
+    // 3. Configure generation
     GenerationConfig gen_config;
-    gen_config.max_new_tokens = 100;
+    gen_config.max_new_tokens = 256;
     gen_config.temperature = 0.7f;
     gen_config.top_p = 0.9f;
+    gen_config.top_k = 50;
     gen_config.do_sample = true;
     
-    // Generate
-    std::vector<int> prompt = {1, 2, 3};  // Token IDs
+    // 4. Generate
+    std::vector<int> prompt = {1, 15043, 29892};  // "Hello," tokens
     auto output = engine->generate(prompt, gen_config);
     
-    // Print statistics
+    // 5. Check statistics
     const auto& stats = engine->getStats();
-    std::cout << "Generated " << stats.tokens_generated 
-              << " tokens in " << stats.decode_time_ms << " ms"
-              << " (" << stats.tokens_per_second << " tok/s)" << std::endl;
+    std::cout << "Generated " << stats.tokens_generated << " tokens\n"
+              << "Speed: " << stats.tokens_per_second << " tok/s\n"
+              << "Peak memory: " << stats.peak_memory_bytes / 1024 / 1024 << " MB\n";
     
     return 0;
 }
@@ -128,20 +152,24 @@ cache_config.num_layers = 32;
 cache_config.num_heads = 32;
 cache_config.head_dim = 128;
 cache_config.max_seq_len = 2048;
+cache_config.max_batch_size = 1;
 
 KVCacheManager kv_cache(cache_config);
 
 // Allocate a sequence
 auto seq_result = kv_cache.allocateSequence(1024);
 if (seq_result.isErr()) {
-    // Handle error
+    std::cerr << "Failed to allocate: " << seq_result.error() << std::endl;
+    return 1;
 }
 int seq_id = seq_result.value();
 
-// Use in transformer layer
-layer.forward(hidden_states, kv_cache, seq_id, position);
+// Use in transformer layers
+for (auto& layer : layers) {
+    layer.forward(hidden_states, kv_cache, seq_id, position, stream);
+}
 
-// Advance sequence length after all layers
+// After all layers, advance sequence length
 kv_cache.advanceSeqLen(seq_id, 1);
 
 // Release when done
@@ -150,76 +178,45 @@ kv_cache.releaseSequence(seq_id);
 
 ---
 
-## Building Your Own Model Format
+## Model Format
 
-Currently, Tiny-LLM supports a custom binary format. Here's the expected layout:
+### Custom Binary Format
+
+Tiny-LLM currently uses a custom binary format with the following layout:
 
 ```
-Model File Format:
-┌─────────────────┐
-│  Header (256B)  │
-│  - magic        │
-│  - version      │
-│  - config       │
-├─────────────────┤
-│  Embeddings     │
-│  [V, H] FP16    │
-├─────────────────┤
-│  Layer 0        │
-│  - Weights...   │
-├─────────────────┤
-│  ...            │
-├─────────────────┤
-│  Layer N        │
-├─────────────────┤
-│  Output Norm    │
-│  LM Head        │
-└─────────────────┘
+┌─────────────────┬─────────────────────────────────────┐
+│ Header (256B)   │ magic, version, config              │
+├─────────────────┼─────────────────────────────────────┤
+│ Token Embedding │ [vocab_size, hidden_dim] FP16       │
+├─────────────────┼─────────────────────────────────────┤
+│ Layer 0 Weights │ Attention + FFN weights (INT8)      │
+│                 │ Scales (FP16)                       │
+├─────────────────┼─────────────────────────────────────┤
+│ ...             │                                     │
+├─────────────────┼─────────────────────────────────────┤
+│ Layer N-1       │                                     │
+├─────────────────┼─────────────────────────────────────┤
+│ Output Norm     │ [hidden_dim] FP16                   │
+│ LM Head         │ [hidden_dim, vocab_size] FP16       │
+└─────────────────┴─────────────────────────────────────┘
 ```
 
-Note: Full GGUF loading support is planned for a future release.
+### Creating Model Files
 
----
-
-## Troubleshooting
-
-### Build Issues
-
-| Problem | Solution |
-|---------|----------|
-| `CUDA not found` | Set `CUDA_TOOLKIT_ROOT_DIR` or ensure `nvcc` is in PATH |
-| `CMake version too old` | Upgrade CMake or use pip: `pip install cmake` |
-| `C++17 not supported` | Upgrade your compiler |
-
-### Runtime Issues
-
-| Problem | Solution |
-|---------|----------|
-| `CUDA out of memory` | Reduce `max_seq_len` or `num_layers` in config |
-| `Illegal memory access` | Check model file format and dimensions |
-| `Slow performance` | Ensure Release build: `-DCMAKE_BUILD_TYPE=Release` |
-
-### Debug Build
-
-For debugging:
-
-```bash
-cmake .. -DCMAKE_BUILD_TYPE=Debug -DBUILD_TESTS=ON
-make -j$(nproc)
-CUDA_LAUNCH_BLOCKING=1 ./tiny_llm_demo
-```
+See [Developer Guide](DEVELOPER) for instructions on converting models to Tiny-LLM format.
 
 ---
 
 ## Next Steps
 
-- Read the [API Reference](API) for detailed API documentation
-- Check the [Architecture](ARCHITECTURE) guide for system design
-- Review [Contributing](../../CONTRIBUTING) to contribute to the project
-- See [Changelog](../../changelog/) for version history
+- **[Architecture](ARCHITECTURE)** — Understand system design and components
+- **[API Reference](API)** — Complete API documentation
+- **[Benchmarks](BENCHMARKS)** — Performance characteristics
+- **[Troubleshooting](TROUBLESHOOTING)** — Common issues and solutions
 
 ---
 
-**Languages**: [English](QUICKSTART) | [中文](../zh/QUICKSTART)
+**Languages**: [English](QUICKSTART) | [中文](../zh/QUICKSTART) | [API →](API)
 
-[← Home](../../) | [Architecture](ARCHITECTURE) | [API Reference](API)
+[← Home](../../) | [Architecture →](ARCHITECTURE)

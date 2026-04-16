@@ -8,27 +8,47 @@
 ![C++](https://img.shields.io/badge/C%2B%2B-17-00599C?logo=c%2B%2B&logoColor=white)
 ![CMake](https://img.shields.io/badge/CMake-3.18+-064F8C?logo=cmake&logoColor=white)
 
-English | [简体中文](README.zh-CN.md) | [Documentation](https://lessup.github.io/tiny-llm/) | [API Reference](https://lessup.github.io/tiny-llm/docs/)
+English | [简体中文](README.zh-CN.md) | [Documentation](https://lessup.github.io/tiny-llm/) | [API Reference](https://lessup.github.io/tiny-llm/docs/en/API)
 
-A lightweight CUDA C++ inference engine for experimenting with W8A16 quantization, KV Cache incremental decoding, and modular Transformer inference.
+A lightweight, high-performance CUDA C++ inference engine for Transformer models, featuring W8A16 quantization, efficient KV Cache management, and optimized CUDA kernels.
 
 ---
 
-## Features
+## ✨ Features
 
 | Feature | Description | Status |
 |---------|-------------|--------|
-| **W8A16 Quantization** | INT8 weights + FP16 activations, ~50% memory reduction | ✅ Stable |
-| **KV Cache** | Efficient incremental decoding with sequence management | ✅ Stable |
-| **High-Performance Kernels** | Shared memory tiling, warp shuffle optimization | ✅ Stable |
-| **Sampling Strategies** | Greedy, Temperature, Top-k, Top-p | ✅ Stable |
+| **W8A16 Quantization** | INT8 weights + FP16 activations for ~50% memory reduction | ✅ Stable |
+| **KV Cache Management** | Efficient incremental decoding with sequence management | ✅ Stable |
+| **Optimized CUDA Kernels** | Tensor Core INT8, shared memory tiling, warp shuffle | ✅ Stable |
+| **Sampling Strategies** | Greedy, Temperature, Top-k, Top-p decoding | ✅ Stable |
 | **Comprehensive Testing** | GoogleTest + RapidCheck property-based tests | ✅ Stable |
-| GGUF Runtime Loading | Load models at runtime | 🚧 Planned |
-| PagedAttention | Efficient batching | 🚧 Evaluating |
+| **Bilingual Documentation** | Full documentation in English and Chinese | ✅ Complete |
+
+### Roadmap
+
+| Feature | Status | Target |
+|---------|--------|--------|
+| GGUF Runtime Loading | 🚧 Planned | v2.1 |
+| PagedAttention | 📋 Planned | v2.2 |
+| Speculative Decoding | 🔬 Research | v2.3 |
+| FP8 Support | 🔬 Research | v3.0 |
+| Multi-GPU | 📋 Planned | v3.0 |
 
 ---
 
-## Quick Start
+## 🚀 Quick Start
+
+### Requirements
+
+| Component | Minimum | Recommended |
+|-----------|---------|-------------|
+| NVIDIA GPU | SM 7.0 (Volta) | SM 8.0+ (Ampere+) |
+| CUDA Toolkit | 11.0 | 12.0+ |
+| CMake | 3.18 | 3.25+ |
+| C++ Compiler | GCC 9+ / Clang 10+ | GCC 11+ |
+
+### Installation
 
 ```bash
 git clone https://github.com/LessUp/tiny-llm.git
@@ -37,14 +57,44 @@ mkdir build && cd build
 cmake .. -DCMAKE_BUILD_TYPE=Release
 make -j$(nproc)
 ctest --output-on-failure
-./tiny_llm_demo
 ```
 
-**Requirements**: CUDA Toolkit 11.0+, CMake 3.18+, C++17 compiler, NVIDIA GPU (Compute Capability 7.0+)
+### Usage Example
+
+```cpp
+#include <tiny_llm/inference_engine.h>
+
+ModelConfig config;
+config.vocab_size = 32000;
+config.hidden_dim = 4096;
+config.num_layers = 32;
+
+auto engine = InferenceEngine::load("model.bin", config).value();
+
+GenerationConfig gen;
+gen.max_new_tokens = 256;
+gen.temperature = 0.7f;
+
+auto output = engine.generate({1, 15043, 29892}, gen);
+```
 
 ---
 
-## GPU Architecture Support
+## 📚 Documentation
+
+| Resource | Description |
+|----------|-------------|
+| [📖 Documentation](https://lessup.github.io/tiny-llm/) | Project documentation homepage |
+| [🚀 Quick Start](https://lessup.github.io/tiny-llm/docs/en/QUICKSTART) | Installation and usage guide |
+| [🏗️ Architecture](https://lessup.github.io/tiny-llm/docs/en/ARCHITECTURE) | System design and components |
+| [📘 API Reference](https://lessup.github.io/tiny-llm/docs/en/API) | Complete API documentation |
+| [⚡ Benchmarks](https://lessup.github.io/tiny-llm/docs/en/BENCHMARKS) | Performance benchmarks |
+| [🔧 Troubleshooting](https://lessup.github.io/tiny-llm/docs/en/TROUBLESHOOTING) | Common issues and solutions |
+| [📝 Changelog](changelog/) | Version history |
+
+---
+
+## 🔌 GPU Support
 
 | Architecture | Compute Capability | Status |
 |--------------|-------------------|--------|
@@ -56,25 +106,7 @@ ctest --output-on-failure
 
 ---
 
-## Architecture
-
-```
-┌────────────────────────────────────────────────────────────┐
-│                  InferenceEngine                            │
-├────────────────────────────────────────────────────────────┤
-│  Model Loader ──► Weights (INT8 + FP16 scales)             │
-├────────────────────────────────────────────────────────────┤
-│  Transformer Layers × N                                    │
-│  ├── Attention: W8A16 MatMul + KV Cache + RoPE + Mask      │
-│  └── FFN: W8A16 MatMul + SwiGLU                            │
-├────────────────────────────────────────────────────────────┤
-│  Sampling: Greedy / Temperature / Top-k / Top-p            │
-└────────────────────────────────────────────────────────────┘
-```
-
----
-
-## Project Structure
+## 📁 Project Structure
 
 ```
 tiny-llm/
@@ -85,66 +117,53 @@ tiny-llm/
 ├── docs/                # Documentation (EN/ZH)
 │   ├── en/              # English docs
 │   └── zh/              # Chinese docs
-└── changelog/           # Changelog (EN/ZH)
+├── changelog/           # Changelog (EN/ZH)
+└── CMakeLists.txt       # Build configuration
 ```
 
 ---
 
-## Documentation
+## 🤝 Contributing
 
-| Resource | Description |
-|----------|-------------|
-| [📚 Documentation](https://lessup.github.io/tiny-llm/) | Project documentation homepage |
-| [🚀 Quick Start](https://lessup.github.io/tiny-llm/docs/en/QUICKSTART) | Installation and basic usage |
-| [🏗️ Architecture](https://lessup.github.io/tiny-llm/docs/en/ARCHITECTURE) | System design and components |
-| [📖 API Reference](https://lessup.github.io/tiny-llm/docs/en/API) | Complete API documentation |
-| [📝 Changelog](https://lessup.github.io/tiny-llm/changelog/) | Version history |
-| [🤝 Contributing](CONTRIBUTING.md) | Development guidelines |
+We welcome contributions! Please see [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
 
----
+### Quick Contributor Setup
 
-## Performance Highlights
+```bash
+# Fork and clone
+git clone https://github.com/your-username/tiny-llm.git
+cd tiny-llm
 
-| Optimization | Technique | Benefit |
-|--------------|-----------|---------|
-| Memory | W8A16 Quantization | ~50% weight memory reduction |
-| Compute | Tensor Core INT8 | Accelerated matrix multiplication |
-| Memory Bandwidth | Kernel Fusion | Reduced data movement |
-| Latency | KV Cache | O(1) incremental decoding |
+# Build with tests
+mkdir build && cd build
+cmake .. -DCMAKE_BUILD_TYPE=Debug -DBUILD_TESTS=ON
+make -j$(nproc)
 
----
-
-## Current Status
-
-**v2.0.1** — Core runtime, cache management, and test infrastructure are complete. The demo validates CUDA availability.
-
-### Roadmap
-
-- [ ] Full GGUF runtime loading support
-- [ ] Configurable `group_size` for W8A16 quantization
-- [ ] Paged Attention for efficient batching
-- [ ] Speculative decoding
+# Run checks
+ctest --output-on-failure
+clang-format -i src/*.cpp tests/*.cu
+```
 
 ---
 
-## Contributing
-
-We welcome contributions! Please see our [Contributing Guide](CONTRIBUTING.md) for details.
-
----
-
-## License
+## 📜 License
 
 This project is licensed under the [MIT License](LICENSE).
 
 ---
 
-## Acknowledgments
+## 🙏 Acknowledgments
 
 - Inspired by [llama.cpp](https://github.com/ggerganov/llama.cpp) and [vLLM](https://github.com/vllm-project/vllm)
 - Built with [GoogleTest](https://github.com/google/googletest) and [RapidCheck](https://github.com/emil-e/rapidcheck)
 
 ---
+
+<p align="center">
+  <a href="https://lessup.github.io/tiny-llm/">Documentation</a> •
+  <a href="https://github.com/LessUp/tiny-llm/releases">Releases</a> •
+  <a href="https://github.com/LessUp/tiny-llm/issues">Issues</a>
+</p>
 
 <p align="center">
   Made with ❤️ by the Tiny-LLM team

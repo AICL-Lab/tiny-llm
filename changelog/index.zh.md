@@ -6,7 +6,10 @@ description: "Tiny-LLM 版本历史和发布说明"
 
 # 更新日志
 
-Tiny-LLM 项目版本历史。
+本文档记录项目的所有重要变更。
+
+格式遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，
+版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/spec/v2.0.0.html)。
 
 ---
 
@@ -17,59 +20,69 @@ Tiny-LLM 项目版本历史。
 
 ---
 
-## 最近发布
+## 发布历史
 
-| 日期 | 版本 | 类型 | 摘要 |
-|------|---------|------|------|
-| 2026-04-16 | [v2.0.1](zh/v2.0.1) | Bug Fix | 尺度维度修复，代码清理 |
-| 2026-03-09 | [v2.0.0](zh/v2.0.0) | Core | KVCache API 重新设计，CMake 现代化 |
+### [未发布]
 
-## 文档与 CI 更新
-
-| 日期 | 版本 | 类型 | 摘要 |
-|------|---------|------|------|
-| 2026-03-13 | — | Docs/CI | 文档入口分离，CPU-safe CI |
-| 2026-03-10 | — | Docs/CI | GitHub Pages 完善，SEO |
-| 2025-02-13 | — | Infra | LICENSE，editorconfig，徽章 |
+- 文档重构，改进双语支持
+- 添加全面的故障排除指南
 
 ---
 
-## 版本类型说明
+### [2.0.1] — 2026-04-16
+
+#### 修复
+- **严重**: 测试工具中 `QuantizedWeight` 尺度维度计算错误
+- 移除注意力 kernel 中未使用的代码（`q_reg` 数组加载）
+
+**详情**: [English](../en/v2.0.1) | [中文](../zh/v2.0.1)
+
+---
+
+### [2.0.0] — 2026-03-09
+
+#### 变更 ⚠️ 破坏性变更
+- **API 重新设计**: KVCache `appendKV()` 现在无状态，需要显式调用 `advanceSeqLen()`
+- CMake 现代化，支持 target 导出和架构自动检测
+
+#### 新增
+- 包含自动格式检查的 CI 工作流
+- `tiny_llm::tiny_llm` CMake 别名 target
+
+**迁移指南**: 任何直接使用 KVCache 的代码都需要在所有层完成后调用 `advanceSeqLen()`。
+
+**详情**: [English](../en/v2.0.0) | [中文](../zh/v2.0.0)
+
+---
+
+### 基础设施与文档
+
+| 日期 | 描述 |
+|------|-------------|
+| 2026-03-13 | [文档与 CI 规范化](../zh/docs-ci-standardization) — CPU-safe CI，Pages 工作流修复 |
+| 2026-03-10 | [GitHub Pages 增强](../zh/pages-enhancement) — SEO、导航、README 改进 |
+| 2025-02-13 | [项目基础设施](../zh/project-infrastructure) — 许可证、编辑器配置、徽章 |
+
+---
+
+## 版本标签说明
 
 | 类型 | 说明 |
-|------|------|
-| **Core** | 核心功能变更 |
-| **Bug Fix** | Bug 修复 |
-| **Docs** | 文档变更 |
-| **CI** | CI/CD 变更 |
-| **Infra** | 基础设施变更 |
+|------|-------------|
+| 🔴 **破坏性变更** | 需要迁移的破坏性变更 |
+| 🟢 **新增** | 新功能 |
+| 🔵 **修复** | Bug 修复 |
+| 🟡 **变更** | 现有功能变更 |
+| 🟣 **安全** | 安全相关变更 |
 
 ---
 
-## 完整更新历史
+## 发布节奏
 
-### v2.0.1 (2026-04-16)
-
-**修复**:
-- Critical `QuantizedWeight` 尺度维度计算错误
-- 移除注意力 kernel 中未使用的代码
-
-[查看详情 →](zh/v2.0.1)
-
-### v2.0.0 (2026-03-09)
-
-**变更**:
-- **破坏性变更**: KVCache API 重新设计，新增 `advanceSeqLen()`
-- CMake 现代化
-
-[查看详情 →](zh/v2.0.0)
-
-### 早期更新
-
-- [GitHub Pages 完善](zh/pages-enhancement) (2026-03-10)
-- [文档与 CI 规范化](zh/docs-ci-standardization) (2026-03-13)
-- [项目基础设施](zh/project-infrastructure) (2025-02-13)
+- **补丁版本** (x.y.Z): Bug 修复，按需每月发布
+- **次要版本** (x.Y.z): 新功能，每季度发布
+- **主版本** (X.y.z): 破坏性变更，每年发布
 
 ---
 
-[← 返回首页](../)
+[← 返回首页](../) | [English Changelog](index) | [贡献指南](../CONTRIBUTING)

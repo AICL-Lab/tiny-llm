@@ -6,7 +6,10 @@ description: "Tiny-LLM version history and release notes"
 
 # Changelog
 
-Version history for the Tiny-LLM project.
+All notable changes to this project are documented in this file.
+
+The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
+and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
@@ -17,20 +20,48 @@ Version history for the Tiny-LLM project.
 
 ---
 
-## Recent Releases
+## Release History
 
-| Date | Version | Type | Summary |
-|------|---------|------|---------|
-| April 16, 2026 | [v2.0.1](en/v2.0.1) | Bug Fix | Scale dimension fix, code cleanup |
-| March 9, 2026 | [v2.0.0](en/v2.0.0) | Core | KVCache API redesign, CMake modernization |
+### [Unreleased]
 
-## Documentation & CI Updates
+- Documentation restructuring with improved bilingual support
+- Added comprehensive troubleshooting guides
 
-| Date | Version | Type | Summary |
-|------|---------|------|---------|
-| March 13, 2026 | — | Docs/CI | Documentation separation, CPU-safe CI |
-| March 10, 2026 | — | Docs/CI | GitHub Pages enhancement, SEO |
-| February 13, 2025 | — | Infra | LICENSE, editorconfig, badges |
+---
+
+### [2.0.1] — 2026-04-16
+
+#### Fixed
+- **CRITICAL**: `QuantizedWeight` scale dimension calculation error in test utilities
+- Removed unused code in attention kernel (`q_reg` array loading)
+
+**Details**: [English](en/v2.0.1) | [中文](zh/v2.0.1)
+
+---
+
+### [2.0.0] — 2026-03-09
+
+#### Changed  ⚠️ BREAKING
+- **API Redesign**: KVCache `appendKV()` is now stateless with explicit `advanceSeqLen()`
+- CMake modernization with target exports and architecture auto-detection
+
+#### Added
+- CI workflow with automated format checking
+- `tiny_llm::tiny_llm` CMake alias target
+
+**Migration Guide**: Update any direct KVCache usage to call `advanceSeqLen()` after all layers.
+
+**Details**: [English](en/v2.0.0) | [中文](zh/v2.0.0)
+
+---
+
+### Infrastructure & Documentation
+
+| Date | Description |
+|------|-------------|
+| 2026-03-13 | [Documentation & CI Standardization](en/docs-ci-standardization) — CPU-safe CI, Pages workflow fixes |
+| 2026-03-10 | [GitHub Pages Enhancement](en/pages-enhancement) — SEO, navigation, README improvements |
+| 2025-02-13 | [Project Infrastructure](en/project-infrastructure) — LICENSE, editorconfig, badges |
 
 ---
 
@@ -38,38 +69,20 @@ Version history for the Tiny-LLM project.
 
 | Type | Description |
 |------|-------------|
-| **Core** | Core functionality changes |
-| **Bug Fix** | Bug fixes |
-| **Docs** | Documentation changes |
-| **CI** | CI/CD changes |
-| **Infra** | Infrastructure changes |
+| 🔴 **Breaking** | Breaking changes requiring migration |
+| 🟢 **Added** | New features |
+| 🔵 **Fixed** | Bug fixes |
+| 🟡 **Changed** | Changes to existing functionality |
+| 🟣 **Security** | Security-related changes |
 
 ---
 
-## Full Changelog History
+## Release Schedule
 
-### v2.0.1 (2026-04-16)
-
-**Fixed**:
-- Critical `QuantizedWeight` scale dimension calculation error
-- Removed unused code in attention kernel
-
-[View Details →](en/v2.0.1)
-
-### v2.0.0 (2026-03-09)
-
-**Changed**:
-- **Breaking**: KVCache API redesign with `advanceSeqLen()`
-- CMake modernization
-
-[View Details →](en/v2.0.0)
-
-### Earlier Updates
-
-- [GitHub Pages Enhancement](en/pages-enhancement) (2026-03-10)
-- [Documentation & CI Standardization](en/docs-ci-standardization) (2026-03-13)
-- [Project Infrastructure](en/project-infrastructure) (2025-02-13)
+- **Patch releases** (x.y.Z): Bug fixes, monthly as needed
+- **Minor releases** (x.Y.z): New features, quarterly
+- **Major releases** (X.y.z): Breaking changes, annually
 
 ---
 
-[← Home](../)
+[← Home](../) | [中文更新日志](index.zh) | [Contributing](../CONTRIBUTING)
