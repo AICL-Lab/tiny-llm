@@ -48,6 +48,9 @@ concurrency:
   group: pages-${{ github.ref }}
   cancel-in-progress: true
 
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
 jobs:
   # ═══════════════════════════════════════════════════════════════
   # BUILD JOB
@@ -60,63 +63,16 @@ jobs:
         uses: actions/checkout@v4
         with:
           fetch-depth: 1
-          # Include all necessary files for PWA and theme
-          sparse-checkout: |
-            index.md
-            _config.yml
-            _includes/
-            _layouts/
-            _sass/
-            README.md
-            README.zh-CN.md
-            CONTRIBUTING.md
-            LICENSE
-            404.html
-            manifest.json
-            sw.js
-            docs/
-            changelog/
-            assets/
 
       - name: Setup Ruby
         uses: ruby/setup-ruby@v1
         with:
           ruby-version: '3.3'
-          bundler-cache: false
+          bundler-cache: true
 
       - name: Configure GitHub Pages
         id: pages
         uses: actions/configure-pages@v5
-        with:
-          enablement: true
-
-      - name: Cache dependencies
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/.gem
-            vendor/bundle
-          key: ${{ runner.os }}-gems-${{ hashFiles('**/Gemfile.lock') }}
-          restore-keys: |
-            ${{ runner.os }}-gems-
-
-      - name: Install Jekyll and dependencies
-        run: |
-          gem install bundler --no-document
-          bundle init || true
-          
-          # Core Jekyll and theme
-          bundle add jekyll \
-            just-the-docs \
-            jekyll-remote-theme \
-            jekyll-seo-tag \
-            jekyll-sitemap \
-            jekyll-github-metadata \
-            jekyll-include-cache
-          
-          # Additional plugins for enhanced functionality
-          bundle add kramdown \
-            rouge
 
       - name: Build site with Jekyll
         run: |
@@ -133,7 +89,7 @@ jobs:
           echo "Verifying PWA manifest and service worker..."
           test -f ./_site/manifest.json || echo "Warning: manifest.json not found"
           test -f ./_site/sw.js || echo "Warning: sw.js not found"
-          
+
           # List built assets
           echo "Built site structure:"
           ls -la ./_site/ | head -20
@@ -158,8 +114,6 @@ jobs:
       - name: Deploy to GitHub Pages
         id: deploy
         uses: actions/deploy-pages@v4
-        with:
-          token: ${{ secrets.GITHUB_TOKEN }}
 
   # ═══════════════════════════════════════════════════════════════
   # VALIDATION JOB (PR only)

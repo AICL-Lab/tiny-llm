@@ -15,6 +15,9 @@ permissions:
   contents: write
   packages: write
 
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
 jobs:
   validate:
     name: Validate Release
@@ -39,8 +42,8 @@ jobs:
             echo "::error::Invalid version format: $VERSION (expected vX.Y.Z)"
             exit 1
           fi
-          echo "version=$VERSION" >> $GITHUB_OUTPUT
-          echo "tag=$VERSION" >> $GITHUB_OUTPUT
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "tag=$VERSION" >> "$GITHUB_OUTPUT"
           echo "Version: $VERSION"
 
       - name: Check Tag Exists
@@ -121,24 +124,26 @@ jobs:
           # Check if changelog exists
           CHANGELOG_FILE="changelog/index.md"
           if [[ -f "$CHANGELOG_FILE" ]]; then
-            echo "release_notes<<EOF" >> $GITHUB_OUTPUT
-            echo "## Tiny-LLM $VERSION" >> $GITHUB_OUTPUT
-            echo "" >> $GITHUB_OUTPUT
-            echo "### Changes" >> $GITHUB_OUTPUT
-            echo "See [Changelog](https://lessup.github.io/tiny-llm/changelog/) for details." >> $GITHUB_OUTPUT
-            echo "" >> $GITHUB_OUTPUT
-            echo "### Installation" >> $GITHUB_OUTPUT
-            echo '```bash' >> $GITHUB_OUTPUT
-            echo "git clone https://github.com/LessUp/tiny-llm.git" >> $GITHUB_OUTPUT
-            echo "cd tiny-llm" >> $GITHUB_OUTPUT
-            echo "git checkout $VERSION" >> $GITHUB_OUTPUT
-            echo "mkdir build && cd build" >> $GITHUB_OUTPUT
-            echo "cmake .. -DCMAKE_BUILD_TYPE=Release" >> $GITHUB_OUTPUT
-            echo "make -j\$(nproc)" >> $GITHUB_OUTPUT
-            echo '```' >> $GITHUB_OUTPUT
-            echo "EOF" >> $GITHUB_OUTPUT
+            {
+              echo "release_notes<<EOF"
+              echo "## Tiny-LLM $VERSION"
+              echo ""
+              echo "### Changes"
+              echo "See [Changelog](https://lessup.github.io/tiny-llm/changelog/) for details."
+              echo ""
+              echo "### Installation"
+              echo '```bash'
+              echo "git clone https://github.com/LessUp/tiny-llm.git"
+              echo "cd tiny-llm"
+              echo "git checkout $VERSION"
+              echo "mkdir build && cd build"
+              echo "cmake .. -DCMAKE_BUILD_TYPE=Release"
+              echo "make -j\$(nproc)"
+              echo '```'
+              echo "EOF"
+            } >> "$GITHUB_OUTPUT"
           else
-            echo "release_notes=Release $VERSION" >> $GITHUB_OUTPUT
+            echo "release_notes=Release $VERSION" >> "$GITHUB_OUTPUT"
           fi
 
       - name: Create GitHub Release
