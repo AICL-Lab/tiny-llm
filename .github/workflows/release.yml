@@ -67,9 +67,7 @@ jobs:
         uses: Jimver/cuda-toolkit@v0.2.24
         with:
           cuda: '12.4.1'
-          sub-packages: |
-            nvcc
-            libcudart-dev
+          sub-packages: '["nvcc", "libcudart-dev"]'
 
       - name: Configure CMake
         run: |

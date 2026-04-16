@@ -85,9 +85,7 @@ jobs:
         uses: Jimver/cuda-toolkit@v0.2.24
         with:
           cuda: ${{ matrix.cuda }}
-          sub-packages: |
-            nvcc
-            libcudart-dev
+          sub-packages: '["nvcc", "libcudart-dev"]'
 
       - name: Verify CUDA
         run: |
