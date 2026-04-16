@@ -74,11 +74,17 @@ jobs:
       - name: Setup CUDA Environment
         run: |
           # Find CUDA installation
+          CUDA_HOME=""
           if [ -d "/usr/local/cuda" ]; then
             CUDA_HOME="/usr/local/cuda"
-          elif ls -d /usr/local/cuda-* 2>/dev/null | head -1; then
-            CUDA_HOME=$(ls -d /usr/local/cuda-* 2>/dev/null | head -1)
           else
+            CUDA_CANDIDATE=$(ls -d /usr/local/cuda-* 2>/dev/null | head -1 || true)
+            if [ -n "$CUDA_CANDIDATE" ]; then
+              CUDA_HOME="$CUDA_CANDIDATE"
+            fi
+          fi
+          
+          if [ -z "$CUDA_HOME" ]; then
             echo "CUDA not installed on runner"
             exit 1
           fi
