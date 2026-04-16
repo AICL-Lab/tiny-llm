@@ -62,13 +62,17 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
-          fetch-depth: 1
+          fetch-depth: 0
 
       - name: Setup Ruby
         uses: ruby/setup-ruby@v1
         with:
           ruby-version: '3.3'
-          bundler-cache: true
+          bundler-cache: false
+
+      - name: Install dependencies
+        run: |
+          bundle install
 
       - name: Configure GitHub Pages
         id: pages
