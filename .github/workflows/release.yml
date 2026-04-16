@@ -67,6 +67,7 @@ jobs:
         uses: Jimver/cuda-toolkit@v0.2.24
         with:
           cuda: '12.4.1'
+          method: network
           sub-packages: '["nvcc", "libcudart-dev"]'
 
       - name: Configure CMake
