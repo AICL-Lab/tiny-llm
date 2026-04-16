@@ -1,0 +1,26 @@
+# ═══════════════════════════════════════════════════════════════
+# Development Configuration for Local Testing
+# Usage: bundle exec jekyll serve --config _config.yml,_config_dev.yml
+# ═══════════════════════════════════════════════════════════════
+
+# Local development URL
+url: "http://localhost"
+baseurl: ""
+
+# Disable analytics and production-only features
+google_analytics: false
+
+# Verbose output for debugging
+verbose: true
+
+# Livereload for development
+livereload: true
+
+# Show drafts
+drafts: true
+
+# Future posts
+future: true
+
+# Limit posts for faster build
+limit_posts: 10

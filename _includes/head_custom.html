@@ -1,0 +1,112 @@
+<!-- ═══════════════════════════════════════════════════════════════
+     Tiny-LLM Custom Head - Advanced Features
+     Features: PWA, Theme Toggle, Custom Fonts, Analytics
+     ═══════════════════════════════════════════════════════════════ -->
+
+<!-- PWA Manifest -->
+<link rel="manifest" href="{{ '/manifest.json' | relative_url }}">
+
+<!-- Theme Color for Mobile Browsers -->
+<meta name="theme-color" content="#0d1117" media="(prefers-color-scheme: dark)">
+<meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)">
+
+<!-- Apple Touch Icons -->
+<link rel="apple-touch-icon" sizes="180x180" href="{{ '/assets/icons/icon-192x192.png' | relative_url }}">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Tiny-LLM">
+
+<!-- Microsoft Tiles -->
+<meta name="msapplication-TileColor" content="#0d1117">
+<meta name="msapplication-TileImage" content="{{ '/assets/icons/icon-144x144.png' | relative_url }}">
+
+<!-- Preconnect for Performance -->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+
+<!-- Custom Fonts -->
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+
+<!-- Custom Styles -->
+<link rel="stylesheet" href="{{ '/assets/css/custom.css' | relative_url }}">
+
+<!-- Mermaid Support -->
+<script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
+
+<!-- Theme Toggle Script (Inline for Performance) -->
+<script>
+  // Check for saved theme preference or prefer-color-scheme
+  (function() {
+    const savedTheme = localStorage.getItem('theme');
+    const systemDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+    const initialTheme = savedTheme || (systemDark ? 'dark' : 'light');
+    document.documentElement.setAttribute('data-theme', initialTheme);
+  })();
+</script>
+
+<!-- Service Worker Registration -->
+<script>
+  if ('serviceWorker' in navigator) {
+    window.addEventListener('load', function() {
+      navigator.serviceWorker.register('{{ "/sw.js" | relative_url }}').then(function(registration) {
+        console.log('SW registered: ', registration.scope);
+      }).catch(function(error) {
+        console.log('SW registration failed: ', error);
+      });
+    });
+  }
+</script>
+
+<!-- Structured Data: SoftwareApplication -->
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "SoftwareApplication",
+  "name": "Tiny-LLM",
+  "description": "High-Performance CUDA Inference Engine for LLMs with W8A16 Quantization",
+  "applicationCategory": "DeveloperApplication",
+  "operatingSystem": "Linux",
+  "programmingLanguage": ["C++", "CUDA"],
+  "softwareVersion": "{{ site.version }}",
+  "license": "https://github.com/LessUp/tiny-llm/blob/master/LICENSE",
+  "codeRepository": "https://github.com/LessUp/tiny-llm",
+  "downloadUrl": "https://github.com/LessUp/tiny-llm/releases",
+  "author": {
+    "@type": "Organization",
+    "name": "LessUp"
+  },
+  "offers": {
+    "@type": "Offer",
+    "price": "0",
+    "priceCurrency": "USD"
+  }
+}
+</script>
+
+<!-- Structured Data: TechArticle for Documentation -->
+{% if page.layout == 'page' or page.layout == 'default' %}
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "TechArticle",
+  "headline": "{{ page.title | escape }}",
+  "description": "{{ page.description | default: site.description | escape }}",
+  "author": {
+    "@type": "Organization",
+    "name": "LessUp"
+  },
+  "publisher": {
+    "@type": "Organization",
+    "name": "LessUp",
+    "logo": {
+      "@type": "ImageObject",
+      "url": "{{ site.url }}{{ site.baseurl }}/assets/images/logo.png"
+    }
+  },
+  "mainEntityOfPage": {
+    "@type": "WebPage",
+    "@id": "{{ site.url }}{{ site.baseurl }}{{ page.url }}"
+  }
+}
+</script>
+{% endif %}

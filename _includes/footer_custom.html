@@ -1,0 +1,295 @@
+<!-- ═══════════════════════════════════════════════════════════════
+     Tiny-LLM Custom Footer - Theme Toggle & Updates
+     ═══════════════════════════════════════════════════════════════ -->
+
+<!-- Theme Toggle Button -->
+<div class="theme-toggle">
+  <button id="theme-toggle-btn" aria-label="Toggle dark/light theme">
+    <span class="theme-icon-light" style="display: none;">☀️</span>
+    <span class="theme-icon-dark">🌙</span>
+  </button>
+</div>
+
+<!-- Quick Links Section -->
+<div class="footer-links">
+  <h4>Quick Links</h4>
+  <div class="footer-grid">
+    <div>
+      <h5>Documentation</h5>
+      <ul>
+        <li><a href="{{ site.baseurl }}/docs/en/QUICKSTART">Quick Start</a></li>
+        <li><a href="{{ site.baseurl }}/docs/en/ARCHITECTURE">Architecture</a></li>
+        <li><a href="{{ site.baseurl }}/docs/en/API">API Reference</a></li>
+      </ul>
+    </div>
+    <div>
+      <h5>Resources</h5>
+      <ul>
+        <li><a href="{{ site.baseurl }}/changelog/">Changelog</a></li>
+        <li><a href="https://github.com/LessUp/tiny-llm/releases">Releases</a></li>
+        <li><a href="{{ site.baseurl }}/docs/en/TROUBLESHOOTING">Troubleshooting</a></li>
+      </ul>
+    </div>
+    <div>
+      <h5>Community</h5>
+      <ul>
+        <li><a href="https://github.com/LessUp/tiny-llm">GitHub</a></li>
+        <li><a href="{{ site.baseurl }}/CONTRIBUTING">Contributing</a></li>
+        <li><a href="{{ site.baseurl }}/docs/en/DEVELOPER">Developer Guide</a></li>
+      </ul>
+    </div>
+  </div>
+</div>
+
+<!-- PWA Update Notification -->
+<div id="update-notification" class="update-notification" style="display: none;">
+  <div class="update-content">
+    <span>📦 New version available!</span>
+    <button id="update-app-btn">Update Now</button>
+    <button id="dismiss-update-btn">Later</button>
+  </div>
+</div>
+
+<!-- Theme Toggle Script -->
+<script>
+  (function() {
+    const toggleBtn = document.getElementById('theme-toggle-btn');
+    const lightIcon = document.querySelector('.theme-icon-light');
+    const darkIcon = document.querySelector('.theme-icon-dark');
+    
+    // Check current theme
+    function updateIcons() {
+      const currentTheme = document.documentElement.getAttribute('data-theme') || 'dark';
+      if (currentTheme === 'dark') {
+        lightIcon.style.display = 'none';
+        darkIcon.style.display = 'block';
+      } else {
+        lightIcon.style.display = 'block';
+        darkIcon.style.display = 'none';
+      }
+    }
+    
+    // Initial icon state
+    updateIcons();
+    
+    // Toggle handler
+    toggleBtn.addEventListener('click', function() {
+      const currentTheme = document.documentElement.getAttribute('data-theme') || 'dark';
+      const newTheme = currentTheme === 'dark' ? 'light' : 'dark';
+      
+      document.documentElement.setAttribute('data-theme', newTheme);
+      localStorage.setItem('theme', newTheme);
+      
+      updateIcons();
+    });
+    
+    // Listen for system theme changes
+    window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', function(e) {
+      if (!localStorage.getItem('theme')) {
+        const newTheme = e.matches ? 'dark' : 'light';
+        document.documentElement.setAttribute('data-theme', newTheme);
+        updateIcons();
+      }
+    });
+    
+    // PWA Update handling
+    if ('serviceWorker' in navigator) {
+      let refreshing = false;
+      
+      navigator.serviceWorker.addEventListener('message', function(event) {
+        if (event.data.type === 'UPDATE_AVAILABLE') {
+          showUpdateNotification();
+        }
+      });
+      
+      // Check for updates periodically
+      setInterval(function() {
+        navigator.serviceWorker.ready.then(function(registration) {
+          registration.update();
+        });
+      }, 60000); // Check every minute
+      
+      function showUpdateNotification() {
+        const notification = document.getElementById('update-notification');
+        notification.style.display = 'block';
+        
+        document.getElementById('update-app-btn').addEventListener('click', function() {
+          if (confirm('Update to latest version? The page will reload.')) {
+            navigator.serviceWorker.ready.then(function(registration) {
+              registration.waiting?.postMessage({ type: 'SKIP_WAITING' });
+            });
+          }
+        });
+        
+        document.getElementById('dismiss-update-btn').addEventListener('click', function() {
+          notification.style.display = 'none';
+        });
+      }
+      
+      navigator.serviceWorker.addEventListener('controllerchange', function() {
+        if (!refreshing) {
+          refreshing = true;
+          window.location.reload();
+        }
+      });
+    }
+  })();
+</script>
+
+<style>
+.footer-links {
+  margin-top: 2rem;
+  padding-top: 2rem;
+  border-top: 1px solid var(--color-border-primary);
+}
+
+.footer-links h4 {
+  margin-bottom: 1rem;
+  color: var(--color-text-primary);
+  font-size: 1.1rem;
+}
+
+.footer-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 1.5rem;
+}
+
+.footer-grid h5 {
+  font-size: 0.9rem;
+  color: var(--color-text-secondary);
+  margin-bottom: 0.5rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.footer-grid ul {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+.footer-grid li {
+  margin: 0.3rem 0;
+}
+
+.footer-grid a {
+  color: var(--color-text-tertiary);
+  font-size: 0.875rem;
+  text-decoration: none;
+  transition: color 0.2s;
+}
+
+.footer-grid a:hover {
+  color: var(--color-text-link);
+}
+
+.theme-toggle {
+  position: fixed;
+  bottom: 2rem;
+  right: 2rem;
+  z-index: 1000;
+}
+
+.theme-toggle button {
+  width: 50px;
+  height: 50px;
+  border-radius: 50%;
+  background: var(--color-bg-elevated);
+  border: 1px solid var(--color-border-primary);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+  cursor: pointer;
+  font-size: 1.5rem;
+  transition: all 0.3s ease;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.theme-toggle button:hover {
+  transform: scale(1.1);
+  box-shadow: 0 0 20px rgba(88, 166, 255, 0.4);
+}
+
+.update-notification {
+  position: fixed;
+  bottom: 6rem;
+  right: 2rem;
+  background: var(--color-bg-elevated);
+  border: 1px solid var(--color-brand-primary);
+  border-radius: 8px;
+  padding: 1rem 1.5rem;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.4);
+  z-index: 1001;
+  animation: slideIn 0.3s ease;
+}
+
+.update-content {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  font-size: 0.9rem;
+}
+
+.update-content button {
+  padding: 0.4rem 1rem;
+  border-radius: 4px;
+  border: none;
+  cursor: pointer;
+  font-size: 0.85rem;
+  transition: all 0.2s;
+}
+
+#update-app-btn {
+  background: var(--color-brand-primary);
+  color: white;
+}
+
+#update-app-btn:hover {
+  background: var(--color-text-link-hover);
+}
+
+#dismiss-update-btn {
+  background: transparent;
+  color: var(--color-text-secondary);
+  border: 1px solid var(--color-border-primary);
+}
+
+#dismiss-update-btn:hover {
+  background: var(--color-bg-tertiary);
+}
+
+@keyframes slideIn {
+  from {
+    opacity: 0;
+    transform: translateY(20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@media (max-width: 600px) {
+  .footer-grid {
+    grid-template-columns: 1fr;
+  }
+  
+  .theme-toggle {
+    bottom: 1rem;
+    right: 1rem;
+  }
+  
+  .theme-toggle button {
+    width: 44px;
+    height: 44px;
+    font-size: 1.25rem;
+  }
+  
+  .update-notification {
+    left: 1rem;
+    right: 1rem;
+    bottom: 5rem;
+  }
+}
+</style>
