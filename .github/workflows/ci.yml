@@ -73,9 +73,14 @@ jobs:
 
       - name: Verify CUDA
         run: |
-          nvcc --version || echo "CUDA not found, checking alternative paths..."
-          ls -la /usr/local/cuda*/bin/nvcc 2>/dev/null || echo "No CUDA toolkit found"
-          echo "CUDA_PATH=${CUDA_PATH:-/usr/local/cuda}" >> $GITHUB_ENV
+          # Add CUDA to PATH
+          echo "/usr/local/cuda/bin" >> $GITHUB_PATH
+          echo "CUDA_PATH=/usr/local/cuda" >> $GITHUB_ENV
+          echo "CUDACXX=/usr/local/cuda/bin/nvcc" >> $GITHUB_ENV
+          
+          # Verify CUDA is accessible
+          nvcc --version
+          which nvcc
 
       - name: Cache CMake Build
         uses: actions/cache@v4
