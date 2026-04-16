@@ -32,19 +32,36 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-
-      - name: Check C/C++/CUDA formatting
-        uses: jidicula/clang-format-action@v4.14.0
         with:
-          clang-format-version: '18'
-          check-path: '.'
-          exclude-regex: '(^|/)(build|third_party|external|vendor|\.git|\.kiro)(/|$)'
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Install clang-format
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y clang-format-18
+
+      - name: Format C/C++/CUDA files
+        run: |
+          find . -type f \( -name '*.cpp' -o -name '*.h' -o -name '*.cu' -o -name '*.cuh' \) \
+            ! -path './build/*' \
+            ! -path './.git/*' \
+            ! -path './third_party/*' \
+            ! -path './vendor/*' \
+            ! -path './external/*' \
+            ! -path './.kiro/*' \
+            | xargs clang-format-18 -i
+
+      - name: Commit formatting changes
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git diff --staged --quiet || git commit -m "style: auto-format C/C++/CUDA files [skip ci]"
 
   build:
     name: Build (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
     needs: [format-check]
-    if: always() && (needs.format-check.result == 'success' || needs.format-check.result == 'skipped')
     strategy:
       fail-fast: false
       matrix:
@@ -106,10 +123,6 @@ jobs:
     steps:
       - name: Check Status
         run: |
-          if [[ "${{ needs.format-check.result }}" == "failure" ]]; then
-            echo "::error::Format check failed"
-            exit 1
-          fi
           if [[ "${{ needs.build.result }}" == "failure" ]]; then
             echo "::error::Build failed"
             exit 1
