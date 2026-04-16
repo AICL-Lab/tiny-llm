@@ -1,26 +1,50 @@
 title: Tiny-LLM
-description: Lightweight LLM Inference Engine — W8A16 quantization, KV Cache, multi-sampling strategies
+description: Lightweight LLM Inference Engine — W8A16 quantization, KV Cache, CUDA kernels
+author: LessUp
+url: https://lessup.github.io
+baseurl: /tiny-llm
+lang: en
+
+# Theme
 remote_theme: pages-themes/cayman@v0.2.0
+show_downloads: false
+repository: LessUp/tiny-llm
+
+# Plugins
 plugins:
   - jekyll-remote-theme
   - jekyll-seo-tag
-repository: LessUp/tiny-llm
-show_downloads: false
+  - jekyll-sitemap
 
-# SEO & metadata
-url: https://lessup.github.io
-baseurl: /tiny-llm
-lang: zh-CN
-author: LessUp
+# Navigation
+header_pages:
+  - index.md
+  - docs/index.md
+  - docs/en/README.md
+  - docs/zh/README.md
+  - CONTRIBUTING.md
 
-# Markdown rendering
+# Markdown
 markdown: kramdown
 kramdown:
   input: GFM
   hard_wrap: false
   syntax_highlighter: rouge
+  syntax_highlighter_opts:
+    block:
+      line_numbers: false
 
-# Default layout for all pages
+# SEO
+twitter:
+  username: lessup
+  card: summary
+
+social:
+  name: LessUp
+  links:
+    - https://github.com/LessUp
+
+# Defaults
 defaults:
   - scope:
       path: ""
@@ -30,8 +54,28 @@ defaults:
       path: "changelog"
     values:
       layout: default
+  - scope:
+      path: "changelog/en"
+    values:
+      layout: default
+  - scope:
+      path: "changelog/zh"
+    values:
+      layout: default
+  - scope:
+      path: "docs"
+    values:
+      layout: default
+  - scope:
+      path: "docs/en"
+    values:
+      layout: default
+  - scope:
+      path: "docs/zh"
+    values:
+      layout: default
 
-# Exclude source code and build artifacts from Jekyll build
+# Exclude
 exclude:
   - .git
   - .github
@@ -54,3 +98,11 @@ exclude:
   - Gemfile
   - Gemfile.lock
   - vendor
+  - "*.cpp"
+  - "*.cu"
+  - "*.cuh"
+  - "*.h"
+
+# Include
+include:
+  - 404.html

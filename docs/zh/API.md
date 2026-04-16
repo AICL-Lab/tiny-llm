@@ -1,12 +1,13 @@
 ---
 layout: default
 title: "API 参考 — Tiny-LLM"
-description: "Tiny-LLM 推理引擎公共接口文档"
+description: "Tiny-LLM 推理引擎公共接口完整文档"
+nav_order: 3
 ---
 
 # API 参考
 
-Tiny-LLM 推理引擎的公共接口文档。
+Tiny-LLM 推理引擎的完整公共接口文档。
 
 ---
 
@@ -24,7 +25,7 @@ Tiny-LLM 推理引擎的公共接口文档。
 
 ### ModelConfig
 
-模型配置结构体。
+模型配置结构体，定义模型的核心参数。
 
 ```cpp
 struct ModelConfig {
@@ -43,9 +44,23 @@ struct ModelConfig {
 };
 ```
 
+**参数说明**:
+
+| 参数 | 说明 | 典型值 |
+|------|------|--------|
+| `vocab_size` | 词表大小 | 32000 (LLaMA), 100277 (Qwen) |
+| `hidden_dim` | 隐藏层维度 | 4096 (7B), 5120 (13B) |
+| `num_layers` | Transformer 层数 | 32 (7B), 40 (13B) |
+| `num_heads` | 注意力头数 | 32 (7B) |
+| `num_kv_heads` | KV 头数 (GQA) | 32 (MHA), 8 (GQA) |
+| `head_dim` | 每头维度 | 128 |
+| `intermediate_dim` | FFN 中间层 | 11008 (7B) |
+| `max_seq_len` | 最大序列长度 | 2048, 4096, 8192 |
+| `rope_theta` | RoPE 基频 | 10000.0, 1000000.0 |
+
 ### GenerationConfig
 
-生成配置结构体。
+生成配置结构体，控制文本生成行为。
 
 ```cpp
 struct GenerationConfig {
@@ -54,13 +69,22 @@ struct GenerationConfig {
     int top_k = 50;               // Top-k 参数
     float top_p = 0.9f;           // Top-p 参数
     bool do_sample = false;       // 是否采样 (false=贪婪)
-    float repetition_penalty = 1.0f;
+    float repetition_penalty = 1.0f;  // 重复惩罚系数
 };
 ```
 
+**采样参数说明**:
+
+| 参数 | 范围 | 说明 |
+|------|------|------|
+| `temperature` | 0.0 - 2.0 | 越低越确定，越高越随机 |
+| `top_k` | 1 - vocab_size | 只从概率最高的 k 个 token 采样 |
+| `top_p` | 0.0 - 1.0 | 核采样，从累积概率达到 p 的 token 中采样 |
+| `repetition_penalty` | 1.0 - 2.0 | >1.0 惩罚重复 token |
+
 ### QuantizedWeight
 
-量化权重结构体。
+量化权重结构体，INT8 权重 + FP16 缩放因子。
 
 ```cpp
 struct QuantizedWeight {
@@ -82,9 +106,24 @@ struct QuantizedWeight {
 };
 ```
 
+**内存布局**:
+
+```
+权重: INT8 [rows, cols]
+      ┌─────────────────┐
+      │  group 0 (128)  │ ──► scale[0, :]
+      ├─────────────────┤
+      │  group 1 (128)  │ ──► scale[1, :]
+      ├─────────────────┤
+      │      ...        │
+      └─────────────────┘
+      
+缩放因子: FP16 [ceil(rows/128), cols]
+```
+
 ### GenerationStats
 
-生成统计结构体。
+生成统计结构体，记录性能指标。
 
 ```cpp
 struct GenerationStats {
@@ -103,7 +142,7 @@ struct GenerationStats {
 
 ### InferenceEngine
 
-推理引擎主类。
+推理引擎主类，提供完整的推理能力。
 
 ```cpp
 #include <tiny_llm/inference_engine.h>
@@ -137,31 +176,52 @@ public:
 };
 ```
 
-**使用示例**:
+**完整使用示例**:
 
 ```cpp
-ModelConfig config;
-config.vocab_size = 32000;
-config.hidden_dim = 4096;
+#include <tiny_llm/inference_engine.h>
+#include <iostream>
 
-auto result = InferenceEngine::load("model.bin", config);
-if (result.isErr()) {
-    std::cerr << "Error: " << result.error() << std::endl;
-    return 1;
+int main() {
+    // 1. 配置模型参数
+    ModelConfig config;
+    config.vocab_size = 32000;
+    config.hidden_dim = 4096;
+    config.num_layers = 32;
+    config.num_heads = 32;
+    config.max_seq_len = 2048;
+    
+    // 2. 加载模型
+    auto result = InferenceEngine::load("model.bin", config);
+    if (result.isErr()) {
+        std::cerr << "Error: " << result.error() << std::endl;
+        return 1;
+    }
+    auto engine = std::move(result.value());
+    
+    // 3. 配置生成参数
+    GenerationConfig gen_config;
+    gen_config.max_new_tokens = 100;
+    gen_config.temperature = 0.7f;
+    gen_config.top_p = 0.9f;
+    gen_config.do_sample = true;
+    
+    // 4. 生成文本
+    std::vector<int> prompt = {1, 15043, 29892};  // "Hello," tokens
+    auto output = engine->generate(prompt, gen_config);
+    
+    // 5. 查看性能统计
+    const auto& stats = engine->getStats();
+    std::cout << "生成速度: " << stats.tokens_per_second << " tokens/s" << std::endl;
+    std::cout << "显存峰值: " << stats.peak_memory_bytes / 1024 / 1024 << " MB" << std::endl;
+    
+    return 0;
 }
-
-auto engine = std::move(result.value());
-
-GenerationConfig gen_config;
-gen_config.max_new_tokens = 100;
-gen_config.do_sample = true;
-
-auto output = engine->generate({1, 2, 3}, gen_config);
 ```
 
 ### KVCacheManager
 
-KV Cache 管理器。
+KV Cache 管理器，管理增量解码的 key-value 缓存。
 
 ```cpp
 #include <tiny_llm/kv_cache.h>
@@ -205,13 +265,19 @@ public:
 };
 ```
 
-**关键设计**:
-- `appendKV`: 无状态写入，所有层都写在 `current_len` 位置
-- `advanceSeqLen`: 显式调用，一次推进序列长度
+**关键设计模式**:
+
+```cpp
+// 正确的使用模式
+for (auto &layer : layers_) {
+    layer->forward(hidden_states, *kv_cache_, seq_id, position, stream_);
+}
+kv_cache_->advanceSeqLen(seq_id, 1);  // 显式更新长度
+```
 
 ### TransformerLayer
 
-Transformer 层。
+Transformer 层实现。
 
 ```cpp
 #include <tiny_llm/transformer.h>
@@ -423,6 +489,28 @@ public:
 };
 ```
 
+**使用示例**:
+
+```cpp
+Result<int> parseInt(const std::string& s) {
+    try {
+        return Result<int>::ok(std::stoi(s));
+    } catch (...) {
+        return Result<int>::err("Invalid integer");
+    }
+}
+
+auto result = parseInt("42");
+if (result.isOk()) {
+    std::cout << "Value: " << result.value() << std::endl;
+} else {
+    std::cerr << "Error: " << result.error() << std::endl;
+}
+
+// 或使用默认值
+int val = parseInt("abc").valueOr(0);  // val = 0
+```
+
 ### CudaException
 
 CUDA 错误异常。
@@ -486,6 +574,20 @@ public:
 };
 ```
 
+**使用示例**:
+
+```cpp
+// 分配设备内存
+DeviceBuffer<float> d_buffer(1024);
+
+// 从主机复制数据
+std::vector<float> h_data(1024, 1.0f);
+d_buffer.copyFromHost(h_data.data(), h_data.size());
+
+// 使用数据
+kernel<<<grid, block>>>(d_buffer.data());
+```
+
 ### CudaStream
 
 CUDA Stream RAII 封装。
@@ -541,6 +643,20 @@ public:
 };
 ```
 
+**使用示例**:
+
+```cpp
+CudaEvent start, end;
+
+start.record(stream);
+kernel<<<grid, block, 0, stream>>>(...);
+end.record(stream);
+
+end.synchronize();
+float elapsed = CudaEvent::elapsedMs(start, end);
+std::cout << "Kernel time: " << elapsed << " ms" << std::endl;
+```
+
 ---
 
 ## 内存对齐
@@ -556,4 +672,6 @@ inline void* allocateAligned(size_t size);
 
 ---
 
-[← 返回首页](../) | [更新日志](../changelog/) | [贡献指南](../CONTRIBUTING)
+**Languages**: [English](../en/API) | [中文](API)
+
+[← 返回首页](../../) | [更新日志](../../changelog/) | [贡献指南](../../CONTRIBUTING)

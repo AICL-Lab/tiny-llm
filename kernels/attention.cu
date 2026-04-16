@@ -32,18 +32,6 @@ __global__ void attention_decode_kernel(
   float *scores = shared;                  // [seq_len]
   float *shared_reduce = shared + seq_len; // [32] for reduction
 
-  // Load query to registers (each thread loads part)
-  float
-      q_reg[8]; // Assume head_dim <= 256, each thread handles up to 8 elements
-  int elems_per_thread = (head_dim + block_size - 1) / block_size;
-  for (int i = 0; i < elems_per_thread && tid * elems_per_thread + i < head_dim;
-       ++i) {
-    int idx = tid * elems_per_thread + i;
-    if (idx < head_dim) {
-      q_reg[i] = __half2float(q[idx]);
-    }
-  }
-
   // Compute attention scores: Q @ K^T
   for (int pos = tid; pos < seq_len; pos += block_size) {
     float score = 0.0f;

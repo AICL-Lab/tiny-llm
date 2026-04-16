@@ -1,0 +1,163 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Release version (e.g., v2.0.2)'
+        required: true
+        type: string
+
+permissions:
+  contents: write
+  packages: write
+
+jobs:
+  validate:
+    name: Validate Release
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      tag: ${{ steps.version.outputs.tag }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Determine Version
+        id: version
+        run: |
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            VERSION="${{ github.event.inputs.version }}"
+          else
+            VERSION="${GITHUB_REF#refs/tags/}"
+          fi
+          # Validate version format
+          if [[ ! "$VERSION" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::error::Invalid version format: $VERSION (expected vX.Y.Z)"
+            exit 1
+          fi
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "tag=$VERSION" >> $GITHUB_OUTPUT
+          echo "Version: $VERSION"
+
+      - name: Check Tag Exists
+        if: github.event_name == 'workflow_dispatch'
+        run: |
+          git fetch --tags
+          if git tag | grep -q "^${{ steps.version.outputs.tag }}$"; then
+            echo "::error::Tag ${{ steps.version.outputs.tag }} already exists"
+            exit 1
+          fi
+
+  build:
+    name: Build Release Artifacts
+    needs: validate
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install CUDA Toolkit
+        uses: Jimver/cuda-toolkit@v0.2.24
+        with:
+          cuda: '12.4.1'
+          sub-packages: |
+            nvcc
+            libcudart-dev
+
+      - name: Configure CMake
+        run: |
+          cmake -S . -B build \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DBUILD_TESTS=ON
+
+      - name: Build
+        run: cmake --build build -j$(nproc)
+
+      - name: Run Tests
+        working-directory: build
+        run: ctest --output-on-failure --timeout 300
+
+      - name: Prepare Release Artifacts
+        run: |
+          mkdir -p release
+          cp build/tiny_llm_demo release/ 2>/dev/null || true
+          cp -r include release/ 2>/dev/null || true
+          cp CMakeLists.txt release/ 2>/dev/null || true
+          tar -czvf tiny-llm-${{ needs.validate.outputs.version }}-linux-x64.tar.gz -C release . 2>/dev/null || echo "No binaries to package"
+
+      - name: Upload Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-artifacts
+          path: |
+            *.tar.gz
+          retention-days: 7
+
+  release:
+    name: Create Release
+    needs: [validate, build]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Download Artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: release-artifacts
+          path: ./artifacts
+
+      - name: Generate Release Notes
+        id: notes
+        run: |
+          VERSION="${{ needs.validate.outputs.version }}"
+          # Extract version without 'v' prefix
+          VER_NUM="${VERSION#v}"
+
+          # Check if changelog exists
+          CHANGELOG_FILE="changelog/index.md"
+          if [[ -f "$CHANGELOG_FILE" ]]; then
+            echo "release_notes<<EOF" >> $GITHUB_OUTPUT
+            echo "## Tiny-LLM $VERSION" >> $GITHUB_OUTPUT
+            echo "" >> $GITHUB_OUTPUT
+            echo "### Changes" >> $GITHUB_OUTPUT
+            echo "See [Changelog](https://lessup.github.io/tiny-llm/changelog/) for details." >> $GITHUB_OUTPUT
+            echo "" >> $GITHUB_OUTPUT
+            echo "### Installation" >> $GITHUB_OUTPUT
+            echo '```bash' >> $GITHUB_OUTPUT
+            echo "git clone https://github.com/LessUp/tiny-llm.git" >> $GITHUB_OUTPUT
+            echo "cd tiny-llm" >> $GITHUB_OUTPUT
+            echo "git checkout $VERSION" >> $GITHUB_OUTPUT
+            echo "mkdir build && cd build" >> $GITHUB_OUTPUT
+            echo "cmake .. -DCMAKE_BUILD_TYPE=Release" >> $GITHUB_OUTPUT
+            echo "make -j\$(nproc)" >> $GITHUB_OUTPUT
+            echo '```' >> $GITHUB_OUTPUT
+            echo "EOF" >> $GITHUB_OUTPUT
+          else
+            echo "release_notes=Release $VERSION" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ needs.validate.outputs.tag }}
+          name: Tiny-LLM ${{ needs.validate.outputs.version }}
+          body: ${{ steps.notes.outputs.release_notes }}
+          draft: false
+          prerelease: ${{ contains(needs.validate.outputs.version, '-rc') || contains(needs.validate.outputs.version, '-beta') || contains(needs.validate.outputs.version, '-alpha') }}
+          files: |
+            artifacts/*.tar.gz
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Create Tag (if workflow_dispatch)
+        if: github.event_name == 'workflow_dispatch'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git tag -a ${{ needs.validate.outputs.tag }} -m "Release ${{ needs.validate.outputs.version }}"
+          git push origin ${{ needs.validate.outputs.tag }}

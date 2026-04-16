@@ -1,47 +1,101 @@
 ---
-title: "2026-03-10 — GitHub Pages 完善"
+layout: default
+title: "GitHub Pages 完善与优化 (2026-03-10)"
+description: "SEO 配置、导航完善、文档结构优化、sparse checkout"
+nav_order: 3
 ---
 
-# 2026-03-10 — GitHub Pages 完善
+# 2026-03-10 — GitHub Pages 完善与优化
 
-## 文档页面 Jekyll 集成
+**类型**: 文档 / CI
 
-1. **`docs/API.md` 添加 YAML frontmatter** — title + description，Jekyll 正确渲染为独立页面
-2. **`CONTRIBUTING.md` 添加 YAML frontmatter** — 同上
-3. **`docs/API.md` 添加导航页脚** — 返回首页 / 更新日志 / 贡献指南
-4. **`CONTRIBUTING.md` 添加导航页脚** — 返回首页 / API 参考 / 更新日志
+---
 
-## Jekyll 配置补全 (`_config.yml`)
+## Jekyll 配置增强
 
-5. **补全 exclude 列表** — 新增 `.vscode`、`.cache`、`.gitattributes`，防止非文档文件被 Jekyll 处理
+**文件**: `_config.yml`
 
-## 首页增强 (`index.md`)
+| 配置项 | 变更 |
+|--------|------|
+| SEO 元数据 | 添加 `url`、`baseurl`、`lang`、`author` |
+| SEO 插件 | 添加 `jekyll-seo-tag`（自动注入 Open Graph / Twitter Card） |
+| Markdown | 明确 `kramdown` + GFM 输入 + `rouge` 语法高亮 |
+| 默认布局 | 全局 `layout: default`，changelog 目录也应用默认布局 |
+| 排除列表 | 排除源代码（`include`/`kernels`/`src`/`tests`）、构建配置等 |
 
-6. **添加 CI/Pages 徽章** — 与 README 保持一致
-7. **切换为中文文案** — 核心特性、采样策略、快速开始等 section 使用中文
-8. **添加"工程质量"特性项** — CI 流水线、clang-format、RAII、Result 错误处理
-9. **扩展架构图** — 新增 StreamPool、KV Cache Manager、Result 错误处理、Elementwise/Warp Utilities 层
-10. **添加完整项目结构** — 列出所有头文件、kernel、源文件及其功能描述
-11. **添加"性能优化"表格** — 6 项优化技术：tiling、warp shuffle、融合反量化、合并访问、预分配、多流
-12. **添加"GPU 架构支持"表格** — Volta → Hopper 全系列
-13. **扩展测试 section** — 增加 Transformer、Integration 测试套件
-14. **添加"技术栈"表格** — 语言、构建、GPU、量化、测试、CI、代码风格
-15. **使用示例改进** — 添加 Result 错误处理（isErr 检查）
+---
+
+## Pages 工作流优化
+
+**文件**: `.github/workflows/pages.yml`
+
+| 优化项 | 描述 |
+|--------|------|
+| Sparse checkout | 仅检出文档相关文件，跳过 C++/CUDA 源代码 |
+| Cone mode 修正 | 设置 `sparse-checkout-cone-mode: false` 修复文件级匹配 |
+| 路径触发 | 从通配 `*.md` 改为显式列出文档路径 + `changelog/**` |
+| Job 名称 | 添加 `Build Pages` / `Deploy Pages` |
+
+---
+
+## 文档页面增强
+
+### API 文档 (`docs/API.md`)
+- 添加 YAML frontmatter（title + description）
+- 添加导航页脚（返回首页 / 更新日志 / 贡献指南）
+
+### 贡献指南 (`CONTRIBUTING.md`)
+- 添加 YAML frontmatter
+- 添加导航页脚
+
+### 首页 (`index.md`)
+- 添加 SEO frontmatter
+- 添加"最近更新" section
+- 重构文档链接为中文
+- 添加更新日志和贡献指南入口
+
+---
 
 ## README 增强
 
-16. **`README.md` 添加 CMake 徽章** — 补齐与中文版一致
-17. **`README.md` 添加架构图** — ASCII 架构图 + 扩展组件描述
-18. **`README.md` 添加 GPU 支持表** — Volta → Hopper
-19. **`README.md` 添加测试详情表** — 6 个测试套件覆盖内容
-20. **`README.md` 扩展项目结构** — 完整文件列表含描述
-21. **`README.zh-CN.md` 添加架构图** — 与 README.md / index.md 保持同步
-22. **`README.zh-CN.md` 添加性能优化表** — 6 项优化技术
-23. **`README.zh-CN.md` 添加 GPU 架构支持表** — Volta → Hopper
-24. **`README.zh-CN.md` 添加技术栈表** — CI、代码风格等
-25. **`README.zh-CN.md` 扩展项目结构** — 完整文件列表含描述
+### 英文版 (`README.md`)
+- 添加 CI/Pages 徽章
+- 添加 CMake 徽章
+- 添加 ASCII 架构图
+- 添加 GPU 架构支持表（Volta → Hopper）
+- 添加测试详情表
+- 扩展项目结构说明
 
-## 工作流与杂项
+### 中文版 (`README.zh-CN.md`)
+- 添加 CI/Pages 徽章
+- 添加架构图
+- 添加性能优化表（6 项优化技术）
+- 添加 GPU 架构支持表
+- 添加技术栈表
+- 扩展项目结构说明
 
-26. **`pages.yml` sparse-checkout 修正** — `docs` → `docs/`、`changelog` → `changelog/`（规范目录路径）
-27. **`.gitignore` 添加 `.cache/`** — 排除 clangd 缓存目录
+---
+
+## 其他变更
+
+- `.gitignore` 添加 `.cache/`（排除 clangd 缓存）
+- `pages.yml` sparse-checkout 路径规范化（`docs/`、`changelog/`）
+
+---
+
+## 文件变更摘要
+
+| 文件 | 变更类型 |
+|------|----------|
+| `_config.yml` | SEO、插件、布局配置 |
+| `.github/workflows/pages.yml` | Sparse checkout、路径触发 |
+| `docs/API.md` | Frontmatter、导航 |
+| `CONTRIBUTING.md` | Frontmatter、导航 |
+| `index.md` | SEO、"最近更新" section |
+| `README.md` | 徽章、架构图、GPU 表 |
+| `README.zh-CN.md` | 徽章、架构图、性能表 |
+| `.gitignore` | 添加 `.cache/` |
+
+---
+
+[← 返回更新日志](index)

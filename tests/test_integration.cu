@@ -86,8 +86,8 @@ protected:
     w.group_size = group_size;
     w.data = randomDeviceINT8(rows * cols, seed);
 
-    int num_groups = (cols + group_size - 1) / group_size;
-    w.scales = randomDeviceFP16(rows * num_groups, 0.1f, seed + 1000);
+    int num_groups = (rows + group_size - 1) / group_size;
+    w.scales = randomDeviceFP16(num_groups * cols, 0.1f, seed + 1000);
 
     return w;
   }
