@@ -6,6 +6,7 @@ project(tiny-llm
 )
 
 include(CheckLanguage)
+include(FetchContent)
 check_language(CUDA)
 if(NOT CMAKE_CUDA_COMPILER)
     message(FATAL_ERROR "CUDA toolkit with nvcc is required to build tiny-llm. Set CUDAToolkit_ROOT or ensure nvcc is available on PATH.")
@@ -20,6 +21,16 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 set(CMAKE_CUDA_STANDARD 17)
 set(CMAKE_CUDA_STANDARD_REQUIRED ON)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
+
+# ── 外部依赖 ─────────────────────────────────────────────────────
+
+# spdlog (logging library)
+FetchContent_Declare(
+    spdlog
+    GIT_REPOSITORY https://github.com/gabime/spdlog.git
+    GIT_TAG v1.12.0
+)
+FetchContent_MakeAvailable(spdlog)
 
 # ── CUDA 配置 ────────────────────────────────────────────────────
 find_package(CUDAToolkit REQUIRED)
@@ -53,7 +64,7 @@ target_include_directories(tiny_llm
         ${CMAKE_CURRENT_SOURCE_DIR}/kernels
 )
 
-target_link_libraries(tiny_llm PUBLIC CUDA::cudart)
+target_link_libraries(tiny_llm PUBLIC CUDA::cudart spdlog::spdlog)
 
 target_compile_options(tiny_llm PRIVATE
     $<$<COMPILE_LANGUAGE:CUDA>:--expt-relaxed-constexpr>
@@ -83,7 +94,7 @@ if(BUILD_TESTS)
     FetchContent_Declare(
         rapidcheck
         GIT_REPOSITORY https://github.com/emil-e/rapidcheck.git
-        GIT_TAG 2023.01
+        GIT_TAG master
     )
     FetchContent_MakeAvailable(rapidcheck)
 
