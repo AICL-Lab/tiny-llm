@@ -105,6 +105,10 @@ jobs:
           sudo update-alternatives --install /usr/bin/gcc gcc /usr/bin/gcc-12 100
           sudo update-alternatives --install /usr/bin/g++ g++ /usr/bin/g++-12 100
           gcc --version
+          g++ --version
+
+      - name: Clear CMake Cache
+        run: rm -rf build/
 
       - name: Cache CMake Build
         uses: actions/cache@v4
@@ -116,12 +120,20 @@ jobs:
 
       - name: Configure CMake
         run: |
+          export CC=gcc-12
+          export CXX=g++-12
           cmake -S . -B build \
             -DCMAKE_BUILD_TYPE=${{ env.CMAKE_BUILD_TYPE }} \
             -DBUILD_TESTS=ON
+        env:
+          CC: gcc-12
+          CXX: g++-12
 
       - name: Build
         run: cmake --build build -j$(nproc)
+        env:
+          CC: gcc-12
+          CXX: g++-12
 
       - name: Run Tests
         working-directory: build
