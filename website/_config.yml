@@ -6,16 +6,18 @@
 
 title: Tiny-LLM
 description: High-Performance CUDA Inference Engine for LLMs
+tagline: Lightweight, efficient LLM inference with W8A16 quantization and KV Cache optimization
 author: LessUp Team
-url: https://lessup.github.io
-baseurl: /tiny-llm
+url: "https://lessup.github.io"
+baseurl: "/tiny-llm"
+lang: en
 
 # ═══════════════════════════════════════════════════════════════
 # THEME CONFIGURATION
 # ═══════════════════════════════════════════════════════════════
 remote_theme: just-the-docs/just-the-docs@v0.7.0
 
-# Theme Color Scheme (can be overridden by user preference)
+# Theme Color Scheme
 color_scheme: dark
 
 # Enable search
@@ -45,7 +47,7 @@ aux_links:
 aux_links_new_tab: true
 
 # Footer content
-footer_content: "Copyright &copy; 2025 LessUp. Distributed under an MIT license."
+footer_content: "Copyright &copy; 2025 LessUp. Distributed under MIT License."
 
 # Back to top link
 back_to_top: true
@@ -93,8 +95,8 @@ nav_external_links:
   - title: GitHub
     url: https://github.com/LessUp/tiny-llm
     hide_icon: false
-  - title: API Reference
-    url: /docs/en/API
+  - title: Releases
+    url: https://github.com/LessUp/tiny-llm/releases
     hide_icon: false
 
 # Navigation order and structure
@@ -142,25 +144,8 @@ pwa:
   background_color: "#0d1117"
   display: standalone
   orientation: portrait
-  scope: /tiny-llm/
-  start_url: /tiny-llm/
-  icons:
-    - src: /tiny-llm/assets/icons/icon-72x72.png
-      sizes: 72x72
-    - src: /tiny-llm/assets/icons/icon-96x96.png
-      sizes: 96x96
-    - src: /tiny-llm/assets/icons/icon-128x128.png
-      sizes: 128x128
-    - src: /tiny-llm/assets/icons/icon-144x144.png
-      sizes: 144x144
-    - src: /tiny-llm/assets/icons/icon-152x152.png
-      sizes: 152x152
-    - src: /tiny-llm/assets/icons/icon-192x192.png
-      sizes: 192x192
-    - src: /tiny-llm/assets/icons/icon-384x384.png
-      sizes: 384x384
-    - src: /tiny-llm/assets/icons/icon-512x512.png
-      sizes: 512x512
+  scope: "/tiny-llm/"
+  start_url: "/tiny-llm/"
 
 # ═══════════════════════════════════════════════════════════════
 # DEFAULTS (FRONTMATTER)
@@ -168,22 +153,23 @@ pwa:
 defaults:
   - scope:
       path: ""
-      type: "pages"
     values:
       layout: "default"
       nav_exclude: false
   - scope:
+      path: "docs"
+    values:
+      layout: "page"
+  - scope:
       path: "docs/en"
     values:
-      lang: "en"
+      lang: en
       layout: "page"
-      parent: "Documentation"
   - scope:
       path: "docs/zh"
     values:
-      lang: "zh"
+      lang: zh
       layout: "page"
-      parent: "Documentation"
   - scope:
       path: "changelog"
     values:
@@ -198,32 +184,12 @@ exclude:
   - .github
   - .kiro
   - .vscode
-  - include
-  - kernels
-  - src
-  - tests
-  - build
-  - CMakeLists.txt
-  - CMakePresets.json
-  - Dockerfile
-  - .clang-format
-  - .clang-tidy
-  - .editorconfig
-  - .gitattributes
-  - .gitignore
   - Gemfile
   - Gemfile.lock
   - "*.cpp"
   - "*.cu"
   - "*.cuh"
   - "*.h"
-
-include:
-  - 404.html
-  - assets
-  - _sass
-  - _includes
-  - _layouts
 
 # ═══════════════════════════════════════════════════════════════
 # CUSTOM VARIABLES
@@ -232,26 +198,3 @@ version: "2.1.0"
 release_url: https://github.com/LessUp/tiny-llm/releases/latest
 repo_url: https://github.com/LessUp/tiny-llm
 docs_url: https://lessup.github.io/tiny-llm/docs
-
-features:
-  - title: W8A16 Quantization
-    description: INT8 weights + FP16 activations for 50% memory reduction
-    icon: zap
-  - title: KV Cache Management
-    description: Efficient incremental decoding with sequence management
-    icon: database
-  - title: CUDA Kernels
-    description: Optimized kernels with Tensor Core support
-    icon: cpu
-  - title: Multi-Sampling
-    description: Greedy, Temperature, Top-k, Top-p strategies
-    icon: git-branch
-
-# Language versions
-languages:
-  - code: en
-    name: English
-    flag: 🇺🇸
-  - code: zh
-    name: 简体中文
-    flag: 🇨🇳

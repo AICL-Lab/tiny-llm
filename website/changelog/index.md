@@ -2,6 +2,7 @@
 layout: default
 title: "Changelog — Tiny-LLM"
 description: "Tiny-LLM version history and release notes"
+nav_order: 100
 ---
 
 # Changelog

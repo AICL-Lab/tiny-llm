@@ -1,101 +1,46 @@
 {
   "name": "Tiny-LLM Documentation",
-  "short_name": "Tiny-LLM",
-  "description": "High-Performance CUDA Inference Engine for LLMs - Documentation",
+  "short_name": "TinyLLM",
+  "description": "High-Performance CUDA Inference Engine for LLMs — W8A16 quantization, KV Cache, and optimized CUDA kernels",
   "start_url": "/tiny-llm/",
   "scope": "/tiny-llm/",
   "display": "standalone",
+  "orientation": "portrait",
   "background_color": "#0d1117",
   "theme_color": "#0d1117",
-  "orientation": "portrait-primary",
-  "lang": "en",
-  "dir": "ltr",
-  "categories": ["education", "developer tools", "documentation"],
   "icons": [
     {
-      "src": "/tiny-llm/assets/icons/icon-72x72.png",
-      "sizes": "72x72",
+      "src": "/tiny-llm/assets/images/favicon-32x32.png",
+      "sizes": "32x32",
       "type": "image/png",
       "purpose": "any maskable"
     },
     {
-      "src": "/tiny-llm/assets/icons/icon-96x96.png",
-      "sizes": "96x96",
+      "src": "/tiny-llm/assets/images/favicon-16x16.png",
+      "sizes": "16x16",
       "type": "image/png",
       "purpose": "any maskable"
     },
     {
-      "src": "/tiny-llm/assets/icons/icon-128x128.png",
-      "sizes": "128x128",
+      "src": "/tiny-llm/assets/images/apple-touch-icon.png",
+      "sizes": "180x180",
       "type": "image/png",
-      "purpose": "any maskable"
+      "purpose": "any"
     },
     {
-      "src": "/tiny-llm/assets/icons/icon-144x144.png",
-      "sizes": "144x144",
-      "type": "image/png",
-      "purpose": "any maskable"
-    },
-    {
-      "src": "/tiny-llm/assets/icons/icon-152x152.png",
-      "sizes": "152x152",
-      "type": "image/png",
-      "purpose": "any maskable"
-    },
-    {
-      "src": "/tiny-llm/assets/icons/icon-192x192.png",
+      "src": "/tiny-llm/assets/images/icon-192x192.png",
       "sizes": "192x192",
       "type": "image/png",
       "purpose": "any maskable"
     },
     {
-      "src": "/tiny-llm/assets/icons/icon-384x384.png",
-      "sizes": "384x384",
-      "type": "image/png",
-      "purpose": "any maskable"
-    },
-    {
-      "src": "/tiny-llm/assets/icons/icon-512x512.png",
+      "src": "/tiny-llm/assets/images/icon-512x512.png",
       "sizes": "512x512",
       "type": "image/png",
       "purpose": "any maskable"
     }
   ],
-  "screenshots": [
-    {
-      "src": "/tiny-llm/assets/images/screenshot-wide.png",
-      "sizes": "1280x720",
-      "type": "image/png",
-      "form_factor": "wide"
-    },
-    {
-      "src": "/tiny-llm/assets/images/screenshot-narrow.png",
-      "sizes": "720x1280",
-      "type": "image/png",
-      "form_factor": "narrow"
-    }
-  ],
-  "shortcuts": [
-    {
-      "name": "API Reference",
-      "short_name": "API",
-      "description": "View API documentation",
-      "url": "/tiny-llm/docs/en/API",
-      "icons": [{ "src": "/tiny-llm/assets/icons/icon-96x96.png", "sizes": "96x96" }]
-    },
-    {
-      "name": "Changelog",
-      "short_name": "Releases",
-      "description": "View version history",
-      "url": "/tiny-llm/changelog/",
-      "icons": [{ "src": "/tiny-llm/assets/icons/icon-96x96.png", "sizes": "96x96" }]
-    }
-  ],
-  "related_applications": [
-    {
-      "platform": "web",
-      "url": "https://lessup.github.io/tiny-llm"
-    }
-  ],
-  "prefer_related_applications": false
+  "categories": ["developer tools", "documentation"],
+  "lang": "en",
+  "dir": "ltr"
 }

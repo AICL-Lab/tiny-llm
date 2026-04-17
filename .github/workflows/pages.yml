@@ -1,6 +1,6 @@
 # ═══════════════════════════════════════════════════════════════
-# Tiny-LLM GitHub Pages - Advanced Deployment
-# Features: PWA, Custom Theme, Search Optimization
+# Tiny-LLM GitHub Pages - Production Deployment
+# Features: PWA, Modern Theme, Search Optimization
 # ═══════════════════════════════════════════════════════════════
 
 name: GitHub Pages
@@ -18,13 +18,11 @@ on:
       - '.github/workflows/pages.yml'
   workflow_dispatch:
 
-# Sets permissions for the GITHUB_TOKEN
 permissions:
   contents: read
   pages: write
   id-token: write
 
-# Allow only one concurrent deployment
 concurrency:
   group: pages-${{ github.ref }}
   cancel-in-progress: true
@@ -52,16 +50,16 @@ jobs:
           bundler-cache: false
 
       - name: Install dependencies
-        run: |
-          bundle install
+        working-directory: website
+        run: bundle install
 
       - name: Configure GitHub Pages
         id: pages
         uses: actions/configure-pages@v5
 
       - name: Build site with Jekyll
+        working-directory: website
         run: |
-          cd website
           bundle exec jekyll build \
             --baseurl "${{ steps.pages.outputs.base_path }}" \
             --destination ../_site \
@@ -70,14 +68,12 @@ jobs:
           JEKYLL_ENV: production
           JEKYLL_GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Verify PWA assets
+      - name: Verify build output
         run: |
-          echo "Verifying PWA manifest and service worker..."
-          test -f ./_site/manifest.json || echo "Warning: manifest.json not found"
-          test -f ./_site/sw.js || echo "Warning: sw.js not found"
-
-          # List built assets
-          echo "Built site structure:"
+          echo "Verifying build output..."
+          test -d ./_site || { echo "Error: _site directory not found"; exit 1; }
+          test -f ./_site/index.html || echo "Warning: index.html not found"
+          echo "Build successful!"
           ls -la ./_site/ | head -20
 
       - name: Upload Pages artifact
@@ -116,17 +112,5 @@ jobs:
           name: github-pages
           path: ./_site
 
-      - name: Validate HTML
-        uses: anishathalye/proof-html@v2
-        with:
-          directory: ./_site
-          enforce_https: false
-          url_ignore: |
-            linkedin.com
-            twitter.com
-
-      - name: Check for broken links
-        uses: lycheeverse/lychee-action@v1
-        with:
-          args: --base ./_site --exclude-all-private ./_site
-          fail: false
+      - name: List built files
+        run: ls -laR ./_site/

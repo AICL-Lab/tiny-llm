@@ -1,0 +1,649 @@
+// ═══════════════════════════════════════════════════════════════
+// Tiny-LLM Custom SCSS - Modern Design System
+// Based on Just the Docs theme with enhanced styling
+// ═══════════════════════════════════════════════════════════════
+
+// ─── Design Tokens ───────────────────────────────────────────
+// Colors
+$color-brand-primary: #58a6ff;
+$color-brand-secondary: #7ee787;
+$color-brand-accent: #f78166;
+
+// Dark mode colors
+$color-dark-bg: #0d1117;
+$color-dark-surface: #161b22;
+$color-dark-border: #30363d;
+$color-dark-text: #c9d1d9;
+$color-dark-text-secondary: #8b949e;
+$color-dark-code-bg: #1a1f26;
+
+// Light mode colors
+$color-light-bg: #ffffff;
+$color-light-surface: #f6f8fa;
+$color-light-border: #d0d7de;
+$color-light-text: #1f2328;
+$color-light-text-secondary: #656d76;
+$color-light-code-bg: #f6f8fa;
+
+// Typography
+$font-family-base: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif;
+$font-family-mono: 'JetBrains Mono', 'SF Mono', 'Cascadia Code', Consolas, monospace;
+
+// Spacing
+$spacing-xs: 0.25rem;
+$spacing-sm: 0.5rem;
+$spacing-md: 1rem;
+$spacing-lg: 1.5rem;
+$spacing-xl: 2rem;
+$spacing-2xl: 3rem;
+$spacing-3xl: 4rem;
+
+// Border radius
+$radius-sm: 0.375rem;
+$radius-md: 0.5rem;
+$radius-lg: 0.75rem;
+$radius-xl: 1rem;
+$radius-full: 9999px;
+
+// Transitions
+$transition-fast: 150ms cubic-bezier(0.4, 0, 0.2, 1);
+$transition-base: 200ms cubic-bezier(0.4, 0, 0.2, 1);
+$transition-slow: 300ms cubic-bezier(0.4, 0, 0.2, 1);
+
+// Shadows
+$shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.05);
+$shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+$shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+$shadow-xl: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
+$shadow-glow: 0 0 20px rgba(88, 166, 255, 0.3);
+
+// ─── Dark Mode (Default) ─────────────────────────────────────
+:root,
+[data-theme="dark"] {
+  --color-bg-primary: #{$color-dark-bg};
+  --color-bg-secondary: #{$color-dark-surface};
+  --color-bg-tertiary: #1c2128;
+  --color-border-primary: #{$color-dark-border};
+  --color-border-secondary: #21262d;
+  --color-text-primary: #{$color-dark-text};
+  --color-text-secondary: #{$color-dark-text-secondary};
+  --color-text-tertiary: #484f58;
+  --color-text-link: #{$color-brand-primary};
+  --color-text-link-hover: #{$color-brand-secondary};
+  --color-brand-primary: #{$color-brand-primary};
+  --color-brand-secondary: #{$color-brand-secondary};
+  --color-brand-accent: #{$color-brand-accent};
+  --color-code-bg: #{$color-dark-code-bg};
+  --color-code-border: #{$color-dark-border};
+
+  --font-family-base: #{$font-family-base};
+  --font-family-mono: #{$font-family-mono};
+
+  --radius-sm: #{$radius-sm};
+  --radius-md: #{$radius-md};
+  --radius-lg: #{$radius-lg};
+  --radius-xl: #{$radius-xl};
+  --radius-full: #{$radius-full};
+
+  --shadow-sm: #{$shadow-sm};
+  --shadow-md: #{$shadow-md};
+  --shadow-lg: #{$shadow-lg};
+  --shadow-xl: #{$shadow-xl};
+  --shadow-glow: #{$shadow-glow};
+
+  --transition-fast: #{$transition-fast};
+  --transition-base: #{$transition-base};
+  --transition-slow: #{$transition-slow};
+
+  --font-size-xs: 0.75rem;
+  --font-size-sm: 0.875rem;
+  --font-size-base: 1rem;
+  --font-size-lg: 1.125rem;
+  --font-size-xl: 1.25rem;
+  --font-size-2xl: 1.5rem;
+  --font-size-3xl: 1.875rem;
+  --font-size-4xl: 2.25rem;
+}
+
+// ─── Light Mode ──────────────────────────────────────────────
+[data-theme="light"] {
+  --color-bg-primary: #{$color-light-bg};
+  --color-bg-secondary: #{$color-light-surface};
+  --color-bg-tertiary: #eaeef2;
+  --color-border-primary: #{$color-light-border};
+  --color-border-secondary: #d8dee4;
+  --color-text-primary: #{$color-light-text};
+  --color-text-secondary: #{$color-light-text-secondary};
+  --color-text-tertiary: #8b949e;
+  --color-text-link: #0969da;
+  --color-text-link-hover: #0550ae;
+  --color-code-bg: #{$color-light-code-bg};
+  --color-code-border: #{$color-light-border};
+}
+
+// ─── Base Styles ─────────────────────────────────────────────
+* {
+  box-sizing: border-box;
+}
+
+html {
+  scroll-behavior: smooth;
+  font-size: 16px;
+}
+
+body {
+  font-family: var(--font-family-base);
+  background: var(--color-bg-primary);
+  color: var(--color-text-primary);
+  line-height: 1.6;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+// ─── Typography ──────────────────────────────────────────────
+h1, h2, h3, h4, h5, h6 {
+  font-weight: 700;
+  line-height: 1.25;
+  margin-top: $spacing-2xl;
+  margin-bottom: $spacing-md;
+}
+
+h1 {
+  font-size: var(--font-size-4xl);
+  letter-spacing: -0.02em;
+}
+
+h2 {
+  font-size: var(--font-size-3xl);
+  letter-spacing: -0.01em;
+}
+
+h3 {
+  font-size: var(--font-size-2xl);
+}
+
+h4 {
+  font-size: var(--font-size-xl);
+}
+
+p {
+  margin-bottom: $spacing-md;
+  color: var(--color-text-secondary);
+}
+
+a {
+  color: var(--color-text-link);
+  text-decoration: none;
+  transition: color var(--transition-fast);
+
+  &:hover {
+    color: var(--color-text-link-hover);
+    text-decoration: underline;
+  }
+}
+
+code {
+  font-family: var(--font-family-mono);
+  font-size: 0.9em;
+  padding: 0.2em 0.4em;
+  background: var(--color-code-bg);
+  border: 1px solid var(--color-code-border);
+  border-radius: var(--radius-sm);
+}
+
+pre {
+  padding: $spacing-lg;
+  background: var(--color-code-bg);
+  border: 1px solid var(--color-code-border);
+  border-radius: var(--radius-lg);
+  overflow-x: auto;
+  line-height: 1.6;
+
+  code {
+    padding: 0;
+    background: transparent;
+    border: none;
+  }
+}
+
+// ─── Layout ──────────────────────────────────────────────────
+.page-wrap {
+  display: flex;
+  min-height: 100vh;
+}
+
+// ─── Sidebar ─────────────────────────────────────────────────
+.side-bar {
+  width: 260px;
+  background: var(--color-bg-secondary);
+  border-right: 1px solid var(--color-border-primary);
+  padding: $spacing-lg;
+  position: sticky;
+  top: 0;
+  height: 100vh;
+  overflow-y: auto;
+}
+
+.site-header {
+  margin-bottom: $spacing-xl;
+}
+
+.site-logo {
+  display: flex;
+  align-items: center;
+  gap: $spacing-sm;
+  text-decoration: none !important;
+
+  &:hover {
+    text-decoration: none;
+  }
+}
+
+.site-logo-img {
+  width: 32px;
+  height: 32px;
+  border-radius: var(--radius-md);
+}
+
+.site-title-text {
+  font-weight: 700;
+  font-size: var(--font-size-lg);
+  color: var(--color-text-primary);
+}
+
+.menu-toggle {
+  display: none;
+  flex-direction: column;
+  gap: 4px;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  padding: $spacing-sm;
+
+  span {
+    display: block;
+    width: 20px;
+    height: 2px;
+    background: var(--color-text-primary);
+    transition: all var(--transition-fast);
+  }
+}
+
+.site-nav {
+  margin-bottom: $spacing-xl;
+
+  ul {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+
+    li {
+      margin: $spacing-xs 0;
+
+      a {
+        display: block;
+        padding: $spacing-sm $spacing-md;
+        color: var(--color-text-secondary);
+        border-radius: var(--radius-md);
+        transition: all var(--transition-fast);
+
+        &:hover {
+          background: var(--color-bg-tertiary);
+          color: var(--color-text-primary);
+          text-decoration: none;
+        }
+
+        &.active {
+          background: var(--color-brand-primary);
+          color: white;
+          font-weight: 500;
+        }
+      }
+    }
+  }
+}
+
+.site-footer {
+  padding-top: $spacing-md;
+  border-top: 1px solid var(--color-border-primary);
+
+  .footer-text {
+    font-size: var(--font-size-sm);
+    color: var(--color-text-tertiary);
+    margin: 0;
+  }
+}
+
+// ─── Main Content ────────────────────────────────────────────
+.main-content {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+}
+
+.main-header {
+  background: var(--color-bg-secondary);
+  border-bottom: 1px solid var(--color-border-primary);
+  padding: $spacing-md $spacing-xl;
+  position: sticky;
+  top: 0;
+  z-index: 100;
+}
+
+.main-header-content {
+  display: flex;
+  align-items: center;
+  gap: $spacing-md;
+}
+
+.nav-toggle {
+  display: none;
+  flex-direction: column;
+  gap: 4px;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  padding: $spacing-sm;
+
+  span {
+    display: block;
+    width: 20px;
+    height: 2px;
+    background: var(--color-text-primary);
+  }
+}
+
+.search {
+  flex: 1;
+  max-width: 400px;
+}
+
+.search-input-wrap {
+  position: relative;
+}
+
+.search-input {
+  width: 100%;
+  padding: $spacing-sm $spacing-md;
+  background: var(--color-bg-tertiary);
+  border: 1px solid var(--color-border-primary);
+  border-radius: var(--radius-md);
+  color: var(--color-text-primary);
+  font-size: var(--font-size-sm);
+  transition: all var(--transition-fast);
+
+  &:focus {
+    outline: none;
+    border-color: var(--color-brand-primary);
+    box-shadow: 0 0 0 3px rgba(88, 166, 255, 0.15);
+  }
+
+  &::placeholder {
+    color: var(--color-text-tertiary);
+  }
+}
+
+.header-actions {
+  display: flex;
+  gap: $spacing-sm;
+}
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  gap: $spacing-sm;
+  padding: $spacing-sm $spacing-md;
+  font-weight: 500;
+  border-radius: var(--radius-md);
+  transition: all var(--transition-fast);
+  cursor: pointer;
+  border: 1px solid transparent;
+
+  &.btn-sm {
+    padding: $spacing-xs $spacing-sm;
+    font-size: var(--font-size-sm);
+  }
+
+  &.btn-primary {
+    background: var(--color-brand-primary);
+    color: white !important;
+    border-color: var(--color-brand-primary);
+
+    &:hover {
+      background: var(--color-brand-secondary);
+      border-color: var(--color-brand-secondary);
+      text-decoration: none;
+    }
+  }
+
+  &.btn-secondary {
+    background: var(--color-bg-tertiary);
+    color: var(--color-text-primary) !important;
+    border-color: var(--color-border-primary);
+
+    &:hover {
+      background: var(--color-bg-secondary);
+      text-decoration: none;
+    }
+  }
+
+  &.btn-outline {
+    background: transparent;
+    color: var(--color-text-secondary) !important;
+    border-color: var(--color-border-primary);
+
+    &:hover {
+      border-color: var(--color-brand-primary);
+      color: var(--color-text-link) !important;
+      text-decoration: none;
+    }
+  }
+}
+
+.main-content-wrap {
+  flex: 1;
+  padding: $spacing-2xl $spacing-3xl;
+  max-width: 900px;
+}
+
+.main-footer {
+  background: var(--color-bg-secondary);
+  border-top: 1px solid var(--color-border-primary);
+  padding: $spacing-xl $spacing-2xl;
+
+  .main-footer-content {
+    max-width: 900px;
+    margin: 0 auto;
+
+    p {
+      font-size: var(--font-size-sm);
+      color: var(--color-text-tertiary);
+      margin: 0;
+    }
+  }
+}
+
+// ─── Back to Top Button ──────────────────────────────────────
+.back-to-top {
+  position: fixed;
+  bottom: $spacing-xl;
+  right: $spacing-xl;
+  width: 44px;
+  height: 44px;
+  background: var(--color-brand-primary);
+  color: white;
+  border: none;
+  border-radius: var(--radius-full);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  opacity: 0;
+  visibility: hidden;
+  transition: all var(--transition-base);
+  box-shadow: var(--shadow-lg);
+
+  &:hover {
+    background: var(--color-brand-secondary);
+    transform: translateY(-2px);
+    box-shadow: var(--shadow-glow);
+  }
+
+  &.visible {
+    opacity: 1;
+    visibility: visible;
+  }
+}
+
+// ─── Callouts / Alerts ───────────────────────────────────────
+.callout {
+  padding: $spacing-md $spacing-lg;
+  border-left: 4px solid var(--color-border-primary);
+  border-radius: var(--radius-md);
+  margin: $spacing-lg 0;
+
+  &.callout-note {
+    border-color: #a371f7;
+    background: rgba(163, 113, 247, 0.1);
+  }
+
+  &.callout-important {
+    border-color: #58a6ff;
+    background: rgba(88, 166, 255, 0.1);
+  }
+
+  &.callout-warning {
+    border-color: #f78166;
+    background: rgba(247, 129, 102, 0.1);
+  }
+
+  &.callout-tip {
+    border-color: #7ee787;
+    background: rgba(126, 231, 135, 0.1);
+  }
+
+  p:last-child {
+    margin-bottom: 0;
+  }
+}
+
+// ─── Tables ──────────────────────────────────────────────────
+table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: $spacing-lg 0;
+  font-size: var(--font-size-sm);
+
+  th, td {
+    padding: $spacing-sm $spacing-md;
+    border: 1px solid var(--color-border-primary);
+  }
+
+  th {
+    background: var(--color-bg-secondary);
+    font-weight: 600;
+    text-align: left;
+  }
+
+  tr:nth-child(even) {
+    background: var(--color-bg-secondary);
+  }
+}
+
+// ─── Lists ───────────────────────────────────────────────────
+ul, ol {
+  padding-left: $spacing-xl;
+  margin: $spacing-md 0;
+
+  li {
+    margin: $spacing-xs 0;
+  }
+}
+
+// ─── Code Blocks with Line Numbers ──────────────────────────
+.highlight {
+  position: relative;
+
+  .lineno {
+    color: var(--color-text-tertiary);
+    user-select: none;
+    padding-right: $spacing-md;
+    border-right: 1px solid var(--color-border-primary);
+  }
+}
+
+// ─── Responsive Design ──────────────────────────────────────
+@media (max-width: 1024px) {
+  .main-content-wrap {
+    padding: $spacing-xl $spacing-2xl;
+  }
+}
+
+@media (max-width: 768px) {
+  .side-bar {
+    position: fixed;
+    left: -100%;
+    top: 0;
+    z-index: 200;
+    transition: left var(--transition-base);
+    box-shadow: var(--shadow-xl);
+
+    &.open {
+      left: 0;
+    }
+  }
+
+  .menu-toggle {
+    display: flex;
+  }
+
+  .nav-toggle {
+    display: flex;
+  }
+
+  .main-content-wrap {
+    padding: $spacing-lg;
+  }
+
+  h1 {
+    font-size: var(--font-size-3xl);
+  }
+
+  h2 {
+    font-size: var(--font-size-2xl);
+  }
+
+  .search {
+    max-width: 200px;
+  }
+}
+
+@media (max-width: 480px) {
+  .header-actions {
+    display: none;
+  }
+
+  .search {
+    display: none;
+  }
+}
+
+// ─── Print Styles ────────────────────────────────────────────
+@media print {
+  .side-bar,
+  .main-header,
+  .back-to-top,
+  .search {
+    display: none !important;
+  }
+
+  .main-content-wrap {
+    max-width: 100%;
+    padding: 0;
+  }
+
+  body {
+    background: white;
+    color: black;
+  }
+}
