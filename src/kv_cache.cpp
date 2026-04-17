@@ -1,4 +1,6 @@
 #include "tiny_llm/kv_cache.h"
+#include "tiny_llm/logger.h"
+#include "tiny_llm/validator.h"
 #include <algorithm>
 
 namespace tiny_llm {
@@ -92,10 +94,11 @@ Result<int> KVCacheManager::allocateSequence(int max_len) {
   return Result<int>::ok(seq_id);
 }
 
-void KVCacheManager::releaseSequence(int seq_id) {
+Result<void> KVCacheManager::releaseSequence(int seq_id) {
   auto it = seq_to_slot_.find(seq_id);
   if (it == seq_to_slot_.end()) {
-    return; // Sequence not found, ignore
+    TLLM_WARN("releaseSequence: sequence not found: {}", seq_id);
+    return Result<void>::err("Sequence not found: " + std::to_string(seq_id));
   }
 
   int slot_idx = it->second;
@@ -104,28 +107,78 @@ void KVCacheManager::releaseSequence(int seq_id) {
   slots_[slot_idx].current_len = 0;
 
   seq_to_slot_.erase(it);
+
+  TLLM_DEBUG("KVCache: released sequence {} (slot {})", seq_id, slot_idx);
+  return Result<void>::ok();
 }
 
-std::pair<half *, half *> KVCacheManager::getCache(int seq_id, int layer_idx) {
+Result<std::pair<half *, half *>>
+KVCacheManager::getCacheChecked(int seq_id, int layer_idx) {
   auto it = seq_to_slot_.find(seq_id);
-  if (it == seq_to_slot_.end() || layer_idx < 0 || layer_idx >= config_.num_layers) {
-    return {nullptr, nullptr};
+  if (it == seq_to_slot_.end()) {
+    return Result<std::pair<half *, half *>>::err("Sequence not found: " +
+                                                   std::to_string(seq_id));
+  }
+
+  auto layer_result =
+      Validator::validateLayerIndex(layer_idx, config_.num_layers, "getCache");
+  if (layer_result.isErr()) {
+    return Result<std::pair<half *, half *>>::err(layer_result.error());
   }
 
   int slot_idx = it->second;
   size_t k_offset = calculateOffset(slot_idx, layer_idx, false);
   size_t v_offset = calculateOffset(slot_idx, layer_idx, true);
 
-  return {memory_pool_ + k_offset, memory_pool_ + v_offset};
+  return Result<std::pair<half *, half *>>::ok(
+      {memory_pool_ + k_offset, memory_pool_ + v_offset});
 }
 
-void KVCacheManager::appendKV(int seq_id, int layer_idx, const half *new_k,
-                              const half *new_v, int num_tokens,
-                              cudaStream_t stream) {
+std::pair<half *, half *> KVCacheManager::getCache(int seq_id, int layer_idx) {
+  auto result = getCacheChecked(seq_id, layer_idx);
+  if (result.isErr()) {
+    TLLM_WARN("getCache: {}", result.error());
+    return {nullptr, nullptr};
+  }
+  return result.value();
+}
+
+Result<void> KVCacheManager::appendKV(int seq_id, int layer_idx, const half *new_k,
+                                       const half *new_v, int num_tokens,
+                                       cudaStream_t stream) {
+  // Validate pointers
+  auto ptr_result = Validator::validateNotNull(new_k, "new_k");
+  if (ptr_result.isErr()) {
+    TLLM_ERROR("appendKV: {}", ptr_result.error());
+    return ptr_result;
+  }
+  ptr_result = Validator::validateNotNull(new_v, "new_v");
+  if (ptr_result.isErr()) {
+    TLLM_ERROR("appendKV: {}", ptr_result.error());
+    return ptr_result;
+  }
+
+  // Validate num_tokens
+  if (num_tokens <= 0) {
+    TLLM_ERROR("appendKV: invalid num_tokens: {}", num_tokens);
+    return Result<void>::err("appendKV: num_tokens must be positive: " +
+                              std::to_string(num_tokens));
+  }
+
+  // Validate layer index
+  auto layer_result =
+      Validator::validateLayerIndex(layer_idx, config_.num_layers, "appendKV");
+  if (layer_result.isErr()) {
+    TLLM_ERROR("{}", layer_result.error());
+    return layer_result;
+  }
+
+  // Find sequence
   auto it = seq_to_slot_.find(seq_id);
-  if (it == seq_to_slot_.end() || layer_idx < 0 || layer_idx >= config_.num_layers ||
-      num_tokens <= 0 || !new_k || !new_v) {
-    return; // Invalid input
+  if (it == seq_to_slot_.end()) {
+    TLLM_ERROR("appendKV: sequence not found: {}", seq_id);
+    return Result<void>::err("appendKV: sequence not found: " +
+                              std::to_string(seq_id));
   }
 
   int slot_idx = it->second;
@@ -137,13 +190,19 @@ void KVCacheManager::appendKV(int seq_id, int layer_idx, const half *new_k,
 
   // Check if we have space
   if (write_pos + num_tokens > slot.max_len) {
-    return; // No space
+    TLLM_ERROR("appendKV: cache overflow. seq_id={}, write_pos={}, num_tokens={}, max_len={}",
+               seq_id, write_pos, num_tokens, slot.max_len);
+    return Result<void>::err(
+        "appendKV: cache overflow. Current: " + std::to_string(write_pos) +
+        ", appending: " + std::to_string(num_tokens) +
+        ", max: " + std::to_string(slot.max_len));
   }
 
   // Calculate destination offsets
   auto [k_cache, v_cache] = getCache(seq_id, layer_idx);
   if (!k_cache || !v_cache) {
-    return;
+    TLLM_ERROR("appendKV: failed to get cache pointers");
+    return Result<void>::err("appendKV: failed to get cache pointers");
   }
 
   size_t pos_offset =
@@ -155,15 +214,32 @@ void KVCacheManager::appendKV(int seq_id, int layer_idx, const half *new_k,
                              cudaMemcpyDeviceToDevice, stream));
   CUDA_CHECK(cudaMemcpyAsync(v_cache + pos_offset, new_v, copy_size,
                              cudaMemcpyDeviceToDevice, stream));
+
+  TLLM_TRACE("appendKV: seq_id={}, layer={}, num_tokens={}, write_pos={}",
+             seq_id, layer_idx, num_tokens, write_pos);
+  return Result<void>::ok();
 }
 
-void KVCacheManager::advanceSeqLen(int seq_id, int num_tokens) {
+Result<void> KVCacheManager::advanceSeqLen(int seq_id, int num_tokens) {
+  if (num_tokens <= 0) {
+    TLLM_ERROR("advanceSeqLen: invalid num_tokens: {}", num_tokens);
+    return Result<void>::err("advanceSeqLen: num_tokens must be positive: " +
+                              std::to_string(num_tokens));
+  }
+
   auto it = seq_to_slot_.find(seq_id);
-  if (it == seq_to_slot_.end() || num_tokens <= 0)
-    return;
+  if (it == seq_to_slot_.end()) {
+    TLLM_ERROR("advanceSeqLen: sequence not found: {}", seq_id);
+    return Result<void>::err("advanceSeqLen: sequence not found: " +
+                              std::to_string(seq_id));
+  }
 
   auto &slot = slots_[it->second];
+  int old_len = slot.current_len;
   slot.current_len = std::min(slot.current_len + num_tokens, slot.max_len);
+
+  TLLM_TRACE("advanceSeqLen: seq_id={}, {} -> {}", seq_id, old_len, slot.current_len);
+  return Result<void>::ok();
 }
 
 int KVCacheManager::getSeqLen(int seq_id) const {

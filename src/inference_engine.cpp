@@ -2,7 +2,9 @@
 #include "elementwise.cuh"
 #include "rmsnorm.cuh"
 #include "tiny_llm/cuda_utils.h"
+#include "tiny_llm/logger.h"
 #include "tiny_llm/model_loader.h"
+#include "tiny_llm/validator.h"
 #include "w8a16_matmul.cuh"
 #include <algorithm>
 #include <chrono>
@@ -15,6 +17,16 @@ namespace tiny_llm {
 Result<std::unique_ptr<InferenceEngine>>
 InferenceEngine::load(const std::string &model_path,
                       const ModelConfig &config) {
+  TLLM_INFO("Loading model from: {}", model_path);
+
+  // Validate model config
+  auto config_result = Validator::validateModelConfig(config);
+  if (config_result.isErr()) {
+    TLLM_ERROR("Invalid model config: {}", config_result.error());
+    return Result<std::unique_ptr<InferenceEngine>>::err(
+        "Invalid model config: " + config_result.error());
+  }
+
   if (model_path.size() >= 5 &&
       model_path.substr(model_path.size() - 5) == ".gguf") {
     return Result<std::unique_ptr<InferenceEngine>>::err(
@@ -24,11 +36,16 @@ InferenceEngine::load(const std::string &model_path,
   // Load model weights
   auto result = ModelLoader::loadBin(model_path, config);
   if (result.isErr()) {
+    TLLM_ERROR("Failed to load model: {}", result.error());
     return Result<std::unique_ptr<InferenceEngine>>::err(result.error());
   }
 
   auto engine =
       std::make_unique<InferenceEngine>(config, std::move(result.value()));
+
+  TLLM_INFO("Model loaded successfully: hidden_dim={}, num_layers={}, vocab_size={}",
+            config.hidden_dim, config.num_layers, config.vocab_size);
+
   return Result<std::unique_ptr<InferenceEngine>>::ok(std::move(engine));
 }
 
@@ -68,26 +85,68 @@ InferenceEngine::~InferenceEngine() {
   kv_cache_.reset();
 
   if (hidden_states_) {
-    cudaFree(hidden_states_);
+    cudaError_t err = cudaFree(hidden_states_);
+    if (err != cudaSuccess) {
+      TLLM_ERROR("CUDA error freeing hidden_states: {}", cudaGetErrorString(err));
+    }
     hidden_states_ = nullptr;
   }
   if (logits_) {
-    cudaFree(logits_);
+    cudaError_t err = cudaFree(logits_);
+    if (err != cudaSuccess) {
+      TLLM_ERROR("CUDA error freeing logits: {}", cudaGetErrorString(err));
+    }
     logits_ = nullptr;
   }
   if (stream_) {
-    cudaStreamDestroy(stream_);
+    cudaError_t err = cudaStreamDestroy(stream_);
+    if (err != cudaSuccess) {
+      TLLM_ERROR("CUDA error destroying stream: {}", cudaGetErrorString(err));
+    }
     stream_ = nullptr;
   }
 
   ModelLoader::freeWeights(weights_);
 }
 
-std::vector<int>
+Result<std::vector<int>>
 InferenceEngine::generate(const std::vector<int> &prompt_tokens,
                           const GenerationConfig &config) {
   stats_ = GenerationStats{};
+
+  // 1. Validate generation config
+  auto config_result = config.validate();
+  if (config_result.isErr()) {
+    TLLM_ERROR("Invalid generation config: {}", config_result.error());
+    return Result<std::vector<int>>::err(
+        "Invalid generation config: " + config_result.error());
+  }
+
+  // 2. Validate prompt tokens
+  if (prompt_tokens.empty()) {
+    TLLM_ERROR("generate: prompt_tokens is empty");
+    return Result<std::vector<int>>::err("prompt_tokens cannot be empty");
+  }
+
+  auto token_result = Validator::validateTokenSequence(
+      prompt_tokens, config_.vocab_size, "generate");
+  if (token_result.isErr()) {
+    TLLM_ERROR("{}", token_result.error());
+    return Result<std::vector<int>>::err(token_result.error());
+  }
+
+  // 3. Validate prompt length
+  auto length_result = Validator::validatePromptLength(
+      static_cast<int>(prompt_tokens.size()), config.max_new_tokens,
+      config_.max_seq_len);
+  if (length_result.isErr()) {
+    TLLM_ERROR("{}", length_result.error());
+    return Result<std::vector<int>>::err(length_result.error());
+  }
+
   stats_.prompt_tokens = static_cast<int>(prompt_tokens.size());
+  TLLM_INFO("Starting generation: prompt_tokens={}, max_new_tokens={}",
+            prompt_tokens.size(), config.max_new_tokens);
 
   // Allocate sequence in KV cache
   int total_len =
@@ -95,9 +154,12 @@ InferenceEngine::generate(const std::vector<int> &prompt_tokens,
   auto alloc_result =
       kv_cache_->allocateSequence(std::min(total_len, config_.max_seq_len));
   if (alloc_result.isErr()) {
-    return {}; // Failed to allocate
+    TLLM_ERROR("Failed to allocate KV cache: {}", alloc_result.error());
+    return Result<std::vector<int>>::err(
+        "Failed to allocate KV cache: " + alloc_result.error());
   }
   int seq_id = alloc_result.value();
+  TLLM_DEBUG("Allocated KV cache sequence: seq_id={}", seq_id);
 
   std::vector<int> output_tokens;
   output_tokens.reserve(config.max_new_tokens);
@@ -110,6 +172,8 @@ InferenceEngine::generate(const std::vector<int> &prompt_tokens,
   stats_.prefill_time_ms =
       std::chrono::duration<float, std::milli>(prefill_end - prefill_start)
           .count();
+
+  TLLM_DEBUG("Prefill completed: time={:.2f}ms", stats_.prefill_time_ms);
 
   // Decode phase
   auto decode_start = std::chrono::high_resolution_clock::now();
@@ -136,8 +200,13 @@ InferenceEngine::generate(const std::vector<int> &prompt_tokens,
         stats_.tokens_per_second =
             stats_.tokens_generated / (stats_.decode_time_ms / 1000.0f);
       }
-      kv_cache_->releaseSequence(seq_id);
-      return output_tokens;
+      TLLM_INFO("Generation stopped at EOS token: generated={}, time={:.2f}ms",
+                stats_.tokens_generated, stats_.decode_time_ms);
+      auto release_result = kv_cache_->releaseSequence(seq_id);
+      if (release_result.isErr()) {
+        TLLM_WARN("Failed to release sequence: {}", release_result.error());
+      }
+      return Result<std::vector<int>>::ok(output_tokens);
     }
     prev_token = next_token;
   }
@@ -167,16 +236,36 @@ InferenceEngine::generate(const std::vector<int> &prompt_tokens,
         stats_.tokens_generated / (stats_.decode_time_ms / 1000.0f);
   }
 
-  // Release sequence
-  kv_cache_->releaseSequence(seq_id);
+  TLLM_INFO("Generation completed: tokens={}, prefill={:.2f}ms, decode={:.2f}ms, tps={:.2f}",
+            stats_.tokens_generated, stats_.prefill_time_ms,
+            stats_.decode_time_ms, stats_.tokens_per_second);
 
-  return output_tokens;
+  // Release sequence
+  auto release_result = kv_cache_->releaseSequence(seq_id);
+  if (release_result.isErr()) {
+    TLLM_WARN("Failed to release sequence: {}", release_result.error());
+  }
+
+  return Result<std::vector<int>>::ok(output_tokens);
 }
 
 void InferenceEngine::prefill(const std::vector<int> &tokens, int seq_id) {
   int num_tokens = static_cast<int>(tokens.size());
   if (num_tokens <= 0) {
+    TLLM_WARN("prefill: empty token sequence");
     return;
+  }
+
+  TLLM_TRACE("prefill: seq_id={}, num_tokens={}", seq_id, num_tokens);
+
+  // Validate token IDs (debug mode only for performance)
+  TLLM_DEBUG_IF(true, "prefill: validating {} token IDs", num_tokens);
+  for (int i = 0; i < num_tokens; ++i) {
+    if (tokens[i] < 0 || tokens[i] >= config_.vocab_size) {
+      TLLM_ERROR("prefill: invalid token_id {} at position {}, vocab_size={}",
+                 tokens[i], i, config_.vocab_size);
+      return;
+    }
   }
 
   // Embed tokens
@@ -192,7 +281,10 @@ void InferenceEngine::prefill(const std::vector<int> &tokens, int seq_id) {
                           stream_);
   }
 
-  kv_cache_->advanceSeqLen(seq_id, num_tokens);
+  auto advance_result = kv_cache_->advanceSeqLen(seq_id, num_tokens);
+  if (advance_result.isErr()) {
+    TLLM_ERROR("prefill: {}", advance_result.error());
+  }
 }
 
 int InferenceEngine::decodeStep(int seq_id, int position, int token_id,

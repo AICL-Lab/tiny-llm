@@ -1,5 +1,7 @@
 #pragma once
 
+#include "tiny_llm/result.h"
+
 #include <cuda_fp16.h>
 #include <cuda_runtime.h>
 #include <exception>
@@ -8,12 +10,36 @@
 
 namespace tiny_llm {
 
-// CUDA error checking macro
+// CUDA error checking macro (throws exception)
 #define CUDA_CHECK(call)                                                       \
   do {                                                                         \
     cudaError_t err = call;                                                    \
     if (err != cudaSuccess) {                                                  \
       throw tiny_llm::CudaException(err, __FILE__, __LINE__);                  \
+    }                                                                          \
+  } while (0)
+
+// CUDA error checking macro (returns Result<void>)
+// Use in functions that return Result<T>
+#define CUDA_CHECK_RESULT(call)                                                \
+  do {                                                                         \
+    cudaError_t err = call;                                                    \
+    if (err != cudaSuccess) {                                                  \
+      return tiny_llm::Result<void>::err(                                      \
+          std::string("CUDA error at ") + __FILE__ + ":" +                     \
+          std::to_string(__LINE__) + ": " + cudaGetErrorString(err));          \
+    }                                                                          \
+  } while (0)
+
+// CUDA error checking for destructors (logs error, doesn't throw)
+// Requires TLLM_ERROR macro from logger.h to be available
+#define CUDA_CHECK_DESTROY(call)                                               \
+  do {                                                                         \
+    cudaError_t err = call;                                                    \
+    if (err != cudaSuccess) {                                                  \
+      /* Log error but don't throw in destructor */                            \
+      fprintf(stderr, "CUDA error in destructor at %s:%d: %s\n",               \
+              __FILE__, __LINE__, cudaGetErrorString(err));                    \
     }                                                                          \
   } while (0)
 
@@ -62,7 +88,13 @@ public:
 
   ~CudaStream() {
     if (stream_) {
-      cudaStreamDestroy(stream_);
+      // Use safe check in destructor (no exceptions)
+      cudaError_t err = cudaStreamDestroy(stream_);
+      if (err != cudaSuccess) {
+        // Log error but don't throw in destructor
+        fprintf(stderr, "CUDA error in CudaStream destructor: %s\n",
+                cudaGetErrorString(err));
+      }
     }
   }
 
@@ -78,7 +110,11 @@ public:
   CudaStream &operator=(CudaStream &&other) noexcept {
     if (this != &other) {
       if (stream_) {
-        cudaStreamDestroy(stream_);
+        cudaError_t err = cudaStreamDestroy(stream_);
+        if (err != cudaSuccess) {
+          fprintf(stderr, "CUDA error in CudaStream move assignment: %s\n",
+                  cudaGetErrorString(err));
+        }
       }
       stream_ = other.stream_;
       other.stream_ = nullptr;
@@ -108,7 +144,11 @@ public:
 
   ~DeviceBuffer() {
     if (data_) {
-      cudaFree(data_);
+      cudaError_t err = cudaFree(data_);
+      if (err != cudaSuccess) {
+        fprintf(stderr, "CUDA error in DeviceBuffer destructor: %s\n",
+                cudaGetErrorString(err));
+      }
     }
   }
 
@@ -126,7 +166,11 @@ public:
   DeviceBuffer &operator=(DeviceBuffer &&other) noexcept {
     if (this != &other) {
       if (data_) {
-        cudaFree(data_);
+        cudaError_t err = cudaFree(data_);
+        if (err != cudaSuccess) {
+          fprintf(stderr, "CUDA error in DeviceBuffer move assignment: %s\n",
+                  cudaGetErrorString(err));
+        }
       }
       data_ = other.data_;
       count_ = other.count_;

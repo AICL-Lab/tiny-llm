@@ -12,12 +12,17 @@ description: "如何参与 Tiny-LLM 项目开发"
 
 ## 开发流程
 
-1. Fork 本仓库
-2. 创建特性分支：`git checkout -b feature/your-feature`
-3. 进行更改并确保测试通过
-4. 提交更改：`git commit -m "feat: add your feature"`
-5. 推送分支：`git push origin feature/your-feature`
-6. 创建 Pull Request
+本项目遵循**规范驱动开发（Spec-Driven Development）**。在编写代码之前，必须先更新或创建相应的规范文档。
+
+1. **更新/创建 Specs**：在 `/specs` 目录下更新产品需求、RFC 或 API 定义
+2. Fork 本仓库
+3. 创建特性分支：`git checkout -b feature/your-feature`
+4. 进行更改并确保测试通过
+5. 提交更改：`git commit -m "feat: add your feature"`
+6. 推送分支：`git push origin feature/your-feature`
+7. 创建 Pull Request
+
+> 详细的 AI 助手工作流请参阅 [AGENTS.md](AGENTS.md)。
 
 ---
 
@@ -102,13 +107,14 @@ docs: update API reference for KVCacheManager
 
 ```
 tiny-llm/
+├── specs/               # 规范文档 (product, RFC, API, testing)
 ├── include/tiny_llm/    # 公共头文件
 ├── kernels/             # CUDA Kernel (.cu, .cuh)
 ├── src/                 # 主机端实现 (.cpp)
 ├── tests/               # 测试文件
 ├── docs/                # 文档
 ├── changelog/           # 更新日志
-└── .kiro/               # 设计文档
+└── AGENTS.md            # AI 工作流定义
 ```
 
 ---
@@ -132,9 +138,10 @@ tiny-llm/
 
 ## 文档更新
 
-- API 变更需更新 `docs/API.md`
+- API 变更需更新 `/specs/api/` 和 `docs/` 目录
 - 重要变更需添加 changelog 条目
 - README 变更需同步英文和中文版本
+- 新功能/修改功能需先更新 `/specs/product/` 或 `/specs/rfc/`
 
 ---
 

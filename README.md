@@ -8,7 +8,7 @@
 ![C++](https://img.shields.io/badge/C%2B%2B-17-00599C?logo=c%2B%2B&logoColor=white)
 ![CMake](https://img.shields.io/badge/CMake-3.18+-064F8C?logo=cmake&logoColor=white)
 
-English | [简体中文](README.zh-CN.md) | [Documentation](https://lessup.github.io/tiny-llm/) | [API Reference](https://lessup.github.io/tiny-llm/docs/en/API)
+[简体中文](README.zh-CN.md) | [Documentation](https://lessup.github.io/tiny-llm/) | [API Reference](https://lessup.github.io/tiny-llm/docs/en/API)
 
 A lightweight, high-performance CUDA C++ inference engine for Transformer models, featuring W8A16 quantization, efficient KV Cache management, and optimized CUDA kernels.
 
@@ -110,6 +110,7 @@ auto output = engine.generate({1, 15043, 29892}, gen);
 
 ```
 tiny-llm/
+├── specs/               # Spec documents (product, RFC, API, testing)
 ├── include/tiny_llm/    # Public headers
 ├── kernels/             # CUDA kernels (.cu, .cuh)
 ├── src/                 # Host-side implementation (.cpp)

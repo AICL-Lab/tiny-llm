@@ -3,6 +3,8 @@
 #include "elementwise.cuh"
 #include "rmsnorm.cuh"
 #include "tiny_llm/cuda_utils.h"
+#include "tiny_llm/logger.h"
+#include "tiny_llm/validator.h"
 #include "w8a16_matmul.cuh"
 #include <cmath>
 
@@ -94,22 +96,25 @@ void TransformerLayer::freeBuffers() {
   if (!buffers_allocated_)
     return;
 
-  if (norm_output_)
-    cudaFree(norm_output_);
-  if (q_buf_)
-    cudaFree(q_buf_);
-  if (k_buf_)
-    cudaFree(k_buf_);
-  if (v_buf_)
-    cudaFree(v_buf_);
-  if (attn_output_)
-    cudaFree(attn_output_);
-  if (ffn_gate_)
-    cudaFree(ffn_gate_);
-  if (ffn_up_)
-    cudaFree(ffn_up_);
-  if (ffn_output_)
-    cudaFree(ffn_output_);
+  // Use safe checks in destructor (no exceptions)
+  auto safe_free = [](half *ptr) {
+    if (ptr) {
+      cudaError_t err = cudaFree(ptr);
+      if (err != cudaSuccess) {
+        fprintf(stderr, "CUDA error in freeBuffers: %s\n",
+                cudaGetErrorString(err));
+      }
+    }
+  };
+
+  safe_free(norm_output_);
+  safe_free(q_buf_);
+  safe_free(k_buf_);
+  safe_free(v_buf_);
+  safe_free(attn_output_);
+  safe_free(ffn_gate_);
+  safe_free(ffn_up_);
+  safe_free(ffn_output_);
 
   norm_output_ = nullptr;
   q_buf_ = nullptr;
@@ -124,6 +129,24 @@ void TransformerLayer::freeBuffers() {
 
 void TransformerLayer::forward(half *hidden_states, KVCacheManager &kv_cache,
                                int seq_id, int position, cudaStream_t stream) {
+  // Input validation
+  auto ptr_result = Validator::validateNotNull(hidden_states, "hidden_states");
+  if (ptr_result.isErr()) {
+    TLLM_ERROR("forward: {}", ptr_result.error());
+    return;
+  }
+
+  if (position < 0 || position >= config_.max_seq_len) {
+    TLLM_ERROR("forward: invalid position {} for layer {}, max_seq_len={}",
+               position, layer_idx_, config_.max_seq_len);
+    return;
+  }
+
+  if (!kv_cache.hasSequence(seq_id)) {
+    TLLM_ERROR("forward: invalid seq_id {} for layer {}", seq_id, layer_idx_);
+    return;
+  }
+
   // Single token decode
   const int num_tokens = 1;
   const int hidden_dim = config_.hidden_dim;
@@ -149,11 +172,31 @@ void TransformerLayer::forward(half *hidden_states, KVCacheManager &kv_cache,
 void TransformerLayer::forwardPrefill(half *hidden_states,
                                       KVCacheManager &kv_cache, int seq_id,
                                       int seq_len, cudaStream_t stream) {
-  // Multiple tokens prefill
-  const int num_tokens = seq_len;
-  if (num_tokens <= 0) {
+  // Input validation
+  auto ptr_result = Validator::validateNotNull(hidden_states, "hidden_states");
+  if (ptr_result.isErr()) {
+    TLLM_ERROR("forwardPrefill: {}", ptr_result.error());
     return;
   }
+
+  if (seq_len <= 0) {
+    TLLM_ERROR("forwardPrefill: invalid seq_len {}", seq_len);
+    return;
+  }
+
+  if (seq_len > config_.max_seq_len) {
+    TLLM_ERROR("forwardPrefill: seq_len {} exceeds max_seq_len {}",
+               seq_len, config_.max_seq_len);
+    return;
+  }
+
+  if (!kv_cache.hasSequence(seq_id)) {
+    TLLM_ERROR("forwardPrefill: invalid seq_id {}", seq_id);
+    return;
+  }
+
+  // Multiple tokens prefill
+  const int num_tokens = seq_len;
   const int hidden_dim = config_.hidden_dim;
 
   // Attention sublayer

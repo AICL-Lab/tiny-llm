@@ -36,8 +36,9 @@ public:
   InferenceEngine &operator=(const InferenceEngine &) = delete;
 
   // Generate tokens from prompt
-  std::vector<int> generate(const std::vector<int> &prompt_tokens,
-                            const GenerationConfig &config);
+  // Returns Result<vector<int>> with generated tokens or error
+  Result<std::vector<int>> generate(const std::vector<int> &prompt_tokens,
+                                     const GenerationConfig &config);
 
   // Get generation statistics
   const GenerationStats &getStats() const { return stats_; }

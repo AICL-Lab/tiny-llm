@@ -34,22 +34,29 @@ public:
   Result<int> allocateSequence(int max_len);
 
   // Release cache for completed sequence
-  void releaseSequence(int seq_id);
+  // Returns error if sequence not found
+  Result<void> releaseSequence(int seq_id);
 
   // Get cache pointers for a sequence at specific layer
   // Returns (k_cache, v_cache) pointers
   std::pair<half *, half *> getCache(int seq_id, int layer_idx);
 
+  // Get cache pointers with error checking
+  // Returns error if sequence not found or invalid layer
+  Result<std::pair<half *, half *>> getCacheChecked(int seq_id, int layer_idx);
+
   // Append new KV pairs to cache (does NOT advance seq_len).
   // The newly appended tokens are written at the current visible tail and may be
   // consumed by the same step's decode attention before advanceSeqLen() is
   // called, but getSeqLen() remains unchanged until the explicit advance.
-  void appendKV(int seq_id, int layer_idx, const half *new_k, const half *new_v,
-                int num_tokens, cudaStream_t stream = 0);
+  // Returns error on invalid input or cache overflow.
+  Result<void> appendKV(int seq_id, int layer_idx, const half *new_k,
+                        const half *new_v, int num_tokens, cudaStream_t stream = 0);
 
   // Advance sequence length after all layers have appended.
   // Call exactly ONCE per logical step, after all layers' appendKV calls.
-  void advanceSeqLen(int seq_id, int num_tokens);
+  // Returns error if sequence not found or invalid num_tokens.
+  Result<void> advanceSeqLen(int seq_id, int num_tokens);
 
   // Get current sequence length
   int getSeqLen(int seq_id) const;

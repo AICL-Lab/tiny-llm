@@ -4,6 +4,9 @@ bin/
 lib/
 out/
 
+# Website build directory
+website/_site/
+
 # CMake generated files
 CMakeCache.txt
 CMakeFiles/

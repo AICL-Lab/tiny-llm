@@ -1,5 +1,7 @@
 #pragma once
 
+#include "result.h"
+
 #include <cstdint>
 #include <cuda_fp16.h>
 #include <string>
@@ -90,6 +92,9 @@ struct ModelWeights {
   QuantizedWeight lm_head;           // [hidden_dim, vocab_size]
 };
 
+// Forward declaration
+class Validator;
+
 // Generation configuration
 struct GenerationConfig {
   int max_new_tokens = 256;
@@ -98,6 +103,12 @@ struct GenerationConfig {
   float top_p = 0.9f;
   bool do_sample = false; // false = greedy
   float repetition_penalty = 1.0f;
+
+  /**
+   * @brief Validate the configuration
+   * @return Result<void> indicating success or error with message
+   */
+  Result<void> validate() const;
 };
 
 // Generation statistics
