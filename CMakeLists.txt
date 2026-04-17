@@ -96,7 +96,7 @@ if(BUILD_TESTS)
         GIT_REPOSITORY https://github.com/emil-e/rapidcheck.git
         GIT_TAG master
     )
-    set(RC_ENABLE_GTEST ON CACHE BOOL "Enable GTest support for rapidcheck" FORCE)
+    set(RAPIDCHECK_ENABLE_GTEST ON CACHE BOOL "Enable GTest support for rapidcheck" FORCE)
     FetchContent_MakeAvailable(rapidcheck)
 
     file(GLOB_RECURSE TEST_SOURCES "tests/*.cpp" "tests/*.cu")
@@ -105,11 +105,13 @@ if(BUILD_TESTS)
         tiny_llm
         GTest::gtest_main
         rapidcheck
+        rapidcheck_gtest
         CUDA::cudart
     )
     target_include_directories(tiny_llm_tests PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}/kernels
         ${rapidcheck_SOURCE_DIR}/include
+        ${rapidcheck_SOURCE_DIR}/extras/gtest/include
     )
     target_compile_options(tiny_llm_tests PRIVATE
         $<$<COMPILE_LANGUAGE:CUDA>:--expt-relaxed-constexpr>
