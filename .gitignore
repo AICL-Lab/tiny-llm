@@ -71,8 +71,6 @@ Thumbs.db
 
 # Test results
 test_results/
-*.xml
-*.json
 
 # Coverage reports
 coverage/
