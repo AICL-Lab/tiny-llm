@@ -1,5 +1,5 @@
 ---
-layout: default
+layout: page
 title: "Contributing — Tiny-LLM"
 description: "How to contribute to Tiny-LLM project"
 nav_order: 50

@@ -1,5 +1,5 @@
 ---
-layout: default
+layout: page
 title: Tiny-LLM
 description: High-Performance CUDA Inference Engine for LLMs — W8A16 quantization, KV Cache, and optimized CUDA kernels
 nav_order: 1
