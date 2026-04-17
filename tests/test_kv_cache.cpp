@@ -2,7 +2,8 @@
 #include <cuda_runtime.h>
 #include <gtest/gtest.h>
 #include <rapidcheck.h>
-#include <rapidcheck/gtest.h>
+// NOTE: rapidcheck/gtest disabled due to GCC 11 std_function bug
+// #include <rapidcheck/gtest.h>
 
 using namespace tiny_llm;
 
