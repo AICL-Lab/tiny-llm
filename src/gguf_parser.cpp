@@ -175,63 +175,93 @@ Result<GGUFValue> GGUFParser::readValue(std::ifstream &file, GGUFType type) {
   case GGUFType::UINT8: {
     uint8_t v;
     file.read(reinterpret_cast<char *>(&v), 1);
-    return v;
+    if (!file)
+      return Result<GGUFValue>::err("Failed to read uint8_t");
+    return Result<GGUFValue>::ok(GGUFValue{v});
   }
   case GGUFType::INT8: {
     int8_t v;
     file.read(reinterpret_cast<char *>(&v), 1);
-    return v;
+    if (!file)
+      return Result<GGUFValue>::err("Failed to read int8_t");
+    return Result<GGUFValue>::ok(GGUFValue{v});
   }
   case GGUFType::UINT16: {
     uint16_t v;
     file.read(reinterpret_cast<char *>(&v), 2);
-    return v;
+    if (!file)
+      return Result<GGUFValue>::err("Failed to read uint16_t");
+    return Result<GGUFValue>::ok(GGUFValue{v});
   }
   case GGUFType::INT16: {
     int16_t v;
     file.read(reinterpret_cast<char *>(&v), 2);
-    return v;
+    if (!file)
+      return Result<GGUFValue>::err("Failed to read int16_t");
+    return Result<GGUFValue>::ok(GGUFValue{v});
   }
   case GGUFType::UINT32: {
     uint32_t v;
     file.read(reinterpret_cast<char *>(&v), 4);
-    return v;
+    if (!file)
+      return Result<GGUFValue>::err("Failed to read uint32_t");
+    return Result<GGUFValue>::ok(GGUFValue{v});
   }
   case GGUFType::INT32: {
     int32_t v;
     file.read(reinterpret_cast<char *>(&v), 4);
-    return v;
+    if (!file)
+      return Result<GGUFValue>::err("Failed to read int32_t");
+    return Result<GGUFValue>::ok(GGUFValue{v});
   }
   case GGUFType::UINT64: {
     uint64_t v;
     file.read(reinterpret_cast<char *>(&v), 8);
-    return v;
+    if (!file)
+      return Result<GGUFValue>::err("Failed to read uint64_t");
+    return Result<GGUFValue>::ok(GGUFValue{v});
   }
   case GGUFType::INT64: {
     int64_t v;
     file.read(reinterpret_cast<char *>(&v), 8);
-    return v;
+    if (!file)
+      return Result<GGUFValue>::err("Failed to read int64_t");
+    return Result<GGUFValue>::ok(GGUFValue{v});
   }
   case GGUFType::FLOAT32: {
     float v;
     file.read(reinterpret_cast<char *>(&v), 4);
-    return v;
+    if (!file)
+      return Result<GGUFValue>::err("Failed to read float");
+    return Result<GGUFValue>::ok(GGUFValue{v});
   }
   case GGUFType::FLOAT64: {
     double v;
     file.read(reinterpret_cast<char *>(&v), 8);
-    return v;
+    if (!file)
+      return Result<GGUFValue>::err("Failed to read double");
+    return Result<GGUFValue>::ok(GGUFValue{v});
   }
   case GGUFType::BOOL: {
     uint8_t v;
     file.read(reinterpret_cast<char *>(&v), 1);
-    return static_cast<bool>(v);
+    if (!file)
+      return Result<GGUFValue>::err("Failed to read bool");
+    return Result<GGUFValue>::ok(GGUFValue{static_cast<bool>(v)});
   }
   case GGUFType::STRING: {
-    return readString(file);
+    auto str_result = readString(file);
+    if (str_result.isErr()) {
+      return Result<GGUFValue>::err(str_result.error());
+    }
+    return Result<GGUFValue>::ok(GGUFValue{str_result.value()});
   }
   case GGUFType::ARRAY: {
-    return readArray(file);
+    auto arr_result = readArray(file);
+    if (arr_result.isErr()) {
+      return Result<GGUFValue>::err(arr_result.error());
+    }
+    return Result<GGUFValue>::ok(GGUFValue{arr_result.value()});
   }
   default:
     return Result<GGUFValue>::err("Unsupported GGUF type: " +
@@ -263,22 +293,30 @@ Result<GGUFValue> GGUFParser::readArray(std::ifstream &file) {
   case GGUFType::UINT32: {
     std::vector<uint32_t> arr(count);
     file.read(reinterpret_cast<char *>(arr.data()), count * 4);
-    return arr;
+    if (!file)
+      return Result<GGUFValue>::err("Failed to read uint32 array");
+    return Result<GGUFValue>::ok(GGUFValue{arr});
   }
   case GGUFType::INT32: {
     std::vector<int32_t> arr(count);
     file.read(reinterpret_cast<char *>(arr.data()), count * 4);
-    return arr;
+    if (!file)
+      return Result<GGUFValue>::err("Failed to read int32 array");
+    return Result<GGUFValue>::ok(GGUFValue{arr});
   }
   case GGUFType::FLOAT32: {
     std::vector<float> arr(count);
     file.read(reinterpret_cast<char *>(arr.data()), count * 4);
-    return arr;
+    if (!file)
+      return Result<GGUFValue>::err("Failed to read float array");
+    return Result<GGUFValue>::ok(GGUFValue{arr});
   }
   case GGUFType::FLOAT64: {
     std::vector<double> arr(count);
     file.read(reinterpret_cast<char *>(arr.data()), count * 8);
-    return arr;
+    if (!file)
+      return Result<GGUFValue>::err("Failed to read double array");
+    return Result<GGUFValue>::ok(GGUFValue{arr});
   }
   case GGUFType::STRING: {
     std::vector<std::string> arr;
@@ -290,7 +328,7 @@ Result<GGUFValue> GGUFParser::readArray(std::ifstream &file) {
       }
       arr.push_back(r.value());
     }
-    return arr;
+    return Result<GGUFValue>::ok(GGUFValue{arr});
   }
   default:
     // Skip unsupported array types
@@ -303,7 +341,7 @@ Result<GGUFValue> GGUFParser::readArray(std::ifstream &file) {
         return Result<GGUFValue>::err(r.error());
       }
     }
-    return std::vector<uint8_t>(); // Return empty array
+    return Result<GGUFValue>::ok(GGUFValue{std::vector<uint8_t>()});
   }
 }
 
@@ -328,7 +366,7 @@ Result<std::string> GGUFParser::readString(std::ifstream &file) {
     return Result<std::string>::err("Failed to read string data");
   }
 
-  return str;
+  return Result<std::string>::ok(str);
 }
 
 uint64_t GGUFParser::alignOffset(uint64_t offset) const {
