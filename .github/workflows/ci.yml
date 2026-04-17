@@ -98,16 +98,16 @@ jobs:
             nvcc --version
           fi
 
-      - name: Clear CMake Cache
-        run: rm -rf build/
-
       - name: Cache CMake Build
         uses: actions/cache@v4
         with:
           path: build
-          key: cmake-build-${{ runner.os }}-${{ hashFiles('CMakeLists.txt', '**/*.cmake', 'kernels/**', 'src/**', 'include/**') }}
+          key: cmake-build-${{ runner.os }}-${{ hashFiles('CMakeLists.txt', '**/*.cmake', 'kernels/**', 'src/**', 'include/**', 'tests/**') }}
           restore-keys: |
             cmake-build-${{ runner.os }}-
+
+      - name: Clear CMake Cache
+        run: rm -rf build/
 
       - name: Configure CMake
         run: |
