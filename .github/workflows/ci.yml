@@ -102,9 +102,9 @@ jobs:
         uses: actions/cache@v4
         with:
           path: build
-          key: cmake-build-${{ runner.os }}-${{ hashFiles('CMakeLists.txt', '**/*.cmake', 'kernels/**', 'src/**', 'include/**', 'tests/**') }}
+          key: cmake-build-v2-${{ runner.os }}-${{ hashFiles('CMakeLists.txt', '**/*.cmake', 'kernels/**', 'src/**', 'include/**', 'tests/**') }}
           restore-keys: |
-            cmake-build-${{ runner.os }}-
+            cmake-build-v2-${{ runner.os }}-
 
       - name: Clear CMake Cache
         run: rm -rf build/
