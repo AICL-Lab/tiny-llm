@@ -120,11 +120,10 @@ jobs:
 
       - name: Configure CMake
         run: |
-          export CC=gcc-12
-          export CXX=g++-12
           cmake -S . -B build \
             -DCMAKE_BUILD_TYPE=${{ env.CMAKE_BUILD_TYPE }} \
-            -DBUILD_TESTS=ON
+            -DBUILD_TESTS=ON \
+            -DCMAKE_CUDA_HOST_COMPILER=/usr/bin/g++-12
         env:
           CC: gcc-12
           CXX: g++-12
