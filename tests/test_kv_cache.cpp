@@ -271,7 +271,7 @@ TEST_F(KVCacheTest, AdvanceSeqLenIgnoresNonPositiveValues) {
 // NOTE: Property-based tests are temporarily disabled due to GCC 11/12
 // compatibility issues with rapidcheck's GTest integration.
 
-/*
+#if 0
 class KVCachePropertyTest : public KVCacheTest {};
 
 RC_GTEST_FIXTURE_PROP(KVCachePropertyTest, AllocationInvariant,
@@ -416,4 +416,4 @@ RC_GTEST_FIXTURE_PROP(KVCachePropertyTest, ExhaustionInvariant, ()) {
   auto result2 = cache.allocateSequence(64);
   RC_ASSERT(result2.isOk());
 }
-*/
+#endif
