@@ -7,17 +7,28 @@ namespace tiny_llm {
 
 KVCacheManager::KVCacheManager(const KVCacheConfig &config) : config_(config) {
 
-  // Calculate per-slot memory size
-  // Each slot stores K and V for all layers
-  // K: [num_layers, num_heads, max_seq_len, head_dim]
-  // V: [num_layers, num_heads, max_seq_len, head_dim]
+  // Validate configuration to prevent overflow
+  if (config_.num_layers <= 0 || config_.num_heads <= 0 || 
+      config_.head_dim <= 0 || config_.max_seq_len <= 0 || config_.max_batch_size <= 0) {
+    throw std::invalid_argument("KVCacheManager: invalid configuration parameters");
+  }
+
+  // Calculate per-slot memory size with overflow check
   size_t kv_per_layer = static_cast<size_t>(config_.num_heads) *
                         config_.max_seq_len * config_.head_dim;
-  size_t kv_total = kv_per_layer * config_.num_layers * 2; // K and V
+  
+  size_t kv_total = kv_per_layer * static_cast<size_t>(config_.num_layers) * 2;
+  
+  if (kv_total > SIZE_MAX / sizeof(half)) {
+    throw std::runtime_error("KVCacheManager: memory size overflow");
+  }
   slot_size_ = kv_total * sizeof(half);
 
   // Total pool size for all batch slots
-  pool_size_ = slot_size_ * config_.max_batch_size;
+  if (slot_size_ > SIZE_MAX / static_cast<size_t>(config_.max_batch_size)) {
+    throw std::runtime_error("KVCacheManager: pool size overflow");
+  }
+  pool_size_ = slot_size_ * static_cast<size_t>(config_.max_batch_size);
 
   // Allocate GPU memory pool
   CUDA_CHECK(cudaMalloc(&memory_pool_, pool_size_));

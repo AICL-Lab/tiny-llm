@@ -65,7 +65,10 @@ __global__ void rmsnorm_kernel(const half *__restrict__ input,
 
 void rmsnorm(const half *input, const half *weight, half *output,
              int batch_size, int hidden_dim, float eps, cudaStream_t stream) {
-  // Choose block size based on hidden_dim
+  if (batch_size <= 0 || hidden_dim <= 0) {
+    return;
+  }
+  
   int block_size = 256;
   if (hidden_dim <= 256)
     block_size = 128;
@@ -129,6 +132,10 @@ __global__ void rmsnorm_inplace_kernel(half *__restrict__ x,
 
 void rmsnorm_inplace(half *x, const half *weight, int batch_size,
                      int hidden_dim, float eps, cudaStream_t stream) {
+  if (batch_size <= 0 || hidden_dim <= 0) {
+    return;
+  }
+  
   int block_size = 256;
   if (hidden_dim <= 256)
     block_size = 128;
@@ -197,6 +204,10 @@ __global__ void rmsnorm_residual_kernel(const half *__restrict__ input,
 void rmsnorm_residual(const half *input, const half *residual,
                       const half *weight, half *output, int batch_size,
                       int hidden_dim, float eps, cudaStream_t stream) {
+  if (batch_size <= 0 || hidden_dim <= 0) {
+    return;
+  }
+  
   int block_size = 256;
   if (hidden_dim <= 256)
     block_size = 128;

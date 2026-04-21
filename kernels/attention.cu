@@ -117,10 +117,13 @@ void attention_decode(const half *query, const half *k_cache,
                       const half *v_cache, half *output, float scale,
                       int batch_size, int num_heads, int seq_len, int head_dim,
                       cudaStream_t stream) {
+  if (batch_size <= 0 || num_heads <= 0 || seq_len <= 0 || head_dim <= 0) {
+    return;
+  }
+  
   int num_blocks = batch_size * num_heads;
   int block_size = 256;
 
-  // Shared memory: scores[seq_len] + reduce[32]
   size_t shared_size = (seq_len + 32) * sizeof(float);
 
   attention_decode_kernel<<<num_blocks, block_size, shared_size, stream>>>(
@@ -235,6 +238,10 @@ __global__ void attention_prefill_kernel(const half *__restrict__ query,
 void attention_prefill(const half *query, const half *key, const half *value,
                        half *output, float scale, int batch_size, int num_heads,
                        int seq_len, int head_dim, cudaStream_t stream) {
+  if (batch_size <= 0 || num_heads <= 0 || seq_len <= 0 || head_dim <= 0) {
+    return;
+  }
+  
   dim3 grid(seq_len, num_heads, batch_size);
   int block_size = 256;
   size_t shared_size = (seq_len + 32) * sizeof(float);
@@ -281,6 +288,10 @@ void get_attention_weights(const half *query, const half *key, half *weights,
                            float scale, int batch_size, int num_heads,
                            int query_len, int key_len, int head_dim,
                            bool apply_causal_mask, cudaStream_t stream) {
+  if (batch_size <= 0 || num_heads <= 0 || query_len <= 0 || key_len <= 0 || head_dim <= 0) {
+    return;
+  }
+  
   dim3 grid(query_len, num_heads, batch_size);
   int block_size = 256;
 
@@ -356,6 +367,10 @@ __global__ void softmax_kernel(const half *__restrict__ input,
 
 void softmax(const half *input, half *output, int batch_size, int seq_len,
              cudaStream_t stream) {
+  if (batch_size <= 0 || seq_len <= 0) {
+    return;
+  }
+  
   int block_size = 256;
   size_t shared_size = (seq_len + 32) * sizeof(float);
 

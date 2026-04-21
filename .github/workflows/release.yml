@@ -144,33 +144,63 @@ jobs:
         id: notes
         run: |
           VERSION="${{ needs.validate.outputs.version }}"
-          # Extract version without 'v' prefix
           VER_NUM="${VERSION#v}"
-
-          # Check if changelog exists
-          CHANGELOG_FILE="changelog/index.md"
-          if [[ -f "$CHANGELOG_FILE" ]]; then
-            {
-              echo "release_notes<<EOF"
-              echo "## Tiny-LLM $VERSION"
+          
+          CHANGELOG_EN="website/changelog/en/${VER_NUM}.md"
+          CHANGELOG_ZH="website/changelog/zh/${VER_NUM}.md"
+          
+          {
+            echo "release_notes<<EOF"
+            echo "## Tiny-LLM $VERSION"
+            echo ""
+            if [[ -f "$CHANGELOG_EN" ]]; then
+              echo "### English"
               echo ""
-              echo "### Changes"
-              echo "See [Changelog](https://lessup.github.io/tiny-llm/changelog/) for details."
+              echo "High-performance CUDA C++ inference engine release."
               echo ""
-              echo "### Installation"
-              echo '```bash'
-              echo "git clone https://github.com/LessUp/tiny-llm.git"
-              echo "cd tiny-llm"
-              echo "git checkout $VERSION"
-              echo "mkdir build && cd build"
-              echo "cmake .. -DCMAKE_BUILD_TYPE=Release"
-              echo "make -j\$(nproc)"
-              echo '```'
-              echo "EOF"
-            } >> "$GITHUB_OUTPUT"
-          else
-            echo "release_notes=Release $VERSION" >> "$GITHUB_OUTPUT"
-          fi
+              echo "**Highlights**:"
+              echo "- W8A16 quantization for ~50% memory reduction"
+              echo "- Efficient KV Cache management"
+              echo "- Optimized CUDA kernels with Tensor Core support"
+              echo ""
+              echo "See [Changelog](https://lessup.github.io/tiny-llm/changelog/en/${VER_NUM}.html) for details."
+              echo ""
+              echo "---"
+              echo ""
+              echo "### 简体中文"
+              echo ""
+              echo "高性能 CUDA C++ 推理引擎发布。"
+              echo ""
+              echo "**亮点**："
+              echo "- W8A16 量化，显存减少约 50%"
+              echo "- 高效 KV 缓存管理"
+              echo "- 优化的 CUDA 内核，支持 Tensor Core"
+              echo ""
+              echo "详见 [更新日志](https://lessup.github.io/tiny-llm/changelog/zh/${VER_NUM}.html)。"
+            else
+              echo "### English"
+              echo "Release $VERSION"
+              echo ""
+              echo "---"
+              echo ""
+              echo "### 简体中文"
+              echo "发布 $VERSION"
+            fi
+            echo ""
+            echo "### Installation | 安装"
+            echo ""
+            echo '```bash'
+            echo "git clone https://github.com/LessUp/tiny-llm.git"
+            echo "cd tiny-llm"
+            echo "git checkout $VERSION"
+            echo "mkdir build && cd build"
+            echo "cmake .. -DCMAKE_BUILD_TYPE=Release"
+            echo "make -j\$(nproc)"
+            echo '```'
+            echo ""
+            echo "[Documentation | 文档](https://lessup.github.io/tiny-llm/) | [API Reference | API 参考](https://lessup.github.io/tiny-llm/docs/en/API.html)"
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2

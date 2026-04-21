@@ -18,7 +18,11 @@ int main(int argc, char **argv) {
 
   // Print device info
   cudaDeviceProp prop;
-  cudaGetDeviceProperties(&prop, 0);
+  err = cudaGetDeviceProperties(&prop, 0);
+  if (err != cudaSuccess) {
+    std::cerr << "Failed to get device properties: " << cudaGetErrorString(err) << std::endl;
+    return 1;
+  }
 
   std::cout << "GPU: " << prop.name << std::endl;
   std::cout << "Compute Capability: " << prop.major << "." << prop.minor

@@ -28,6 +28,10 @@ __global__ void dequantize_kernel(const int8_t *__restrict__ weight_int8,
 void dequantize_weights(const int8_t *weight_int8, const half *scales,
                         half *weight_fp16, int K, int N, int group_size,
                         cudaStream_t stream) {
+  if (K <= 0 || N <= 0 || group_size <= 0) {
+    return;
+  }
+  
   int total = K * N;
   int block_size = 256;
   int grid_size = (total + block_size - 1) / block_size;
@@ -56,6 +60,10 @@ __global__ void fp16_matmul_kernel(const half *__restrict__ A,
 
 void fp16_matmul_reference(const half *input, const half *weight, half *output,
                            int M, int N, int K, cudaStream_t stream) {
+  if (M <= 0 || N <= 0 || K <= 0) {
+    return;
+  }
+  
   dim3 block(16, 16);
   dim3 grid((N + 15) / 16, (M + 15) / 16);
 
@@ -95,6 +103,10 @@ __global__ void w8a16_matmul_reference_kernel(const half *__restrict__ input,
 void w8a16_matmul_reference(const half *input, const int8_t *weight,
                             const half *scales, half *output, int M, int N,
                             int K, int group_size, cudaStream_t stream) {
+  if (M <= 0 || N <= 0 || K <= 0 || group_size <= 0) {
+    return;
+  }
+  
   dim3 block(16, 16);
   dim3 grid((N + 15) / 16, (M + 15) / 16);
 
@@ -211,15 +223,17 @@ __global__ void w8a16_matmul_tiled_kernel(const half *__restrict__ input,
 void w8a16_matmul(const half *input, const int8_t *weight, const half *scales,
                   half *output, int M, int N, int K, int group_size,
                   cudaStream_t stream) {
-  // For small matrices, use reference kernel
+  if (M <= 0 || N <= 0 || K <= 0 || group_size <= 0) {
+    return;
+  }
+  
   if (M * N < 4096) {
     w8a16_matmul_reference(input, weight, scales, output, M, N, K, group_size,
                            stream);
     return;
   }
 
-  // Use tiled kernel for larger matrices
-  dim3 block(TILE_N, TILE_M / 4); // 64 x 16 threads
+  dim3 block(TILE_N, TILE_M / 4);
   dim3 grid((N + TILE_N - 1) / TILE_N, (M + TILE_M - 1) / TILE_M);
 
   w8a16_matmul_tiled_kernel<<<grid, block, 0, stream>>>(
