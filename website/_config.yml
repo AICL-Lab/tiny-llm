@@ -129,8 +129,8 @@ social:
   links:
     - https://github.com/LessUp/tiny-llm
 
-logo: "/assets/images/logo.png"
-favicon_ico: "/assets/images/favicon.ico"
+logo: "/assets/images/logo.svg"
+favicon_ico: "/assets/icons/icon-192x192.svg"
 
 # ═══════════════════════════════════════════════════════════════
 # PWA CONFIGURATION
