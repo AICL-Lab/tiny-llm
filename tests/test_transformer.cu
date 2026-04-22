@@ -14,6 +14,19 @@
 using namespace tiny_llm;
 using namespace tiny_llm::kernels;
 
+// Helper to check if CUDA device is available
+static bool hasCudaDevice() {
+  static bool checked = false;
+  static bool has_device = false;
+  if (!checked) {
+    int device_count = 0;
+    cudaError_t err = cudaGetDeviceCount(&device_count);
+    has_device = (err == cudaSuccess && device_count > 0);
+    checked = true;
+  }
+  return has_device;
+}
+
 // Helper class for Transformer tests
 class TransformerTest : public ::testing::Test {
 protected:
@@ -188,8 +201,18 @@ TEST_F(TransformerTest, KVCacheAppendRetrieve) {
 // Property-based tests
 // Feature: tiny-llm-inference-engine, Property 5: Incremental Decoding
 // Equivalence Validates: Requirements 4.6
+// NOTE: Property-based tests are disabled when no CUDA device is available
 
-class TransformerPropertyTest : public TransformerTest {};
+class TransformerPropertyTest : public ::testing::Test {
+protected:
+  void SetUp() override {
+    if (!hasCudaDevice()) {
+      GTEST_SKIP() << "No CUDA device available";
+    }
+    cudaSetDevice(0);
+  }
+  void TearDown() override { cudaDeviceSynchronize(); }
+};
 
 // Property 5: Incremental Decoding Equivalence
 // For any input sequence, the output of incremental decoding (using KV cache)
@@ -198,6 +221,9 @@ class TransformerPropertyTest : public TransformerTest {};
 RC_GTEST_FIXTURE_PROP(TransformerPropertyTest, IncrementalDecodingEquivalence,
                       (int heads_raw, int seq_raw, int dim_raw,
                        unsigned seed)) {
+  if (!hasCudaDevice()) {
+    RC_SKIP("No CUDA device available");
+  }
   // Constrain dimensions to reasonable ranges
   int num_heads = 2 + (std::abs(heads_raw) % 6); // 2 to 8
   int seq_len = 4 + (std::abs(seq_raw) % 28);    // 4 to 32
@@ -279,6 +305,9 @@ RC_GTEST_FIXTURE_PROP(TransformerPropertyTest, IncrementalDecodingEquivalence,
 RC_GTEST_FIXTURE_PROP(TransformerPropertyTest, KVCachePreservesData,
                       (int layers_raw, int heads_raw, int seq_raw, int dim_raw,
                        unsigned seed)) {
+  if (!hasCudaDevice()) {
+    RC_SKIP("No CUDA device available");
+  }
   // Constrain dimensions
   int num_layers = 1 + (std::abs(layers_raw) % 4); // 1 to 4
   int num_heads = 2 + (std::abs(heads_raw) % 6);   // 2 to 8
@@ -355,6 +384,9 @@ RC_GTEST_FIXTURE_PROP(TransformerPropertyTest, KVCachePreservesData,
 
 RC_GTEST_FIXTURE_PROP(TransformerPropertyTest, SequentialAppendEquivalence,
                       (int heads_raw, int dim_raw, unsigned seed)) {
+  if (!hasCudaDevice()) {
+    RC_SKIP("No CUDA device available");
+  }
   // Constrain dimensions
   int num_heads = 2 + (std::abs(heads_raw) % 6);
   int head_dim = 16 + (std::abs(dim_raw) % 48);

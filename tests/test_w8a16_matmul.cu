@@ -12,6 +12,19 @@
 using namespace tiny_llm;
 using namespace tiny_llm::kernels;
 
+// Helper to check if CUDA device is available
+static bool hasCudaDevice() {
+  static bool checked = false;
+  static bool has_device = false;
+  if (!checked) {
+    int device_count = 0;
+    cudaError_t err = cudaGetDeviceCount(&device_count);
+    has_device = (err == cudaSuccess && device_count > 0);
+    checked = true;
+  }
+  return has_device;
+}
+
 // Helper class for GPU test fixtures
 class W8A16MatMulTest : public ::testing::Test {
 protected:
@@ -215,11 +228,24 @@ TEST_F(W8A16MatMulTest, NonAlignedDimensions) {
 // Property-based tests
 // Feature: tiny-llm-inference-engine, Property 1: W8A16 MatMul Numerical
 // Accuracy Validates: Requirements 2.5, 2.6
+// NOTE: Property-based tests are disabled when no CUDA device is available
 
-class W8A16PropertyTest : public W8A16MatMulTest {};
+class W8A16PropertyTest : public ::testing::Test {
+protected:
+  void SetUp() override {
+    if (!hasCudaDevice()) {
+      GTEST_SKIP() << "No CUDA device available";
+    }
+    cudaSetDevice(0);
+  }
+  void TearDown() override { cudaDeviceSynchronize(); }
+};
 
 RC_GTEST_FIXTURE_PROP(W8A16PropertyTest, NumericalAccuracyProperty,
                       (int m_raw, int n_raw, int k_raw)) {
+  if (!hasCudaDevice()) {
+    RC_SKIP("No CUDA device available");
+  }
   // Constrain dimensions to reasonable ranges
   int M = 1 + (std::abs(m_raw) % 128);
   int N = 8 + (std::abs(n_raw) % 256);
@@ -270,6 +296,9 @@ RC_GTEST_FIXTURE_PROP(W8A16PropertyTest, NumericalAccuracyProperty,
 
 RC_GTEST_FIXTURE_PROP(W8A16PropertyTest, DifferentGroupSizes,
                       (int m_raw, int n_raw, int k_raw, int gs_raw)) {
+  if (!hasCudaDevice()) {
+    RC_SKIP("No CUDA device available");
+  }
   int M = 1 + (std::abs(m_raw) % 64);
   int N = 8 + (std::abs(n_raw) % 128);
   int K = 64 + (std::abs(k_raw) % 256);

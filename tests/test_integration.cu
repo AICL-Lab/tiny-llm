@@ -5,7 +5,6 @@
 #include <cmath>
 #include <cuda_fp16.h>
 #include <cuda_runtime.h>
-#include <fstream>
 #include <gtest/gtest.h>
 #include <map>
 #include <random>
@@ -13,13 +12,24 @@
 
 using namespace tiny_llm;
 
-// Helper class for integration tests
+// Helper to check if CUDA device is available
+static bool hasCudaDevice() {
+  static bool checked = false;
+  static bool has_device = false;
+  if (!checked) {
+    int device_count = 0;
+    cudaError_t err = cudaGetDeviceCount(&device_count);
+    has_device = (err == cudaSuccess && device_count > 0);
+    checked = true;
+  }
+  return has_device;
+}
+
+// Helper class for integration tests that require GPU
 class IntegrationTest : public ::testing::Test {
 protected:
   void SetUp() override {
-    int device_count = 0;
-    cudaError_t err = cudaGetDeviceCount(&device_count);
-    if (err != cudaSuccess || device_count == 0) {
+    if (!hasCudaDevice()) {
       GTEST_SKIP() << "No CUDA device available";
     }
     cudaSetDevice(0);

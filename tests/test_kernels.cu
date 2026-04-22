@@ -12,6 +12,19 @@
 using namespace tiny_llm;
 using namespace tiny_llm::kernels;
 
+// Helper to check if CUDA device is available
+static bool hasCudaDevice() {
+  static bool checked = false;
+  static bool has_device = false;
+  if (!checked) {
+    int device_count = 0;
+    cudaError_t err = cudaGetDeviceCount(&device_count);
+    has_device = (err == cudaSuccess && device_count > 0);
+    checked = true;
+  }
+  return has_device;
+}
+
 // Helper class for GPU test fixtures
 class RMSNormTest : public ::testing::Test {
 protected:
@@ -173,8 +186,18 @@ TEST_F(RMSNormTest, InPlaceVersion) {
 // Property-based tests
 // Feature: tiny-llm-inference-engine, Property 4: RMSNorm Output Properties
 // Validates: Requirements 4.4
+// NOTE: Property-based tests are disabled when no CUDA device is available
 
-class RMSNormPropertyTest : public RMSNormTest {};
+class RMSNormPropertyTest : public ::testing::Test {
+protected:
+  void SetUp() override {
+    if (!hasCudaDevice()) {
+      GTEST_SKIP() << "No CUDA device available";
+    }
+    cudaSetDevice(0);
+  }
+  void TearDown() override { cudaDeviceSynchronize(); }
+};
 
 // Property 4: RMSNorm Output Properties
 // For any input tensor x, the RMSNorm output y (before weight multiplication)
@@ -186,6 +209,9 @@ class RMSNormPropertyTest : public RMSNormTest {};
 
 RC_GTEST_FIXTURE_PROP(RMSNormPropertyTest, OutputRMSIsOne,
                       (int batch_raw, int dim_raw, unsigned seed)) {
+  if (!hasCudaDevice()) {
+    RC_SKIP("No CUDA device available");
+  }
   // Constrain dimensions to reasonable ranges
   int batch_size = 1 + (std::abs(batch_raw) % 16);
   int hidden_dim = 32 + (std::abs(dim_raw) % 2016); // 32 to 2048
@@ -228,6 +254,9 @@ RC_GTEST_FIXTURE_PROP(RMSNormPropertyTest, OutputRMSIsOne,
 
 RC_GTEST_FIXTURE_PROP(RMSNormPropertyTest, WeightScaling,
                       (int batch_raw, int dim_raw, unsigned seed)) {
+  if (!hasCudaDevice()) {
+    RC_SKIP("No CUDA device available");
+  }
   // Constrain dimensions
   int batch_size = 1 + (std::abs(batch_raw) % 8);
   int hidden_dim = 64 + (std::abs(dim_raw) % 448); // 64 to 512
@@ -270,6 +299,9 @@ RC_GTEST_FIXTURE_PROP(RMSNormPropertyTest, WeightScaling,
 
 RC_GTEST_FIXTURE_PROP(RMSNormPropertyTest, NonZeroOutput,
                       (int batch_raw, int dim_raw, unsigned seed)) {
+  if (!hasCudaDevice()) {
+    RC_SKIP("No CUDA device available");
+  }
   // Constrain dimensions
   int batch_size = 1 + (std::abs(batch_raw) % 8);
   int hidden_dim = 32 + (std::abs(dim_raw) % 480);
@@ -318,6 +350,9 @@ RC_GTEST_FIXTURE_PROP(RMSNormPropertyTest, NonZeroOutput,
 
 RC_GTEST_FIXTURE_PROP(RMSNormPropertyTest, InPlaceEquivalence,
                       (int batch_raw, int dim_raw, unsigned seed)) {
+  if (!hasCudaDevice()) {
+    RC_SKIP("No CUDA device available");
+  }
   // Constrain dimensions
   int batch_size = 1 + (std::abs(batch_raw) % 8);
   int hidden_dim = 64 + (std::abs(dim_raw) % 448);
@@ -500,8 +535,18 @@ TEST_F(AttentionTest, SoftmaxSumsToOne) {
 // Property-based tests
 // Feature: tiny-llm-inference-engine, Property 3: Causal Masking Correctness
 // Validates: Requirements 4.2
+// NOTE: Property-based tests are disabled when no CUDA device is available
 
-class AttentionPropertyTest : public AttentionTest {};
+class AttentionPropertyTest : public ::testing::Test {
+protected:
+  void SetUp() override {
+    if (!hasCudaDevice()) {
+      GTEST_SKIP() << "No CUDA device available";
+    }
+    cudaSetDevice(0);
+  }
+  void TearDown() override { cudaDeviceSynchronize(); }
+};
 
 // Property 3: Causal Masking Correctness
 // For any attention computation at position t, the attention weights for
@@ -511,6 +556,9 @@ class AttentionPropertyTest : public AttentionTest {};
 RC_GTEST_FIXTURE_PROP(AttentionPropertyTest, CausalMaskZerosFuturePositions,
                       (int batch_raw, int heads_raw, int seq_raw, int dim_raw,
                        unsigned seed)) {
+  if (!hasCudaDevice()) {
+    RC_SKIP("No CUDA device available");
+  }
   // Constrain dimensions to reasonable ranges
   int batch_size = 1 + (std::abs(batch_raw) % 4);
   int num_heads = 1 + (std::abs(heads_raw) % 8);
@@ -562,6 +610,9 @@ RC_GTEST_FIXTURE_PROP(AttentionPropertyTest, CausalMaskZerosFuturePositions,
 RC_GTEST_FIXTURE_PROP(AttentionPropertyTest, CausalMaskAllowsPastPositions,
                       (int batch_raw, int heads_raw, int seq_raw, int dim_raw,
                        unsigned seed)) {
+  if (!hasCudaDevice()) {
+    RC_SKIP("No CUDA device available");
+  }
   // Constrain dimensions
   int batch_size = 1 + (std::abs(batch_raw) % 4);
   int num_heads = 1 + (std::abs(heads_raw) % 4);
@@ -617,6 +668,9 @@ RC_GTEST_FIXTURE_PROP(AttentionPropertyTest, CausalMaskAllowsPastPositions,
 
 RC_GTEST_FIXTURE_PROP(AttentionPropertyTest, SoftmaxOutputSumsToOne,
                       (int batch_raw, int seq_raw, unsigned seed)) {
+  if (!hasCudaDevice()) {
+    RC_SKIP("No CUDA device available");
+  }
   // Constrain dimensions
   int batch_size = 1 + (std::abs(batch_raw) % 16);
   int seq_len = 4 + (std::abs(seq_raw) % 124); // 4 to 128
@@ -651,6 +705,9 @@ RC_GTEST_FIXTURE_PROP(AttentionPropertyTest, SoftmaxOutputSumsToOne,
 
 RC_GTEST_FIXTURE_PROP(AttentionPropertyTest, SoftmaxPreservesOrder,
                       (int batch_raw, int seq_raw, unsigned seed)) {
+  if (!hasCudaDevice()) {
+    RC_SKIP("No CUDA device available");
+  }
   // Constrain dimensions
   int batch_size = 1 + (std::abs(batch_raw) % 8);
   int seq_len = 4 + (std::abs(seq_raw) % 60);

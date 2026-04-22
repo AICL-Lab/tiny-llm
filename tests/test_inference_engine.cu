@@ -13,19 +13,14 @@
 
 using namespace tiny_llm;
 
-// Helper class for InferenceEngine tests
+// Helper class for InferenceEngine tests (CPU-based sampling tests)
 class InferenceEngineTest : public ::testing::Test {
 protected:
   void SetUp() override {
-    int device_count = 0;
-    cudaError_t err = cudaGetDeviceCount(&device_count);
-    if (err != cudaSuccess || device_count == 0) {
-      GTEST_SKIP() << "No CUDA device available";
-    }
-    cudaSetDevice(0);
+    // Sampling tests are CPU-only, no GPU required
   }
 
-  void TearDown() override { cudaDeviceSynchronize(); }
+  void TearDown() override {}
 
   // Generate random FP16 logits
   std::vector<half> randomLogits(int vocab_size, float scale = 10.0f,
