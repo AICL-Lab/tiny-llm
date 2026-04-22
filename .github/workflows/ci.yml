@@ -76,6 +76,14 @@ jobs:
 
       - name: Setup CUDA Environment
         run: |
+          # Install GCC 10 for CUDA compatibility (GCC 11 has issues with nvcc)
+          sudo apt-get update
+          sudo apt-get install -y gcc-10 g++-10
+          sudo update-alternatives --install /usr/bin/gcc gcc /usr/bin/gcc-10 100
+          sudo update-alternatives --install /usr/bin/g++ g++ /usr/bin/g++-10 100
+          sudo update-alternatives --install /usr/bin/cc cc /usr/bin/gcc 30
+          sudo update-alternatives --install /usr/bin/c++ c++ /usr/bin/g++ 30
+
           # Check for pre-installed CUDA
           if command -v nvcc &> /dev/null; then
             echo "nvcc already in PATH"
@@ -92,13 +100,16 @@ jobs:
             nvcc --version
           else
             echo "CUDA not found, installing..."
-            sudo apt-get update
             sudo apt-get install -y nvidia-cuda-toolkit
             echo "CUDA_HOME=/usr/lib/nvidia-cuda-toolkit" >> $GITHUB_ENV
             echo "/usr/lib/nvidia-cuda-toolkit/bin" >> $GITHUB_PATH
             echo "CUDACXX=/usr/lib/nvidia-cuda-toolkit/bin/nvcc" >> $GITHUB_ENV
             nvcc --version
           fi
+
+          # Verify GCC version
+          echo "Using GCC version:"
+          gcc --version
 
       - name: Setup ccache
         uses: hendrikmuhs/ccache-action@v1.2
