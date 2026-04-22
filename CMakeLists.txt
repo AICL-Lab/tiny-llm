@@ -92,8 +92,7 @@ if(BUILD_TESTS)
 
     # RapidCheck (property-based testing) with GTest support
     # Set options BEFORE FetchContent_Declare
-    set(RAPIDCHECK_ENABLE_GTEST ON CACHE BOOL "Enable GTest support for rapidcheck" FORCE)
-    set(RAPIDCHECK_BUILD_GTEST ON CACHE BOOL "Build GTest support for rapidcheck" FORCE)
+    set(RC_ENABLE_GTEST ON CACHE BOOL "Build Google Test integration" FORCE)
     FetchContent_Declare(
         rapidcheck
         GIT_REPOSITORY https://github.com/emil-e/rapidcheck.git
