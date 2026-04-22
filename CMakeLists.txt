@@ -97,6 +97,7 @@ if(BUILD_TESTS)
         GIT_TAG master
     )
     set(RAPIDCHECK_ENABLE_GTEST ON CACHE BOOL "Enable GTest support for rapidcheck" FORCE)
+    set(RAPIDCHECK_BUILD_GTEST ON CACHE BOOL "Build GTest support for rapidcheck" FORCE)
     FetchContent_MakeAvailable(rapidcheck)
 
     file(GLOB_RECURSE TEST_SOURCES "tests/*.cpp" "tests/*.cu")
