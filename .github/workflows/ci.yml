@@ -107,6 +107,9 @@ jobs:
             nvcc --version
           fi
 
+          # Set CUDA host compiler to GCC 10 (must be set before running cmake)
+          echo "CUDAHOSTCXX=/usr/bin/g++-10" >> $GITHUB_ENV
+
           # Verify GCC version
           echo "Using GCC version:"
           gcc --version
