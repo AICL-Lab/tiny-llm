@@ -1,0 +1,25 @@
+schema: spec-driven
+
+context: |
+  Tech stack: C++17, CUDA C++17, CMake 3.18+
+  GPU: CUDA 11.0+, Compute Capability 7.0+ (Volta+)
+  Testing: GoogleTest v1.14.0, RapidCheck (property-based)
+  Logging: spdlog v1.12.0
+  Code Style: clang-format 18 (LLVM style, 100 col limit)
+  Package Manager: CMake FetchContent
+
+  Project: Tiny-LLM - A CUDA C++ library for LLM inference with W8A16 quantization.
+
+rules:
+  specs:
+  - Include test scenarios linked to correctness properties (P1-P9)
+  - "Use RFC 2119 keywords: SHALL/MUST (mandatory), SHOULD (recommended), MAY (optional)"
+  - Reference API schemas in openspec/schemas/api/ for interface contracts
+  design:
+  - Document CUDA kernel optimization decisions
+  - Specify memory layout and quantization approach
+  - Consider GPU memory constraints and kernel efficiency
+  tasks:
+  - Verify build with cmake before marking complete
+  - Run GoogleTest suite after implementation
+  - Ensure clang-format compliance
