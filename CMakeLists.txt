@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.18)
 project(tiny-llm
-    VERSION 2.0.0
+    VERSION 2.0.1
     DESCRIPTION "Lightweight LLM inference engine with W8A16 quantization"
     LANGUAGES CXX
 )
