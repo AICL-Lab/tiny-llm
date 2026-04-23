@@ -13,7 +13,7 @@ Welcome to the Tiny-LLM documentation. Choose your preferred language:
 
 ## 🌐 English
 
-<a href="en/" class="btn btn-primary">English Documentation →</a>
+<a href="en/" class="btn-home">English Documentation →</a>
 
 ### Quick Links
 
@@ -29,7 +29,7 @@ Welcome to the Tiny-LLM documentation. Choose your preferred language:
 
 ## 🇨🇳 中文
 
-<a href="zh/" class="btn btn-primary">中文文档 →</a>
+<a href="zh/" class="btn-home">中文文档 →</a>
 
 ### 快速链接
 

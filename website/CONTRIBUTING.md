@@ -7,72 +7,47 @@ nav_order: 50
 
 # Contributing to Tiny-LLM
 
-Thank you for your interest in contributing to Tiny-LLM! We welcome contributions via Issues and Pull Requests.
+Tiny-LLM is in a final hardening phase. Contributions are welcome, but the repository now favors **focused, OpenSpec-driven improvements** over broad feature expansion.
 
 ---
 
-## Development Workflow
+## Required workflow
 
-This project follows **Spec-Driven Development (SDD)**. Before writing code, you must first update or create the relevant specification documents.
+1. Use `/opsx:explore` when the scope or requirements are still fuzzy.
+2. Use `/opsx:propose <change-name>` for non-trivial work so the change is captured in `openspec/`.
+3. Use `/opsx:apply <change-name>` to implement task-by-task.
+4. Run a review pass before concluding major workstreams.
+5. Use `/opsx:archive <change-name>` only after specs, code, and docs are aligned.
 
-1. **Update/Create Specs**: Update or create product requirements, RFCs, or API definitions in `/specs`
-2. Fork this repository
-3. Create a feature branch: `git checkout -b feature/your-feature`
-4. Make your changes and ensure tests pass
-5. Commit your changes: `git commit -m "feat: add your feature"`
-6. Push to the branch: `git push origin feature/your-feature`
-7. Create a Pull Request
-
-> Detailed AI assistant workflow: see [AGENTS.md](https://github.com/LessUp/tiny-llm/blob/main/AGENTS.md)
+> Repository-specific workflow and architecture constraints live in [AGENTS.md](https://github.com/LessUp/tiny-llm/blob/master/AGENTS.md).
 
 ---
 
-## Build & Test
+## Build and validate
 
 ```bash
-# Clone repository
-git clone https://github.com/LessUp/tiny-llm.git
-cd tiny-llm
-
-# Build
-mkdir build && cd build
-cmake .. -DCMAKE_BUILD_TYPE=Release
-make -j$(nproc)
-
-# Run tests
-ctest --output-on-failure
+cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTS=ON
+cmake --build build -j$(nproc)
+ctest --test-dir build --output-on-failure --timeout 300
 ```
 
 ---
 
-## Requirements
+## Contribution principles
 
-- **NVIDIA GPU**: Compute Capability 7.0+ (Volta or newer)
-- **CUDA Toolkit**: 11.0 or higher
-- **CMake**: 3.18 or higher
-- **C++ Compiler**: GCC 9+ or Clang 10+
-
----
-
-## Code Standards
-
-- **C++17** for all C++ code
-- **CUDA 11.0+** for GPU kernels
-- **CMake 3.18+** for build configuration
-- Error handling via `Result<T>` monad (no exceptions for control flow)
+- Keep branches short-lived and avoid local/cloud drift.
+- Prefer deleting or merging duplicated docs over preserving parallel guidance.
+- Keep public claims aligned with the actual implementation and validated documentation.
+- Treat CI as validation, not as a system that rewrites tracked files for contributors.
 
 ---
 
-## Getting Help
+## Where to look next
 
-- **Issues**: [Report bugs or request features](https://github.com/LessUp/tiny-llm/issues)
-- **Discussions**: [Ask questions](https://github.com/LessUp/tiny-llm/discussions)
-- **Documentation**: [Read the docs](/docs/en/)
+- [Repository guide](https://github.com/LessUp/tiny-llm/blob/master/AGENTS.md)
+- [Current specs](https://github.com/LessUp/tiny-llm/tree/master/openspec/specs)
+- [Open changes](https://github.com/LessUp/tiny-llm/tree/master/openspec/changes)
 
 ---
 
-## License
-
-By contributing, you agree that your contributions will be licensed under the MIT License.
-
-[← Home](/) | [Documentation](/docs/en/)
+[← Home](/) | [Docs](/docs/en/) | [GitHub](https://github.com/LessUp/tiny-llm)
