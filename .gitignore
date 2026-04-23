@@ -43,9 +43,13 @@ Makefile
 .vscode/launch.json
 .vscode/tasks.json
 .vscode/.ropeproject
+compile_commands.json
 *.swp
 *.swo
 *~
+
+# Local AI overrides
+CLAUDE.local.md
 
 # OS generated files
 .DS_Store
@@ -84,3 +88,7 @@ coverage/
 # Profiling data
 *.prof
 *.nvprof
+
+# BMad Method V6
+_bmad/
+_bmad-output/
