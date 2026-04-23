@@ -1,46 +1,24 @@
 {
   "name": "Tiny-LLM Documentation",
   "short_name": "TinyLLM",
-  "description": "High-Performance CUDA Inference Engine for LLMs — W8A16 quantization, KV Cache, and optimized CUDA kernels",
+  "description": "High-Performance CUDA Inference Engine for LLMs",
   "start_url": "/tiny-llm/",
   "scope": "/tiny-llm/",
   "display": "standalone",
-  "orientation": "portrait",
   "background_color": "#0d1117",
   "theme_color": "#0d1117",
   "icons": [
     {
-      "src": "/tiny-llm/assets/images/favicon-32x32.png",
-      "sizes": "32x32",
-      "type": "image/png",
-      "purpose": "any maskable"
-    },
-    {
-      "src": "/tiny-llm/assets/images/favicon-16x16.png",
-      "sizes": "16x16",
-      "type": "image/png",
-      "purpose": "any maskable"
-    },
-    {
-      "src": "/tiny-llm/assets/images/apple-touch-icon.png",
-      "sizes": "180x180",
-      "type": "image/png",
-      "purpose": "any"
-    },
-    {
-      "src": "/tiny-llm/assets/images/icon-192x192.png",
+      "src": "/tiny-llm/assets/icons/icon-192x192.svg",
       "sizes": "192x192",
-      "type": "image/png",
-      "purpose": "any maskable"
+      "type": "image/svg+xml"
     },
     {
-      "src": "/tiny-llm/assets/images/icon-512x512.png",
+      "src": "/tiny-llm/assets/icons/icon-512x512.svg",
       "sizes": "512x512",
-      "type": "image/png",
-      "purpose": "any maskable"
+      "type": "image/svg+xml"
     }
   ],
-  "categories": ["developer tools", "documentation"],
   "lang": "en",
   "dir": "ltr"
 }

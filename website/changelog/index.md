@@ -7,10 +7,7 @@ nav_order: 100
 
 # Changelog
 
-All notable changes to this project are documented in this file.
-
-The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
-and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+Tiny-LLM keeps a short, release-oriented changelog. This surface is reserved for meaningful external milestones.
 
 ---
 
@@ -21,14 +18,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
-## Release History
-
-### [Unreleased]
-
-- Documentation restructuring with improved bilingual support
-- Added comprehensive troubleshooting guides
-
----
+## Releases
 
 ### [2.0.1] — 2026-04-16
 
@@ -56,33 +46,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
-### Infrastructure & Documentation
+## Notes
 
-| Date | Description |
-|------|-------------|
-| 2026-03-13 | [Documentation & CI Standardization](en/docs-ci-standardization) — CPU-safe CI, Pages workflow fixes |
-| 2026-03-10 | [GitHub Pages Enhancement](en/pages-enhancement) — SEO, navigation, README improvements |
-| 2025-02-13 | [Project Infrastructure](en/project-infrastructure) — LICENSE, editorconfig, badges |
-
----
-
-## Version Legend
-
-| Type | Description |
-|------|-------------|
-| 🔴 **Breaking** | Breaking changes requiring migration |
-| 🟢 **Added** | New features |
-| 🔵 **Fixed** | Bug fixes |
-| 🟡 **Changed** | Changes to existing functionality |
-| 🟣 **Security** | Security-related changes |
-
----
-
-## Release Schedule
-
-- **Patch releases** (x.y.Z): Bug fixes, monthly as needed
-- **Minor releases** (x.Y.z): New features, quarterly
-- **Major releases** (X.y.z): Breaking changes, annually
+- Infrastructure-only cleanup is intentionally excluded from this public changelog.
+- For the current project story and onboarding flow, start at [Home](../) or [Documentation](../docs/).
 
 ---
 

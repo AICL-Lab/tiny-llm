@@ -1,23 +1,21 @@
 name: CI
 
 on:
+  pull_request:
+    branches: [master, main]
   push:
-    branches: [main, master]
+    branches: [master, main]
     paths-ignore:
-      - '**.md'
-      - 'docs/**'
-      - 'changelog/**'
+      - '**/*.md'
       - 'website/**'
       - '.github/workflows/pages.yml'
-  pull_request:
-    branches: [main, master]
   workflow_dispatch:
 
 permissions:
   contents: read
 
 concurrency:
-  group: ci-${{ github.workflow }}-${{ github.ref }}
+  group: ci-${{ github.ref }}
   cancel-in-progress: true
 
 env:
@@ -25,22 +23,19 @@ env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
 jobs:
-  format-check:
-    name: Format Check
+  format:
+    name: Format
     runs-on: ubuntu-latest
-    if: github.event_name != 'workflow_dispatch'
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-        with:
-          token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Install clang-format
         run: |
           sudo apt-get update
           sudo apt-get install -y clang-format-18
 
-      - name: Format C/C++/CUDA files
+      - name: Check formatting
         run: |
           find . -type f \( -name '*.cpp' -o -name '*.h' -o -name '*.cu' -o -name '*.cuh' \) \
             ! -path './build/*' \
@@ -49,34 +44,18 @@ jobs:
             ! -path './vendor/*' \
             ! -path './external/*' \
             ! -path './.kiro/*' \
-            | xargs clang-format-18 -i
+            | xargs clang-format-18 --dry-run --Werror
 
-      - name: Commit formatting changes
-        if: github.event_name == 'push'
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add -A
-          git diff --staged --quiet || git commit -m "style: auto-format C/C++/CUDA files [skip ci]"
-
-  build:
-    name: Build (${{ matrix.os }})
-    runs-on: ${{ matrix.os }}
-    needs: [format-check]
-    if: always() && (needs.format-check.result == 'success' || needs.format-check.result == 'skipped')
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - os: ubuntu-22.04
-
+  build-test:
+    name: Build and Test
+    runs-on: ubuntu-22.04
+    needs: format
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Setup CUDA Environment
+      - name: Setup GCC and CUDA
         run: |
-          # Install GCC 10 for CUDA compatibility (GCC 11 has issues with nvcc)
           sudo apt-get update
           sudo apt-get install -y gcc-10 g++-10
           sudo update-alternatives --install /usr/bin/gcc gcc /usr/bin/gcc-10 100
@@ -84,41 +63,25 @@ jobs:
           sudo update-alternatives --install /usr/bin/cc cc /usr/bin/gcc 30
           sudo update-alternatives --install /usr/bin/c++ c++ /usr/bin/g++ 30
 
-          # Check for pre-installed CUDA
-          if command -v nvcc &> /dev/null; then
-            echo "nvcc already in PATH"
+          if command -v nvcc >/dev/null 2>&1; then
             nvcc --version
           elif [ -d "/usr/local/cuda" ]; then
-            echo "CUDA_HOME=/usr/local/cuda" >> $GITHUB_ENV
-            echo "/usr/local/cuda/bin" >> $GITHUB_PATH
-            echo "CUDACXX=/usr/local/cuda/bin/nvcc" >> $GITHUB_ENV
+            echo "CUDA_HOME=/usr/local/cuda" >> "$GITHUB_ENV"
+            echo "/usr/local/cuda/bin" >> "$GITHUB_PATH"
+            echo "CUDACXX=/usr/local/cuda/bin/nvcc" >> "$GITHUB_ENV"
             nvcc --version
           elif [ -d "/usr/lib/nvidia-cuda-toolkit" ]; then
-            echo "CUDA_HOME=/usr/lib/nvidia-cuda-toolkit" >> $GITHUB_ENV
-            echo "/usr/lib/nvidia-cuda-toolkit/bin" >> $GITHUB_PATH
-            echo "CUDACXX=/usr/lib/nvidia-cuda-toolkit/bin/nvcc" >> $GITHUB_ENV
+            echo "CUDA_HOME=/usr/lib/nvidia-cuda-toolkit" >> "$GITHUB_ENV"
+            echo "/usr/lib/nvidia-cuda-toolkit/bin" >> "$GITHUB_PATH"
+            echo "CUDACXX=/usr/lib/nvidia-cuda-toolkit/bin/nvcc" >> "$GITHUB_ENV"
             nvcc --version
           else
-            echo "CUDA not found, installing..."
             sudo apt-get install -y nvidia-cuda-toolkit
-            echo "CUDA_HOME=/usr/lib/nvidia-cuda-toolkit" >> $GITHUB_ENV
-            echo "/usr/lib/nvidia-cuda-toolkit/bin" >> $GITHUB_PATH
-            echo "CUDACXX=/usr/lib/nvidia-cuda-toolkit/bin/nvcc" >> $GITHUB_ENV
+            echo "CUDA_HOME=/usr/lib/nvidia-cuda-toolkit" >> "$GITHUB_ENV"
+            echo "/usr/lib/nvidia-cuda-toolkit/bin" >> "$GITHUB_PATH"
+            echo "CUDACXX=/usr/lib/nvidia-cuda-toolkit/bin/nvcc" >> "$GITHUB_ENV"
             nvcc --version
           fi
-
-          # Set CUDA host compiler to GCC 10 (must be set before running cmake)
-          echo "CUDAHOSTCXX=/usr/bin/g++-10" >> $GITHUB_ENV
-
-          # Verify GCC version
-          echo "Using GCC version:"
-          gcc --version
-
-      - name: Setup ccache
-        uses: hendrikmuhs/ccache-action@v1.2
-        with:
-          key: ${{ runner.os }}-cuda-build
-          max-size: 500M
 
       - name: Configure CMake
         run: |
@@ -128,19 +91,7 @@ jobs:
             -DBUILD_TESTS=ON
 
       - name: Build
-        run: cmake --build build -j$(nproc)
+        run: cmake --build build -j"$(nproc)"
 
-      - name: Run Tests
-        working-directory: build
-        run: ctest --output-on-failure --timeout 300
-
-  ci-status:
-    name: CI Status
-    runs-on: ubuntu-latest
-    needs: [format-check, build]
-    if: always() && (needs.format-check.result == 'success' || needs.format-check.result == 'skipped') && needs.build.result == 'success'
-    steps:
-      - name: Check Status
-        run: |
-          echo "::notice::All tests passed"
-          echo "CI passed successfully"
+      - name: Run tests
+        run: ctest --test-dir build --output-on-failure --timeout 300

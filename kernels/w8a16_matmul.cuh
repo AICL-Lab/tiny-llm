@@ -26,18 +26,17 @@ void w8a16_matmul(const half *__restrict__ input,    // [M, K] FP16
                   int M, int N, int K, int group_size, cudaStream_t stream = 0);
 
 // Reference implementation for testing (slower but correct)
-void w8a16_matmul_reference(const half *input, const int8_t *weight,
-                            const half *scales, half *output, int M, int N,
-                            int K, int group_size, cudaStream_t stream = 0);
+void w8a16_matmul_reference(const half *input, const int8_t *weight, const half *scales,
+                            half *output, int M, int N, int K, int group_size,
+                            cudaStream_t stream = 0);
 
 // FP16 baseline for accuracy comparison
-void fp16_matmul_reference(const half *input, const half *weight, half *output,
-                           int M, int N, int K, cudaStream_t stream = 0);
+void fp16_matmul_reference(const half *input, const half *weight, half *output, int M, int N, int K,
+                           cudaStream_t stream = 0);
 
 // Dequantize INT8 weights to FP16 (for testing)
-void dequantize_weights(const int8_t *weight_int8, const half *scales,
-                        half *weight_fp16, int K, int N, int group_size,
-                        cudaStream_t stream = 0);
+void dequantize_weights(const int8_t *weight_int8, const half *scales, half *weight_fp16, int K,
+                        int N, int group_size, cudaStream_t stream = 0);
 
 } // namespace kernels
 } // namespace tiny_llm

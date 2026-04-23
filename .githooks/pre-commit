@@ -1,0 +1,21 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+repo_root="$(git rev-parse --show-toplevel)"
+cd "$repo_root"
+
+mapfile -t source_files < <(
+    git diff --cached --name-only --diff-filter=ACMR | grep -E '\.(cpp|h|cu|cuh)$' || true
+)
+
+if [ "${#source_files[@]}" -eq 0 ]; then
+    exit 0
+fi
+
+if ! command -v clang-format-18 >/dev/null 2>&1; then
+    echo "pre-commit: clang-format-18 not found; skipping format check" >&2
+    exit 0
+fi
+
+clang-format-18 --dry-run --Werror "${source_files[@]}"

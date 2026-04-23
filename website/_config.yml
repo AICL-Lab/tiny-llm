@@ -1,26 +1,20 @@
-# ═══════════════════════════════════════════════════════════════
-# Tiny-LLM Documentation - Modern Jekyll Configuration
-# Theme: Just the Docs (Custom Enhanced)
-# Features: PWA, Dark Mode, Search, Modern UI
-# ═══════════════════════════════════════════════════════════════
+# Tiny-LLM Documentation Site Configuration
+# Jekyll with Just the Docs Theme
 
+# Site Settings
 title: Tiny-LLM
 description: High-Performance CUDA Inference Engine for LLMs
-tagline: Lightweight, efficient LLM inference with W8A16 quantization and KV Cache optimization
-author: LessUp Team
+tagline: Lightweight LLM inference with W8A16 quantization and KV Cache optimization
+author: LessUp
 url: "https://lessup.github.io"
 baseurl: "/tiny-llm"
 lang: en
 
-# ═══════════════════════════════════════════════════════════════
-# THEME CONFIGURATION
-# ═══════════════════════════════════════════════════════════════
-remote_theme: just-the-docs/just-the-docs@v0.7.0
-
-# Theme Color Scheme
+# Theme Configuration
+theme: just-the-docs
 color_scheme: dark
 
-# Enable search
+# Search Configuration
 search_enabled: true
 search:
   heading_level: 3
@@ -31,14 +25,14 @@ search:
   rel_url: true
   button: false
 
-# Enable copy code button
+# Code Blocks
 enable_copy_code_button: true
 
-# Mermaid diagrams
+# Mermaid Diagrams
 mermaid:
   version: "10.6.1"
 
-# Aux links (top right navigation)
+# Navigation
 aux_links:
   "GitHub":
     - "https://github.com/LessUp/tiny-llm"
@@ -46,10 +40,18 @@ aux_links:
     - "https://github.com/LessUp/tiny-llm/releases"
 aux_links_new_tab: true
 
-# Footer content
-footer_content: "Copyright &copy; 2025 LessUp. Distributed under MIT License."
+nav_external_links:
+  - title: GitHub
+    url: https://github.com/LessUp/tiny-llm
+    hide_icon: false
+  - title: Releases
+    url: https://github.com/LessUp/tiny-llm/releases
+    hide_icon: false
 
-# Back to top link
+nav_sort: case_insensitive
+
+# Footer
+footer_content: "Copyright &copy; 2025 LessUp. Distributed under MIT License."
 back_to_top: true
 back_to_top_text: "Back to top"
 
@@ -78,33 +80,12 @@ callouts:
     title: Warning
     color: red
 
-# ═══════════════════════════════════════════════════════════════
-# PLUGINS
-# ═══════════════════════════════════════════════════════════════
+# Plugins
 plugins:
-  - jekyll-remote-theme
   - jekyll-seo-tag
   - jekyll-sitemap
-  - jekyll-github-metadata
-  - jekyll-include-cache
 
-# ═══════════════════════════════════════════════════════════════
-# NAVIGATION STRUCTURE
-# ═══════════════════════════════════════════════════════════════
-nav_external_links:
-  - title: GitHub
-    url: https://github.com/LessUp/tiny-llm
-    hide_icon: false
-  - title: Releases
-    url: https://github.com/LessUp/tiny-llm/releases
-    hide_icon: false
-
-# Navigation order and structure
-nav_sort: case_insensitive
-
-# ═══════════════════════════════════════════════════════════════
-# MARKDOWN & CODE HIGHLIGHTING
-# ═══════════════════════════════════════════════════════════════
+# Markdown Configuration
 markdown: kramdown
 kramdown:
   input: GFM
@@ -117,84 +98,37 @@ kramdown:
     span:
       line_numbers: false
 
-# ═══════════════════════════════════════════════════════════════
-# SEO & SOCIAL
-# ═══════════════════════════════════════════════════════════════
+# SEO & Social
+logo: "/assets/images/logo.svg"
 twitter:
+  card: summary
   username: lessup
-  card: summary_large_image
 
 social:
   name: Tiny-LLM
   links:
     - https://github.com/LessUp/tiny-llm
 
-logo: "/assets/images/logo.svg"
-favicon_ico: "/assets/icons/icon-192x192.svg"
+# Custom Variables
+version: "2.0.1"
+release_url: https://github.com/LessUp/tiny-llm/releases/latest
+repo_url: https://github.com/LessUp/tiny-llm
+docs_url: https://lessup.github.io/tiny-llm/docs
 
-# ═══════════════════════════════════════════════════════════════
-# PWA CONFIGURATION
-# ═══════════════════════════════════════════════════════════════
-pwa:
-  enabled: true
-  name: Tiny-LLM Docs
-  short_name: TinyLLM
-  description: High-Performance CUDA Inference Engine Documentation
-  theme_color: "#0d1117"
-  background_color: "#0d1117"
-  display: standalone
-  orientation: portrait
-  scope: "/tiny-llm/"
-  start_url: "/tiny-llm/"
+# Sass Configuration
+sass:
+  sass_dir: _sass
+  style: compressed
 
-# ═══════════════════════════════════════════════════════════════
-# DEFAULTS (FRONTMATTER)
-# ═══════════════════════════════════════════════════════════════
-defaults:
-  - scope:
-      path: ""
-    values:
-      layout: "default"
-      nav_exclude: false
-  - scope:
-      path: "docs"
-    values:
-      layout: "page"
-  - scope:
-      path: "docs/en"
-    values:
-      lang: en
-      layout: "page"
-  - scope:
-      path: "docs/zh"
-    values:
-      lang: zh
-      layout: "page"
-  - scope:
-      path: "changelog"
-    values:
-      layout: "page"
-      nav_order: 99
-
-# ═══════════════════════════════════════════════════════════════
-# EXCLUDE & INCLUDE
-# ═══════════════════════════════════════════════════════════════
+# Build Settings
 exclude:
   - .git
   - .github
-  - .kiro
-  - .vscode
   - Gemfile
   - Gemfile.lock
   - "*.cpp"
   - "*.cu"
   - "*.cuh"
   - "*.h"
-
-# ═══════════════════════════════════════════════════════════════
-# CUSTOM VARIABLES
-# ═══════════════════════════════════════════════════════════════
-version: "2.1.0"
-release_url: https://github.com/LessUp/tiny-llm/releases/latest
-repo_url: https://github.com/LessUp/tiny-llm
-docs_url: https://lessup.github.io/tiny-llm/docs
+  - README.md
+  - CONTRIBUTING.md

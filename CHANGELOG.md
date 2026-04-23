@@ -1,55 +1,19 @@
 # Changelog
 
-All notable changes to the Tiny-LLM project are documented in the [changelog](changelog/) directory.
+Tiny-LLM keeps a deliberately short public changelog. Only meaningful release milestones belong here.
 
 English | [中文](changelog/index.zh)
 
 ---
 
-## Quick Links
+## Releases
 
-| Version | Date | Type | English | 中文 |
-|---------|------|------|---------|------|
-| v2.0.1 | 2026-04-16 | Bug Fix | [Details](changelog/en/v2.0.1) | [详情](changelog/zh/v2.0.1) |
-| v2.0.0 | 2026-03-09 | Major | [Details](changelog/en/v2.0.0) | [详情](changelog/zh/v2.0.0) |
+| Version | Date | Summary | English | 中文 |
+|---|---|---|---|---|
+| v2.0.1 | 2026-04-16 | Bug-fix release for scale-dimension handling and cleanup | [Details](changelog/en/v2.0.1) | [详情](changelog/zh/v2.0.1) |
+| v2.0.0 | 2026-03-09 | Core engine milestone with KV cache API redesign | [Details](changelog/en/v2.0.0) | [详情](changelog/zh/v2.0.0) |
 
----
+## Notes
 
-## Release History
-
-### [v2.0.1] - 2026-04-16
-
-#### Fixed
-- Critical `QuantizedWeight` scale dimension calculation error
-- Removed unused code in attention kernel
-
-**Details**: [English](changelog/en/v2.0.1) | [中文](changelog/zh/v2.0.1)
-
-### [v2.0.0] - 2026-03-09
-
-#### Changed (Breaking)
-- KVCache API redesign with explicit `advanceSeqLen()`
-- CMake modernization with target exports
-
-**Details**: [English](changelog/en/v2.0.0) | [中文](changelog/zh/v2.0.0)
-
-### Infrastructure Updates
-
-| Date | Type | Description |
-|------|------|-------------|
-| 2026-03-13 | Docs/CI | [Documentation & CI Standardization](changelog/en/docs-ci-standardization) |
-| 2026-03-10 | Docs/CI | [GitHub Pages Enhancement](changelog/en/pages-enhancement) |
-| 2025-02-13 | Infra | [Project Infrastructure](changelog/en/project-infrastructure) |
-
----
-
-## Format
-
-This project adheres to:
-- [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
-- [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
-- [Conventional Commits](https://www.conventionalcommits.org/)
-
----
-
-[Documentation](https://lessup.github.io/tiny-llm/) | [API Reference](https://lessup.github.io/tiny-llm/docs/en/API) | [Contributing](CONTRIBUTING.md)
+- Infrastructure-only or low-signal changes are intentionally omitted from the public changelog.
+- Detailed release notes live in the website changelog pages linked above.

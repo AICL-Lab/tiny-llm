@@ -1,148 +1,128 @@
-# Project Philosophy: Spec-Driven Development (SDD)
+# Tiny-LLM Agent Guide
 
-This project strictly follows the **Spec-Driven Development (SDD)** paradigm. All code implementations must use the specifications in the `/specs` directory as the single source of truth.
+Tiny-LLM is in a **final hardening / archive-readiness** phase. Treat this repository as a CUDA/C++ engine that should become **smaller, sharper, and lower-noise** over time.
 
----
+## Operating mode
 
-## Directory Context
+- Prioritize correctness, coherence, and maintainability over new roadmap expansion.
+- Prefer deleting, merging, or rewriting low-value content instead of preserving redundant guidance.
+- Keep public claims aligned with what the repository actually implements and validates.
+- Avoid over-engineering new automation, process, or tooling layers.
 
-| Directory | Purpose | File Types |
-|-----------|---------|------------|
-| `/specs/product/` | Product feature definitions and acceptance criteria | `.md` |
-| `/specs/rfc/` | Technical design documents and architecture decisions | `NNNN-title.md` |
-| `/specs/api/` | API interface definitions (human and machine readable) | `.yaml`, `.json` |
-| `/specs/db/` | Model and data schema definitions | `.dbml`, `.sql` |
-| `/specs/testing/` | BDD test case specifications | `.feature` |
-| `/docs/` | Developer and user documentation | `.md` (EN/ZH) |
-| `/website/` | GitHub Pages website source (Jekyll) | `.yml`, `.md`, `.html`, `.json` |
+## Source of truth
 
----
+1. **Active OpenSpec change** in `openspec/changes/<name>/`
+2. **Current capability specs** in `openspec/specs/`
+3. **Repository code and configuration**
+4. **Project instruction files** (`AGENTS.md`, `CLAUDE.md`, `.github/copilot-instructions.md`)
 
-## AI Agent Workflow Instructions
+Local-only overrides such as `CLAUDE.local.md` are allowed for personal use, but they are **not** authoritative and should not be committed.
 
-When you (the AI agent) are asked to develop a new feature, modify an existing feature, or fix a bug, **you must strictly follow this workflow without skipping any steps**:
+## Required workflow
 
-### Step 1: Review Specs
+### 1. Explore before guessing
 
-Before writing any code, first read the relevant documents in `/specs`:
+Use `/opsx:explore` for open-ended investigation, architecture trade-offs, and requirement clarification.
 
-1. Read the product spec in `/specs/product/` for feature requirements
-2. Read the relevant RFC in `/specs/rfc/` for architecture decisions
-3. Read the API definition in `/specs/api/` for interface contracts
-4. Check `/specs/db/` for data model constraints
+### 2. Propose before non-trivial changes
 
-**If the user's request conflicts with existing specs**, stop immediately and point out the conflict. Ask the user whether to update the spec first.
+Use `/opsx:propose <change-name>` for:
 
-### Step 2: Spec-First Update
+- repository-wide cleanup
+- workflow changes
+- public-surface repositioning
+- feature or behavior changes
+- multi-file refactors with architectural impact
 
-If this is a new feature, or if existing interfaces/data structures need to change:
+### 3. Apply from explicit tasks
 
-1. **Propose spec changes first** - Create or modify files in `/specs/`:
-   - New feature: `specs/product/<feature-name>.md` + `specs/rfc/NNNN-<title>.md`
-   - API changes: Update `specs/api/*.yaml`
-   - Data model changes: Update `specs/db/*.dbml`
-   - Test requirements: Create `specs/testing/<feature>.feature`
+Use `/opsx:apply <change-name>` and implement directly from `tasks.md`. Work in dependency order and keep each task tightly scoped.
 
-2. **Wait for user confirmation** before entering the code implementation phase
+### 4. Review major workstreams
 
-### Step 3: Implementation
+After major workflow, documentation, or architecture changes, run a review-oriented pass (`/review` or equivalent) before considering the workstream complete.
 
-When writing code, **100% adhere to the spec definitions**:
+### 5. Archive finished changes
 
-- Use exact variable naming from specs
-- Follow API paths and data types from `specs/api/`
-- Respect constraints defined in `specs/db/`
-- Implement acceptance criteria from `specs/product/`
+Use `/opsx:archive <change-name>` only after specs, code, docs, and validation results all agree.
 
-**Do not add features not defined in the specs (No Gold-Plating).**
+## Repository priorities
 
-### Step 4: Test Against Spec
+### OpenSpec-first governance
 
-Write tests based on the acceptance criteria in `/specs`:
+- Do not reintroduce legacy `/specs` workflow guidance.
+- Keep contributor docs aligned with `openspec/`.
+- Preserve history through OpenSpec archive, not through duplicated meta-docs.
 
-1. Map each acceptance criterion to a test case
-2. Cover all boundary conditions described in specs
-3. Update `specs/testing/*.feature` if new test scenarios are needed
+### Minimal, high-signal documentation
 
----
+- Prefer one authoritative document per topic.
+- Remove stale changelog pages, duplicated contribution docs, and generic AI boilerplate.
+- Keep README and Pages useful for new users, not just comprehensive.
 
-## Code Generation Rules
+### Non-mutating automation
 
-| Rule | Description |
-|------|-------------|
-| API Changes | Must synchronously update `/specs/api/*.yaml` |
-| New Types | Must be defined in `/specs/db/schema-v1.dbml` |
-| New Features | Require product spec in `/specs/product/` |
-| Architecture Changes | Require RFC in `/specs/rfc/` |
-| Test Requirements | Must be defined in `/specs/testing/` before implementation |
+- CI should validate, not rewrite tracked files or commit back to the branch.
+- Keep workflow triggers and jobs as small as possible while preserving confidence.
 
----
+### Public-surface consistency
 
-## Spec File Naming Conventions
+- README, GitHub Pages, release notes, and GitHub metadata must describe the same project.
+- Remove unsupported roadmap promises and speculative positioning.
 
-| Type | Pattern | Example |
-|------|---------|---------|
-| Product | `<feature-name>.md` | `tiny-llm-inference-engine.md` |
-| RFC | `<NNNN>-<short-title>.md` | `0001-core-architecture.md` |
-| API | `<feature-name>.yaml` | `inference-engine.yaml` |
-| DB Schema | `schema-v<version>.dbml` | `schema-v1.dbml` |
-| Testing | `<feature-name>.feature` | `inference-engine.feature` |
+## Engineering invariants
 
----
+- **Language/toolchain:** C++17, CUDA C++17, CMake 3.18+
+- **GPU baseline:** CUDA 11.0+, Compute Capability 7.0+
+- **Error handling:** `Result<T>` for fallible operations; no exceptions for control flow
+- **CUDA safety:** use the project CUDA utilities/macros instead of silent failures
+- **Resource management:** prefer RAII wrappers over raw ownership
+- **Formatting:** `clang-format-18` with the repository `.clang-format`
+- **Editor baseline:** `clangd` + `compile_commands.json`
 
-## Current Project Context
-
-### Tiny-LLM Inference Engine
-
-A lightweight, high-performance CUDA C++ inference engine for Transformer models.
-
-**Key Components:**
-
-| Component | Location | Spec |
-|-----------|----------|------|
-| InferenceEngine | `include/tiny_llm/inference_engine.h` | `specs/api/inference-engine.yaml` |
-| KVCacheManager | `include/tiny_llm/kv_cache.h` | `specs/rfc/0001-core-architecture.md` |
-| W8A16 MatMul | `kernels/w8a16_matmul.cu` | `specs/rfc/0001-core-architecture.md` |
-| Model Types | `include/tiny_llm/types.h` | `specs/db/schema-v1.dbml` |
-
-**Architecture Constraints:**
-
-- CUDA 11.0+, C++17, CMake 3.18+
-- Compute Capability 7.0+ (Volta or newer)
-- W8A16 quantization: INT8 weights, FP16 activations
-- Error handling via `Result<T>` monad (no exceptions for control flow)
-
----
-
-## Why This Matters
-
-| Benefit | Explanation |
-|---------|-------------|
-| **Prevents AI hallucination** | Forcing the first step to read `/specs` anchors the AI's thinking scope |
-| **Enforces modification path** | Declaring "modify specs before code" ensures document-code synchronization |
-| **Improves PR quality** | Implementation aligns with business logic because it follows acceptance criteria |
-| **Enables parallel work** | Specs allow multiple agents to work independently with clear contracts |
-
----
-
-## Quick Reference
+### Validation commands
 
 ```bash
-# Read all specs before starting work
-cat specs/product/*.md      # Product requirements
-cat specs/rfc/*.md          # Architecture decisions
-cat specs/api/*.yaml        # API contracts
-cat specs/db/*.dbml         # Data models
-cat specs/testing/*.feature # Test specifications
-
-# After code changes, verify specs are updated
-git diff specs/             # Should show corresponding changes
+cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTS=ON
+cmake --build build -j$(nproc)
+ctest --test-dir build --output-on-failure --timeout 300
+find . -type f \( -name '*.cpp' -o -name '*.h' -o -name '*.cu' -o -name '*.cuh' \) \
+  ! -path './build/*' | xargs clang-format-18 --dry-run --Werror
 ```
 
----
+`nvcc` must be available for a real configure/build.
 
-## Related Documents
+## Practical AI-tooling guidance
 
-- [Contributing Guide](CONTRIBUTING.md) - Development workflow and code standards
-- [Documentation](docs/) - User and developer documentation
-- [Changelog](changelog/) - Version history
+- **AGENTS.md**: repository-wide rules and architecture constraints
+- **CLAUDE.md**: Claude/agent execution guidance for this repo
+- **Copilot instructions**: concise code-generation and workflow constraints
+
+Use a **long-running single session** for large repository hardening work. Avoid `/fleet` unless the work is clearly parallelizable and the higher token cost is justified.
+
+Use subagents and research helpers selectively:
+
+- good fit: independent audits, workflow inspection, broad doc inventories
+- bad fit: tightly coupled refactors where one agent needs end-to-end context
+
+Keep MCP usage narrow. Prefer built-in GitHub tooling and `gh` unless MCP gives a clear repository-specific win.
+
+## Repository map
+
+```text
+openspec/                 OpenSpec config, active changes, archived changes, specs, schemas
+include/tiny_llm/         Public headers
+src/                      Host-side C++ implementation
+kernels/                  CUDA kernels
+tests/                    Unit and property tests
+website/                  GitHub Pages site
+.github/workflows/        CI, Pages, release automation
+```
+
+## Do not do these by default
+
+- Do not add large new roadmap features just because they are easy to imagine.
+- Do not preserve outdated docs “for completeness”.
+- Do not commit personal-only tool config.
+- Do not rely on CI to auto-fix formatting or repository drift.
+- Do not split work across many stale branches without quick review and merge.

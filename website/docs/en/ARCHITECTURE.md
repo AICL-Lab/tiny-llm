@@ -423,19 +423,6 @@ Single Token (B, 1)
 
 ---
 
-## Roadmap
-
-| Feature | Status | Target |
-|---------|--------|--------|
-| GGUF Loading | 🚧 In Progress | v2.1 |
-| PagedAttention | 📋 Planned | v2.2 |
-| Continuous Batching | 📋 Planned | v2.3 |
-| Speculative Decoding | 🔬 Research | v2.4 |
-| FP8 Support | 🔬 Research | v3.0 |
-| Multi-GPU | 📋 Planned | v3.0 |
-
----
-
 **Languages**: [English](ARCHITECTURE) | [中文](../zh/ARCHITECTURE) | [API →](API)
 
 [← Quick Start](QUICKSTART) | [Developer Guide →](DEVELOPER)

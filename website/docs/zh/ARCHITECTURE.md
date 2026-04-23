@@ -423,19 +423,6 @@ void attention_prefill(
 
 ---
 
-## 路线图
-
-| 特性 | 状态 | 目标版本 |
-|---------|--------|--------|
-| GGUF 加载 | 🚧 进行中 | v2.1 |
-| PagedAttention | 📋 计划中 | v2.2 |
-| 连续批处理 | 📋 计划中 | v2.3 |
-| 投机解码 | 🔬 研究中 | v2.4 |
-| FP8 支持 | 🔬 研究中 | v3.0 |
-| 多 GPU | 📋 计划中 | v3.0 |
-
----
-
 **Languages**: [English](../en/ARCHITECTURE) | [中文](ARCHITECTURE) | [API 参考 →](API)
 
 [← 快速开始](QUICKSTART) | [开发者指南 →](DEVELOPER)

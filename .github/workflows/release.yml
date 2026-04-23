@@ -4,96 +4,47 @@ on:
   push:
     tags:
       - 'v*.*.*'
-  workflow_dispatch:
-    inputs:
-      version:
-        description: 'Release version (e.g., v2.0.2)'
-        required: true
-        type: string
 
 permissions:
   contents: write
-  packages: write
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
 jobs:
-  validate:
-    name: Validate Release
-    runs-on: ubuntu-latest
-    outputs:
-      version: ${{ steps.version.outputs.version }}
-      tag: ${{ steps.version.outputs.tag }}
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Determine Version
-        id: version
-        run: |
-          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
-            VERSION="${{ github.event.inputs.version }}"
-          else
-            VERSION="${GITHUB_REF#refs/tags/}"
-          fi
-          # Validate version format
-          if [[ ! "$VERSION" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-            echo "::error::Invalid version format: $VERSION (expected vX.Y.Z)"
-            exit 1
-          fi
-          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
-          echo "tag=$VERSION" >> "$GITHUB_OUTPUT"
-          echo "Version: $VERSION"
-
-      - name: Check Tag Exists
-        if: github.event_name == 'workflow_dispatch'
-        run: |
-          git fetch --tags
-          if git tag | grep -q "^${{ steps.version.outputs.tag }}$"; then
-            echo "::error::Tag ${{ steps.version.outputs.tag }} already exists"
-            exit 1
-          fi
-
-      - name: Create Tag (if workflow_dispatch)
-        if: github.event_name == 'workflow_dispatch'
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          git tag -a ${{ steps.version.outputs.tag }} -m "Release ${{ steps.version.outputs.version }}"
-          git push origin ${{ steps.version.outputs.tag }}
-
   build:
     name: Build Release Artifacts
-    needs: validate
     runs-on: ubuntu-22.04
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Setup CUDA Environment
+      - name: Setup GCC and CUDA
         run: |
-          # Check for pre-installed CUDA
-          if command -v nvcc &> /dev/null; then
-            echo "nvcc already in PATH"
+          sudo apt-get update
+          sudo apt-get install -y gcc-10 g++-10
+          sudo update-alternatives --install /usr/bin/gcc gcc /usr/bin/gcc-10 100
+          sudo update-alternatives --install /usr/bin/g++ g++ /usr/bin/g++-10 100
+          sudo update-alternatives --install /usr/bin/cc cc /usr/bin/gcc 30
+          sudo update-alternatives --install /usr/bin/c++ c++ /usr/bin/g++ 30
+
+          if command -v nvcc >/dev/null 2>&1; then
             nvcc --version
           elif [ -d "/usr/local/cuda" ]; then
-            echo "CUDA_HOME=/usr/local/cuda" >> $GITHUB_ENV
-            echo "/usr/local/cuda/bin" >> $GITHUB_PATH
-            echo "CUDACXX=/usr/local/cuda/bin/nvcc" >> $GITHUB_ENV
+            echo "CUDA_HOME=/usr/local/cuda" >> "$GITHUB_ENV"
+            echo "/usr/local/cuda/bin" >> "$GITHUB_PATH"
+            echo "CUDACXX=/usr/local/cuda/bin/nvcc" >> "$GITHUB_ENV"
             nvcc --version
           elif [ -d "/usr/lib/nvidia-cuda-toolkit" ]; then
-            echo "CUDA_HOME=/usr/lib/nvidia-cuda-toolkit" >> $GITHUB_ENV
-            echo "/usr/lib/nvidia-cuda-toolkit/bin" >> $GITHUB_PATH
-            echo "CUDACXX=/usr/lib/nvidia-cuda-toolkit/bin/nvcc" >> $GITHUB_ENV
+            echo "CUDA_HOME=/usr/lib/nvidia-cuda-toolkit" >> "$GITHUB_ENV"
+            echo "/usr/lib/nvidia-cuda-toolkit/bin" >> "$GITHUB_PATH"
+            echo "CUDACXX=/usr/lib/nvidia-cuda-toolkit/bin/nvcc" >> "$GITHUB_ENV"
             nvcc --version
           else
-            echo "CUDA not found, installing..."
-            sudo apt-get update
             sudo apt-get install -y nvidia-cuda-toolkit
-            echo "CUDA_HOME=/usr/lib/nvidia-cuda-toolkit" >> $GITHUB_ENV
-            echo "/usr/lib/nvidia-cuda-toolkit/bin" >> $GITHUB_PATH
-            echo "CUDACXX=/usr/lib/nvidia-cuda-toolkit/bin/nvcc" >> $GITHUB_ENV
+            echo "CUDA_HOME=/usr/lib/nvidia-cuda-toolkit" >> "$GITHUB_ENV"
+            echo "/usr/lib/nvidia-cuda-toolkit/bin" >> "$GITHUB_PATH"
+            echo "CUDACXX=/usr/lib/nvidia-cuda-toolkit/bin/nvcc" >> "$GITHUB_ENV"
             nvcc --version
           fi
 
@@ -101,116 +52,46 @@ jobs:
         run: |
           cmake -S . -B build \
             -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_CUDA_HOST_COMPILER=/usr/bin/g++-10 \
             -DBUILD_TESTS=ON
 
       - name: Build
-        run: cmake --build build -j$(nproc)
+        run: cmake --build build -j"$(nproc)"
 
-      - name: Run Tests
-        working-directory: build
-        run: ctest --output-on-failure --timeout 300
+      - name: Run tests
+        run: ctest --test-dir build --output-on-failure --timeout 300
 
-      - name: Prepare Release Artifacts
+      - name: Package release
         run: |
+          version="${GITHUB_REF#refs/tags/}"
           mkdir -p release
           cp build/tiny_llm_demo release/ 2>/dev/null || true
-          cp -r include release/ 2>/dev/null || true
-          cp CMakeLists.txt release/ 2>/dev/null || true
-          tar -czvf tiny-llm-${{ needs.validate.outputs.version }}-linux-x64.tar.gz -C release . 2>/dev/null || echo "No binaries to package"
+          cp -r include release/
+          cp CMakeLists.txt release/
+          tar -czf "tiny-llm-${version}-linux-x64.tar.gz" -C release .
 
-      - name: Upload Artifacts
+      - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
           name: release-artifacts
-          path: |
-            *.tar.gz
+          path: tiny-llm-*.tar.gz
           retention-days: 7
 
-  release:
-    name: Create Release
-    needs: [validate, build]
+  publish:
+    name: Publish Release
     runs-on: ubuntu-latest
+    needs: build
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Download Artifacts
+      - name: Download artifacts
         uses: actions/download-artifact@v4
         with:
           name: release-artifacts
           path: ./artifacts
 
-      - name: Generate Release Notes
-        id: notes
-        run: |
-          VERSION="${{ needs.validate.outputs.version }}"
-          VER_NUM="${VERSION#v}"
-          
-          CHANGELOG_EN="website/changelog/en/${VER_NUM}.md"
-          CHANGELOG_ZH="website/changelog/zh/${VER_NUM}.md"
-          
-          {
-            echo "release_notes<<EOF"
-            echo "## Tiny-LLM $VERSION"
-            echo ""
-            if [[ -f "$CHANGELOG_EN" ]]; then
-              echo "### English"
-              echo ""
-              echo "High-performance CUDA C++ inference engine release."
-              echo ""
-              echo "**Highlights**:"
-              echo "- W8A16 quantization for ~50% memory reduction"
-              echo "- Efficient KV Cache management"
-              echo "- Optimized CUDA kernels with Tensor Core support"
-              echo ""
-              echo "See [Changelog](https://lessup.github.io/tiny-llm/changelog/en/${VER_NUM}.html) for details."
-              echo ""
-              echo "---"
-              echo ""
-              echo "### 简体中文"
-              echo ""
-              echo "高性能 CUDA C++ 推理引擎发布。"
-              echo ""
-              echo "**亮点**："
-              echo "- W8A16 量化，显存减少约 50%"
-              echo "- 高效 KV 缓存管理"
-              echo "- 优化的 CUDA 内核，支持 Tensor Core"
-              echo ""
-              echo "详见 [更新日志](https://lessup.github.io/tiny-llm/changelog/zh/${VER_NUM}.html)。"
-            else
-              echo "### English"
-              echo "Release $VERSION"
-              echo ""
-              echo "---"
-              echo ""
-              echo "### 简体中文"
-              echo "发布 $VERSION"
-            fi
-            echo ""
-            echo "### Installation | 安装"
-            echo ""
-            echo '```bash'
-            echo "git clone https://github.com/LessUp/tiny-llm.git"
-            echo "cd tiny-llm"
-            echo "git checkout $VERSION"
-            echo "mkdir build && cd build"
-            echo "cmake .. -DCMAKE_BUILD_TYPE=Release"
-            echo "make -j\$(nproc)"
-            echo '```'
-            echo ""
-            echo "[Documentation | 文档](https://lessup.github.io/tiny-llm/) | [API Reference | API 参考](https://lessup.github.io/tiny-llm/docs/en/API.html)"
-            echo "EOF"
-          } >> "$GITHUB_OUTPUT"
-
-      - name: Create GitHub Release
+      - name: Create GitHub release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ needs.validate.outputs.tag }}
-          name: Tiny-LLM ${{ needs.validate.outputs.version }}
-          body: ${{ steps.notes.outputs.release_notes }}
-          draft: false
-          prerelease: ${{ contains(needs.validate.outputs.version, '-rc') || contains(needs.validate.outputs.version, '-beta') || contains(needs.validate.outputs.version, '-alpha') }}
-          files: |
-            artifacts/*.tar.gz
+          files: artifacts/*.tar.gz
+          generate_release_notes: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

@@ -1,67 +1,66 @@
-<!-- ═══════════════════════════════════════════════════════════════
-     Tiny-LLM Custom Head - Advanced Features
-     Features: PWA, Theme Toggle, Custom Fonts, Analytics
-     ═══════════════════════════════════════════════════════════════ -->
+<!-- Tiny-LLM Custom Head -->
 
-<!-- Open Graph / Facebook -->
+<!-- Open Graph / Social Meta -->
 <meta property="og:type" content="website">
-<meta property="og:url" content="{{ site.url }}{{ site.baseurl }}/">
+<meta property="og:url" content="{{ site.url }}{{ site.baseurl }}{{ page.url }}">
 <meta property="og:title" content="{{ page.title | default: site.title | escape }}">
 <meta property="og:description" content="{{ page.description | default: site.description | escape }}">
-<meta property="og:image" content="{{ site.url }}{{ site.baseurl }}/assets/images/og-image.png">
+<meta property="og:image" content="{{ site.url }}{{ site.baseurl }}/assets/images/logo.svg">
 
-<!-- Twitter -->
-<meta property="twitter:card" content="summary_large_image">
-<meta property="twitter:url" content="{{ site.url }}{{ site.baseurl }}/">
-<meta property="twitter:title" content="{{ page.title | default: site.title | escape }}">
-<meta property="twitter:description" content="{{ page.description | default: site.description | escape }}">
-<meta property="twitter:image" content="{{ site.url }}{{ site.baseurl }}/assets/images/twitter-card.png">
+<!-- Twitter Card -->
+<meta name="twitter:card" content="summary">
+<meta name="twitter:title" content="{{ page.title | default: site.title | escape }}">
+<meta name="twitter:description" content="{{ page.description | default: site.description | escape }}">
+<meta name="twitter:image" content="{{ site.url }}{{ site.baseurl }}/assets/images/logo.svg">
 
-<!-- Apple Touch Icons -->
+<!-- PWA -->
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="Tiny-LLM">
-
-<!-- Microsoft Tiles -->
 <meta name="msapplication-TileColor" content="#0d1117">
 
-<!-- Preconnect for Performance -->
+<!-- Fonts - Use system fonts with Inter as fallback -->
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 
-<!-- Theme Toggle Script (Inline for Performance) -->
+<!-- Theme Toggle Support (compatible with Just the Docs) -->
 <script>
-  (function() {
-    const savedTheme = localStorage.getItem('theme');
-    const systemDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
-    const initialTheme = savedTheme || (systemDark ? 'dark' : 'light');
-    document.documentElement.setAttribute('data-theme', initialTheme);
-  })();
+(function() {
+  // Migrate old theme storage format if needed
+  var oldTheme = localStorage.getItem('theme');
+  if (oldTheme && !localStorage.getItem('themeFormat')) {
+    // Already in correct format, just mark as migrated
+    localStorage.setItem('themeFormat', 'v2');
+  }
+  
+  // Check for saved theme preference or prefer-color-scheme
+  var savedTheme = localStorage.getItem('theme');
+  var systemDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+  
+  // Clear any existing theme classes first
+  document.documentElement.classList.remove('dark-theme', 'light-theme');
+  
+  if (savedTheme === 'light' || savedTheme === 'dark') {
+    // Use saved preference
+    document.documentElement.classList.add(savedTheme + '-theme');
+  } else if (systemDark) {
+    document.documentElement.classList.add('dark-theme');
+  } else {
+    document.documentElement.classList.add('light-theme');
+  }
+  
+  // Store the effective theme
+  var effectiveTheme = document.documentElement.classList.contains('light-theme') ? 'light' : 'dark';
+  localStorage.setItem('theme', effectiveTheme);
+})();
 </script>
 
-<!-- Structured Data: SoftwareApplication -->
-<script type="application/ld+json">
-{
-  "@context": "https://schema.org",
-  "@type": "SoftwareApplication",
-  "name": "Tiny-LLM",
-  "description": "High-Performance CUDA Inference Engine for LLMs with W8A16 Quantization",
-  "applicationCategory": "DeveloperApplication",
-  "operatingSystem": "Linux",
-  "programmingLanguage": ["C++", "CUDA"],
-  "softwareVersion": "{{ site.version }}",
-  "license": "https://github.com/LessUp/tiny-llm/blob/master/LICENSE",
-  "codeRepository": "https://github.com/LessUp/tiny-llm",
-  "downloadUrl": "https://github.com/LessUp/tiny-llm/releases",
-  "author": {
-    "@type": "Organization",
-    "name": "LessUp"
-  },
-  "offers": {
-    "@type": "Offer",
-    "price": "0",
-    "priceCurrency": "USD"
-  }
+<!-- Service Worker Registration -->
+<script>
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', function() {
+    navigator.serviceWorker.register('{{ site.baseurl }}/sw.js');
+  });
 }
 </script>
