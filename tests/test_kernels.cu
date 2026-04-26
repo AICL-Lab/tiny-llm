@@ -210,7 +210,7 @@ class RMSNormPropertyTest : public RMSNormTest {
 RC_GTEST_FIXTURE_PROP(RMSNormPropertyTest, OutputRMSIsOne,
                       (int batch_raw, int dim_raw, unsigned seed)) {
     if (!hasCudaDevice()) {
-        RC_SUCCEED("No CUDA device available");
+        GTEST_SKIP() << "No CUDA device available";
     }
     // Constrain dimensions to reasonable ranges
     int   batch_size = 1 + (std::abs(batch_raw) % 16);
@@ -254,7 +254,7 @@ RC_GTEST_FIXTURE_PROP(RMSNormPropertyTest, OutputRMSIsOne,
 RC_GTEST_FIXTURE_PROP(RMSNormPropertyTest, WeightScaling,
                       (int batch_raw, int dim_raw, unsigned seed)) {
     if (!hasCudaDevice()) {
-        RC_SUCCEED("No CUDA device available");
+        GTEST_SKIP() << "No CUDA device available";
     }
     // Constrain dimensions
     int   batch_size = 1 + (std::abs(batch_raw) % 8);
@@ -298,7 +298,7 @@ RC_GTEST_FIXTURE_PROP(RMSNormPropertyTest, WeightScaling,
 RC_GTEST_FIXTURE_PROP(RMSNormPropertyTest, NonZeroOutput,
                       (int batch_raw, int dim_raw, unsigned seed)) {
     if (!hasCudaDevice()) {
-        RC_SUCCEED("No CUDA device available");
+        GTEST_SKIP() << "No CUDA device available";
     }
     // Constrain dimensions
     int   batch_size = 1 + (std::abs(batch_raw) % 8);
@@ -348,7 +348,7 @@ RC_GTEST_FIXTURE_PROP(RMSNormPropertyTest, NonZeroOutput,
 RC_GTEST_FIXTURE_PROP(RMSNormPropertyTest, InPlaceEquivalence,
                       (int batch_raw, int dim_raw, unsigned seed)) {
     if (!hasCudaDevice()) {
-        RC_SUCCEED("No CUDA device available");
+        GTEST_SKIP() << "No CUDA device available";
     }
     // Constrain dimensions
     int   batch_size = 1 + (std::abs(batch_raw) % 8);
@@ -552,7 +552,7 @@ class AttentionPropertyTest : public AttentionTest {
 RC_GTEST_FIXTURE_PROP(AttentionPropertyTest, CausalMaskZerosFuturePositions,
                       (int batch_raw, int heads_raw, int seq_raw, int dim_raw, unsigned seed)) {
     if (!hasCudaDevice()) {
-        RC_SUCCEED("No CUDA device available");
+        GTEST_SKIP() << "No CUDA device available";
     }
     // Constrain dimensions to reasonable ranges
     int   batch_size = 1 + (std::abs(batch_raw) % 4);
@@ -603,7 +603,7 @@ RC_GTEST_FIXTURE_PROP(AttentionPropertyTest, CausalMaskZerosFuturePositions,
 RC_GTEST_FIXTURE_PROP(AttentionPropertyTest, CausalMaskAllowsPastPositions,
                       (int batch_raw, int heads_raw, int seq_raw, int dim_raw, unsigned seed)) {
     if (!hasCudaDevice()) {
-        RC_SUCCEED("No CUDA device available");
+        GTEST_SKIP() << "No CUDA device available";
     }
     // Constrain dimensions
     int   batch_size = 1 + (std::abs(batch_raw) % 4);
@@ -658,7 +658,7 @@ RC_GTEST_FIXTURE_PROP(AttentionPropertyTest, CausalMaskAllowsPastPositions,
 RC_GTEST_FIXTURE_PROP(AttentionPropertyTest, SoftmaxOutputSumsToOne,
                       (int batch_raw, int seq_raw, unsigned seed)) {
     if (!hasCudaDevice()) {
-        RC_SUCCEED("No CUDA device available");
+        GTEST_SKIP() << "No CUDA device available";
     }
     // Constrain dimensions
     int batch_size = 1 + (std::abs(batch_raw) % 16);
@@ -695,7 +695,7 @@ RC_GTEST_FIXTURE_PROP(AttentionPropertyTest, SoftmaxOutputSumsToOne,
 RC_GTEST_FIXTURE_PROP(AttentionPropertyTest, SoftmaxPreservesOrder,
                       (int batch_raw, int seq_raw, unsigned seed)) {
     if (!hasCudaDevice()) {
-        RC_SUCCEED("No CUDA device available");
+        GTEST_SKIP() << "No CUDA device available";
     }
     // Constrain dimensions
     int batch_size = 1 + (std::abs(batch_raw) % 8);

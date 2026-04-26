@@ -243,7 +243,7 @@ class W8A16PropertyTest : public W8A16MatMulTest {
 RC_GTEST_FIXTURE_PROP(W8A16PropertyTest, NumericalAccuracyProperty,
                       (int m_raw, int n_raw, int k_raw)) {
     if (!hasCudaDevice()) {
-        RC_SUCCEED("No CUDA device available");
+        GTEST_SKIP() << "No CUDA device available";
     }
     // Constrain dimensions to reasonable ranges
     int M = 1 + (std::abs(m_raw) % 128);
@@ -294,7 +294,7 @@ RC_GTEST_FIXTURE_PROP(W8A16PropertyTest, NumericalAccuracyProperty,
 RC_GTEST_FIXTURE_PROP(W8A16PropertyTest, DifferentGroupSizes,
                       (int m_raw, int n_raw, int k_raw, int gs_raw)) {
     if (!hasCudaDevice()) {
-        RC_SUCCEED("No CUDA device available");
+        GTEST_SKIP() << "No CUDA device available";
     }
     int M = 1 + (std::abs(m_raw) % 64);
     int N = 8 + (std::abs(n_raw) % 128);

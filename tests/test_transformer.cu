@@ -216,7 +216,7 @@ class TransformerPropertyTest : public TransformerTest {
 RC_GTEST_FIXTURE_PROP(TransformerPropertyTest, IncrementalDecodingEquivalence,
                       (int heads_raw, int seq_raw, int dim_raw, unsigned seed)) {
     if (!hasCudaDevice()) {
-        RC_SUCCEED("No CUDA device available");
+        GTEST_SKIP() << "No CUDA device available";
     }
     // Constrain dimensions to reasonable ranges
     int   num_heads = 2 + (std::abs(heads_raw) % 6); // 2 to 8
@@ -296,7 +296,7 @@ RC_GTEST_FIXTURE_PROP(TransformerPropertyTest, IncrementalDecodingEquivalence,
 RC_GTEST_FIXTURE_PROP(TransformerPropertyTest, KVCachePreservesData,
                       (int layers_raw, int heads_raw, int seq_raw, int dim_raw, unsigned seed)) {
     if (!hasCudaDevice()) {
-        RC_SUCCEED("No CUDA device available");
+        GTEST_SKIP() << "No CUDA device available";
     }
     // Constrain dimensions
     int num_layers = 1 + (std::abs(layers_raw) % 4); // 1 to 4
@@ -375,7 +375,7 @@ RC_GTEST_FIXTURE_PROP(TransformerPropertyTest, KVCachePreservesData,
 RC_GTEST_FIXTURE_PROP(TransformerPropertyTest, SequentialAppendEquivalence,
                       (int heads_raw, int dim_raw, unsigned seed)) {
     if (!hasCudaDevice()) {
-        RC_SUCCEED("No CUDA device available");
+        GTEST_SKIP() << "No CUDA device available";
     }
     // Constrain dimensions
     int num_heads = 2 + (std::abs(heads_raw) % 6);
