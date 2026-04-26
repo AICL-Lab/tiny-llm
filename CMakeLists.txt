@@ -1,4 +1,7 @@
 cmake_minimum_required(VERSION 3.18)
+if(POLICY CMP0119)
+    cmake_policy(SET CMP0119 NEW)
+endif()
 project(tiny-llm
     VERSION 2.0.1
     DESCRIPTION "Lightweight LLM inference engine with W8A16 quantization"
