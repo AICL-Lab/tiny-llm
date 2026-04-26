@@ -90,29 +90,15 @@ if(BUILD_TESTS)
     set(gtest_force_shared_crt ON CACHE BOOL "" FORCE)
     FetchContent_MakeAvailable(googletest)
 
-    # RapidCheck (property-based testing) with GTest support
-    # Set options BEFORE FetchContent_Declare
-    set(RC_ENABLE_GTEST ON CACHE BOOL "Build Google Test integration" FORCE)
-    FetchContent_Declare(
-        rapidcheck
-        GIT_REPOSITORY https://github.com/emil-e/rapidcheck.git
-        GIT_TAG master
-    )
-    FetchContent_MakeAvailable(rapidcheck)
-
     file(GLOB_RECURSE TEST_SOURCES "tests/*.cpp" "tests/*.cu")
     add_executable(tiny_llm_tests ${TEST_SOURCES})
     target_link_libraries(tiny_llm_tests PRIVATE
         tiny_llm
         GTest::gtest_main
-        rapidcheck
-        rapidcheck_gtest
         CUDA::cudart
     )
     target_include_directories(tiny_llm_tests PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}/kernels
-        ${rapidcheck_SOURCE_DIR}/include
-        ${rapidcheck_SOURCE_DIR}/extras/gtest/include
     )
     target_compile_options(tiny_llm_tests PRIVATE
         $<$<COMPILE_LANGUAGE:CUDA>:--expt-relaxed-constexpr>

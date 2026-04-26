@@ -1,6 +1,6 @@
 #include "tiny_llm/types.h"
 #include <gtest/gtest.h>
-#include <rapidcheck.h>
+// #include <rapidcheck.h>
 // NOTE: rapidcheck/gtest disabled due to GCC 11/12 std::function bug
 // in CI builds.
 // #include <rapidcheck/gtest.h>

@@ -5,7 +5,7 @@
 #include <cuda_runtime.h>
 #include <gtest/gtest.h>
 #include <random>
-#include <rapidcheck.h>
+// #include <rapidcheck.h>
 // NOTE: rapidcheck/gtest is disabled in .cu tests due to GCC 11/12 + nvcc
 // std::function compatibility issues during CI builds.
 // #include <rapidcheck/gtest.h>
