@@ -92,6 +92,16 @@ if(BUILD_TESTS)
 
     file(GLOB_RECURSE TEST_SOURCES "tests/*.cpp" "tests/*.cu")
     add_executable(tiny_llm_tests ${TEST_SOURCES})
+    # These test files use CUDA runtime headers from host-side GTest code only.
+    # Compile them as C++ to avoid nvcc/GCC host-compiler incompatibilities.
+    set(TEST_HOST_SOURCES
+        tests/test_inference_engine.cu
+        tests/test_integration.cu
+        tests/test_kernels.cu
+        tests/test_transformer.cu
+        tests/test_w8a16_matmul.cu
+    )
+    set_source_files_properties(${TEST_HOST_SOURCES} PROPERTIES LANGUAGE CXX)
     target_link_libraries(tiny_llm_tests PRIVATE
         tiny_llm
         GTest::gtest_main
