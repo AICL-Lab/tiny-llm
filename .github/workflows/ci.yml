@@ -54,40 +54,25 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Setup GCC and CUDA
+      - name: Setup CUDA
+        uses: Jimver/cuda-toolkit@v0.2.15
+        with:
+          cuda: '11.8'
+          method: network
+
+      - name: Setup GCC
         run: |
           sudo apt-get update
           sudo apt-get install -y gcc-10 g++-10
           sudo update-alternatives --install /usr/bin/gcc gcc /usr/bin/gcc-10 100
           sudo update-alternatives --install /usr/bin/g++ g++ /usr/bin/g++-10 100
-          sudo update-alternatives --install /usr/bin/cc cc /usr/bin/gcc 30
-          sudo update-alternatives --install /usr/bin/c++ c++ /usr/bin/g++ 30
-
-          if command -v nvcc >/dev/null 2>&1; then
-            nvcc --version
-          elif [ -d "/usr/local/cuda" ]; then
-            echo "CUDA_HOME=/usr/local/cuda" >> "$GITHUB_ENV"
-            echo "/usr/local/cuda/bin" >> "$GITHUB_PATH"
-            echo "CUDACXX=/usr/local/cuda/bin/nvcc" >> "$GITHUB_ENV"
-            nvcc --version
-          elif [ -d "/usr/lib/nvidia-cuda-toolkit" ]; then
-            echo "CUDA_HOME=/usr/lib/nvidia-cuda-toolkit" >> "$GITHUB_ENV"
-            echo "/usr/lib/nvidia-cuda-toolkit/bin" >> "$GITHUB_PATH"
-            echo "CUDACXX=/usr/lib/nvidia-cuda-toolkit/bin/nvcc" >> "$GITHUB_ENV"
-            nvcc --version
-          else
-            sudo apt-get install -y nvidia-cuda-toolkit
-            echo "CUDA_HOME=/usr/lib/nvidia-cuda-toolkit" >> "$GITHUB_ENV"
-            echo "/usr/lib/nvidia-cuda-toolkit/bin" >> "$GITHUB_PATH"
-            echo "CUDACXX=/usr/lib/nvidia-cuda-toolkit/bin/nvcc" >> "$GITHUB_ENV"
-            nvcc --version
-          fi
 
       - name: Configure CMake
         run: |
           cmake -S . -B build \
             -DCMAKE_BUILD_TYPE=${{ env.CMAKE_BUILD_TYPE }} \
             -DCMAKE_CUDA_HOST_COMPILER=/usr/bin/g++-10 \
+            -DCMAKE_CUDA_ARCHITECTURES="75;80;86;89" \
             -DBUILD_TESTS=ON
 
       - name: Build

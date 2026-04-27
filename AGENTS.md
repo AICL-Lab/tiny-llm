@@ -80,6 +80,17 @@ Use `/opsx:archive <change-name>` only after specs, code, docs, and validation r
 - **Formatting:** `clang-format-18` with the repository `.clang-format`
 - **Editor baseline:** `clangd` + `compile_commands.json`
 
+## Core architecture
+
+| Component | Responsibility |
+|-----------|----------------|
+| `Result<T>` | No-exception error propagation |
+| `ModelConfig` | Model hyperparameters (vocab_size, hidden_dim, etc.) |
+| `QuantizedWeight` | INT8 weights with per-group scales |
+| `TransformerLayer` | W8A16 quantized attention + FFN |
+| `KVCacheManager` | Pre-allocated cache slots for sequences |
+| `InferenceEngine` | Public API: load(), generate() |
+
 ### Validation commands
 
 ```bash

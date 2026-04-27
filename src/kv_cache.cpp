@@ -23,15 +23,13 @@ Result<std::unique_ptr<KVCacheManager>> KVCacheManager::create(const KVCacheConf
     size_t kv_total = kv_per_layer * static_cast<size_t>(config.num_layers) * 2;
 
     if (kv_total > SIZE_MAX / sizeof(half)) {
-        return Result<std::unique_ptr<KVCacheManager>>::err(
-            "KVCacheManager: memory size overflow");
+        return Result<std::unique_ptr<KVCacheManager>>::err("KVCacheManager: memory size overflow");
     }
     manager->slot_size_ = kv_total * sizeof(half);
 
     // Total pool size for all batch slots
     if (manager->slot_size_ > SIZE_MAX / static_cast<size_t>(config.max_batch_size)) {
-        return Result<std::unique_ptr<KVCacheManager>>::err(
-            "KVCacheManager: pool size overflow");
+        return Result<std::unique_ptr<KVCacheManager>>::err("KVCacheManager: pool size overflow");
     }
     manager->pool_size_ = manager->slot_size_ * static_cast<size_t>(config.max_batch_size);
 

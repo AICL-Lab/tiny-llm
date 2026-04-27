@@ -84,7 +84,8 @@ Result<ModelWeights> ModelLoader::loadGGUF(const std::string &path, ModelConfig 
                                   cudaMemcpyHostToDevice));
         } else if (embed_tensor->type == GGMLType::F32) {
             // Convert F32 to F16 using utility function
-            auto f16_result = convertF32ToF16(reinterpret_cast<const float *>(data.data()), embed_size);
+            auto f16_result =
+                convertF32ToF16(reinterpret_cast<const float *>(data.data()), embed_size);
             if (f16_result.isOk()) {
                 CUDA_CHECK(cudaMemcpy(weights.token_embedding, f16_result.value().data(),
                                       embed_size * sizeof(half), cudaMemcpyHostToDevice));
@@ -277,7 +278,8 @@ Result<ModelWeights> ModelLoader::loadGGUF(const std::string &path, ModelConfig 
                     reinterpret_cast<const float *>(data_result.value().data()), config.hidden_dim);
                 if (f16_result.isOk()) {
                     CUDA_CHECK(cudaMemcpy(weights.final_norm_weight, f16_result.value().data(),
-                                          config.hidden_dim * sizeof(half), cudaMemcpyHostToDevice));
+                                          config.hidden_dim * sizeof(half),
+                                          cudaMemcpyHostToDevice));
                 }
             } else {
                 CUDA_CHECK(cudaMemcpy(weights.final_norm_weight, data_result.value().data(),

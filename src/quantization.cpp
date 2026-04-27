@@ -30,12 +30,12 @@ Result<std::vector<half>> dequantizeQ4_0(const uint8_t *data, size_t num_blocks)
 
     // Q4_0: 32 values per block, each block has 16 bytes (32 x 4-bit) + 2 bytes (half scale)
     // Total: 18 bytes per block -> 32 FP16 outputs
-    constexpr size_t BLOCK_SIZE = 32;
+    constexpr size_t  BLOCK_SIZE = 32;
     std::vector<half> result(num_blocks * BLOCK_SIZE);
 
     for (size_t b = 0; b < num_blocks; ++b) {
         // Each block: scale (half) + 16 bytes of packed 4-bit values
-        const half  *scale = reinterpret_cast<const half *>(data + b * 18);
+        const half    *scale = reinterpret_cast<const half *>(data + b * 18);
         const uint8_t *packed = data + b * 18 + 2;
 
         float scale_f = __half2float(*scale);
@@ -70,12 +70,12 @@ Result<std::vector<half>> dequantizeQ8_0(const uint8_t *data, size_t num_blocks)
 
     // Q8_0: 32 values per block, each block has 32 bytes (32 x 8-bit) + 2 bytes (half scale)
     // Total: 34 bytes per block -> 32 FP16 outputs
-    constexpr size_t BLOCK_SIZE = 32;
+    constexpr size_t  BLOCK_SIZE = 32;
     std::vector<half> result(num_blocks * BLOCK_SIZE);
 
     for (size_t b = 0; b < num_blocks; ++b) {
         // Each block: scale (half) + 32 bytes of int8 values
-        const half     *scale = reinterpret_cast<const half *>(data + b * 34);
+        const half   *scale = reinterpret_cast<const half *>(data + b * 34);
         const int8_t *values = reinterpret_cast<const int8_t *>(data + b * 34 + 2);
 
         float scale_f = __half2float(*scale);

@@ -43,6 +43,17 @@ Help finish the repository cleanly:
 - `clang-format-18`
 - `nvcc` required for real configure/build/test passes
 
+## Core architecture
+
+| Component | Responsibility |
+|-----------|----------------|
+| `Result<T>` | No-exception error propagation |
+| `ModelConfig` | Model hyperparameters (vocab_size, hidden_dim, etc.) |
+| `QuantizedWeight` | INT8 weights with per-group scales |
+| `TransformerLayer` | W8A16 quantized attention + FFN |
+| `KVCacheManager` | Pre-allocated cache slots for sequences |
+| `InferenceEngine` | Public API: load(), generate() |
+
 ## Validation commands
 
 ```bash

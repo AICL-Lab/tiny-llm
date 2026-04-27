@@ -1,8 +1,45 @@
 CompileFlags:
+  # Fallback compilation flags for header analysis without compile_commands.json
+  Add:
+    - "-std=c++17"
+    - "-I/home/shane/dev/tiny-llm/include"
+    - "-I/home/shane/dev/tiny-llm/kernels"
+    - "-Wall"
+    - "-Wextra"
+    - "-DCUDA_VERSION=11080"
+    - "-D__CUDACC__"
+
+  # When compile_commands.json exists, prefer it
   CompilationDatabase: build
 
 Index:
   Background: Build
+  StandardLibrary: Yes
 
 Diagnostics:
-  UnusedIncludes: None
+  # Enable stricter diagnostics
+  UnusedIncludes: Strict
+  MissingIncludes: Error
+
+  # Suppress CUDA-specific warnings that clang doesn't understand
+  Suppress:
+    - "pp_file_not_found"  # CUDA headers like cuda_fp16.h
+
+  ClangTidy:
+    Add:
+      - "performance-*"
+      - "bugprone-*"
+      - "modernize-*"
+      - "readability-identifier-naming"
+    Remove:
+      - "modernize-use-trailing-return-type"
+      - "readability-magic-numbers"
+
+InlayHints:
+  Enabled: Yes
+  ParameterNames: Yes
+  DeducedTypes: Yes
+  Designators: Yes
+
+Hover:
+  ShowAKA: Yes
