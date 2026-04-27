@@ -1,7 +1,0 @@
-{
-  "tool_name": "Bash",
-  "tool_input_preview": "{\"command\":\"rm -rf build && cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTS=ON && cmake --build build -j$(nproc) 2>&1 | tail -40\",\"timeout\":300000,\"description\":\"清理并重新构建项目\"}",
-  "error": "Exit code 1\n-- The CXX compiler identification is GNU 13.3.0\n-- Detecting CXX compiler ABI info\n-- Detecting CXX compiler ABI info - done\n-- Check for working CXX compiler: /usr/bin/c++ - skipped\n-- Detecting CXX compile features\n-- Detecting CXX compile features - done\n-- Looking for a CUDA compiler\n-- Looking for a CUDA compiler - NOTFOUND\nCMake Error at CMakeLists.txt:15 (message):\n  CUDA toolkit with nvcc is required to build tiny-llm.  Set CUDAToolkit_ROOT\n  or ensure nvcc is available on P...",
-  "timestamp": "2026-04-27T02:44:35.023Z",
-  "retry_count": 1
-}

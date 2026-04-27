@@ -85,6 +85,10 @@ coverage/
 # Cache directories
 .cache/
 
+# OMC local state (AI tooling)
+.omc/state/
+.omc/sessions/
+
 # Profiling data
 *.prof
 *.nvprof
