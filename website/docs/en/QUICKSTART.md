@@ -154,10 +154,16 @@ cache_config.head_dim = 128;
 cache_config.max_seq_len = 2048;
 cache_config.max_batch_size = 1;
 
-KVCacheManager kv_cache(cache_config);
+// Use factory method for proper error handling
+auto cache_result = KVCacheManager::create(cache_config);
+if (cache_result.isErr()) {
+    std::cerr << "Failed to create cache: " << cache_result.error() << std::endl;
+    return 1;
+}
+auto kv_cache = std::move(cache_result.value());
 
 // Allocate a sequence
-auto seq_result = kv_cache.allocateSequence(1024);
+auto seq_result = kv_cache->allocateSequence(1024);
 if (seq_result.isErr()) {
     std::cerr << "Failed to allocate: " << seq_result.error() << std::endl;
     return 1;
@@ -166,14 +172,14 @@ int seq_id = seq_result.value();
 
 // Use in transformer layers
 for (auto& layer : layers) {
-    layer.forward(hidden_states, kv_cache, seq_id, position, stream);
+    layer.forward(hidden_states, *kv_cache, seq_id, position, stream);
 }
 
 // After all layers, advance sequence length
-kv_cache.advanceSeqLen(seq_id, 1);
+kv_cache->advanceSeqLen(seq_id, 1);
 
 // Release when done
-kv_cache.releaseSequence(seq_id);
+kv_cache->releaseSequence(seq_id);
 ```
 
 ---

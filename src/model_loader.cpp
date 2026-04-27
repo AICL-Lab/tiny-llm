@@ -1,6 +1,7 @@
 #include "tiny_llm/model_loader.h"
 #include "tiny_llm/gguf_parser.h"
 #include "tiny_llm/logger.h"
+#include "tiny_llm/quantization.h"
 
 #include <algorithm>
 #include <cstring>
@@ -82,14 +83,14 @@ Result<ModelWeights> ModelLoader::loadGGUF(const std::string &path, ModelConfig 
             CUDA_CHECK(cudaMemcpy(weights.token_embedding, data.data(), data.size(),
                                   cudaMemcpyHostToDevice));
         } else if (embed_tensor->type == GGMLType::F32) {
-            // Convert F32 to F16
-            std::vector<half> f16_data(embed_size);
-            const float      *f32_data = reinterpret_cast<const float *>(data.data());
-            for (size_t i = 0; i < embed_size; ++i) {
-                f16_data[i] = __float2half(f32_data[i]);
+            // Convert F32 to F16 using utility function
+            auto f16_result = convertF32ToF16(reinterpret_cast<const float *>(data.data()), embed_size);
+            if (f16_result.isOk()) {
+                CUDA_CHECK(cudaMemcpy(weights.token_embedding, f16_result.value().data(),
+                                      embed_size * sizeof(half), cudaMemcpyHostToDevice));
+            } else {
+                TLLM_WARN("Failed to convert embedding: {}", f16_result.error());
             }
-            CUDA_CHECK(cudaMemcpy(weights.token_embedding, f16_data.data(),
-                                  embed_size * sizeof(half), cudaMemcpyHostToDevice));
         } else {
             TLLM_WARN("Unsupported embedding type: {}, skipping",
                       static_cast<int>(embed_tensor->type));
@@ -218,13 +219,12 @@ Result<ModelWeights> ModelLoader::loadGGUF(const std::string &path, ModelConfig 
                 CUDA_CHECK(cudaMalloc(&lw.rms_att_weight, hidden * sizeof(half)));
                 // Convert if needed
                 if (attn_norm->type == GGMLType::F32) {
-                    std::vector<half> f16(hidden);
-                    const float *f32 = reinterpret_cast<const float *>(data_result.value().data());
-                    for (int i = 0; i < hidden; ++i) {
-                        f16[i] = __float2half(f32[i]);
+                    auto f16_result = convertF32ToF16(
+                        reinterpret_cast<const float *>(data_result.value().data()), hidden);
+                    if (f16_result.isOk()) {
+                        CUDA_CHECK(cudaMemcpy(lw.rms_att_weight, f16_result.value().data(),
+                                              hidden * sizeof(half), cudaMemcpyHostToDevice));
                     }
-                    CUDA_CHECK(cudaMemcpy(lw.rms_att_weight, f16.data(), hidden * sizeof(half),
-                                          cudaMemcpyHostToDevice));
                 } else {
                     CUDA_CHECK(cudaMemcpy(lw.rms_att_weight, data_result.value().data(),
                                           hidden * sizeof(half), cudaMemcpyHostToDevice));
@@ -242,13 +242,12 @@ Result<ModelWeights> ModelLoader::loadGGUF(const std::string &path, ModelConfig 
             if (data_result.isOk()) {
                 CUDA_CHECK(cudaMalloc(&lw.rms_ffn_weight, hidden * sizeof(half)));
                 if (ffn_norm->type == GGMLType::F32) {
-                    std::vector<half> f16(hidden);
-                    const float *f32 = reinterpret_cast<const float *>(data_result.value().data());
-                    for (int i = 0; i < hidden; ++i) {
-                        f16[i] = __float2half(f32[i]);
+                    auto f16_result = convertF32ToF16(
+                        reinterpret_cast<const float *>(data_result.value().data()), hidden);
+                    if (f16_result.isOk()) {
+                        CUDA_CHECK(cudaMemcpy(lw.rms_ffn_weight, f16_result.value().data(),
+                                              hidden * sizeof(half), cudaMemcpyHostToDevice));
                     }
-                    CUDA_CHECK(cudaMemcpy(lw.rms_ffn_weight, f16.data(), hidden * sizeof(half),
-                                          cudaMemcpyHostToDevice));
                 } else {
                     CUDA_CHECK(cudaMemcpy(lw.rms_ffn_weight, data_result.value().data(),
                                           hidden * sizeof(half), cudaMemcpyHostToDevice));
@@ -274,13 +273,12 @@ Result<ModelWeights> ModelLoader::loadGGUF(const std::string &path, ModelConfig 
         if (data_result.isOk()) {
             CUDA_CHECK(cudaMalloc(&weights.final_norm_weight, config.hidden_dim * sizeof(half)));
             if (output_norm->type == GGMLType::F32) {
-                std::vector<half> f16(config.hidden_dim);
-                const float      *f32 = reinterpret_cast<const float *>(data_result.value().data());
-                for (int i = 0; i < config.hidden_dim; ++i) {
-                    f16[i] = __float2half(f32[i]);
+                auto f16_result = convertF32ToF16(
+                    reinterpret_cast<const float *>(data_result.value().data()), config.hidden_dim);
+                if (f16_result.isOk()) {
+                    CUDA_CHECK(cudaMemcpy(weights.final_norm_weight, f16_result.value().data(),
+                                          config.hidden_dim * sizeof(half), cudaMemcpyHostToDevice));
                 }
-                CUDA_CHECK(cudaMemcpy(weights.final_norm_weight, f16.data(),
-                                      config.hidden_dim * sizeof(half), cudaMemcpyHostToDevice));
             } else {
                 CUDA_CHECK(cudaMemcpy(weights.final_norm_weight, data_result.value().data(),
                                       config.hidden_dim * sizeof(half), cudaMemcpyHostToDevice));

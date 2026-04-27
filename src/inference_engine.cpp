@@ -60,7 +60,12 @@ InferenceEngine::InferenceEngine(const ModelConfig &config, ModelWeights &&weigh
     kv_config.head_dim = config_.head_dim;
     kv_config.max_seq_len = config_.max_seq_len;
     kv_config.max_batch_size = 1;
-    kv_cache_ = std::make_unique<KVCacheManager>(kv_config);
+
+    auto kv_cache_result = KVCacheManager::create(kv_config);
+    if (kv_cache_result.isErr()) {
+        throw std::runtime_error("Failed to create KV cache: " + kv_cache_result.error());
+    }
+    kv_cache_ = std::move(kv_cache_result.value());
 
     // Create transformer layers
     layers_.reserve(config_.num_layers);

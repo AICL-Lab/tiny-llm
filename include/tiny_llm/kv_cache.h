@@ -5,6 +5,7 @@
 #include "tiny_llm/types.h"
 #include <cuda_fp16.h>
 #include <cuda_runtime.h>
+#include <memory>
 #include <unordered_map>
 #include <vector>
 
@@ -22,12 +23,19 @@ struct SequenceCache {
 // Manages GPU memory for key-value caches across all layers and sequences
 class KVCacheManager {
   public:
-    explicit KVCacheManager(const KVCacheConfig &config);
+    // Factory method - creates KVCacheManager with Result<T> error handling
+    // Use this instead of constructor for proper error handling
+    static Result<std::unique_ptr<KVCacheManager>> create(const KVCacheConfig &config);
+
     ~KVCacheManager();
 
     // Non-copyable
     KVCacheManager(const KVCacheManager &) = delete;
     KVCacheManager &operator=(const KVCacheManager &) = delete;
+
+    // Non-movable (due to raw pointer management)
+    KVCacheManager(KVCacheManager &&) = delete;
+    KVCacheManager &operator=(KVCacheManager &&) = delete;
 
     // Allocate cache for a new sequence
     // Returns sequence ID on success, error on failure
@@ -59,23 +67,26 @@ class KVCacheManager {
     Result<void> advanceSeqLen(int seq_id, int num_tokens);
 
     // Get current sequence length
-    int getSeqLen(int seq_id) const;
+    int getSeqLen(int seq_id) const noexcept;
 
     // Check if sequence exists
-    bool hasSequence(int seq_id) const;
+    bool hasSequence(int seq_id) const noexcept;
 
     // Memory statistics
-    size_t getUsedMemory() const;
-    size_t getTotalMemory() const;
-    size_t getFreeMemory() const;
+    size_t getUsedMemory() const noexcept;
+    size_t getTotalMemory() const noexcept;
+    size_t getFreeMemory() const noexcept;
 
     // Get number of active sequences
-    int getActiveSequenceCount() const;
+    int getActiveSequenceCount() const noexcept;
 
     // Get config
-    const KVCacheConfig &getConfig() const { return config_; }
+    const KVCacheConfig &getConfig() const noexcept { return config_; }
 
   private:
+    // Private constructor - use create() factory method
+    explicit KVCacheManager(const KVCacheConfig &config) : config_(config) {}
+
     // Calculate memory offset for a specific sequence, layer, and type (K or V)
     size_t calculateOffset(int slot_idx, int layer_idx, bool is_value) const;
 

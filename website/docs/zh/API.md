@@ -251,10 +251,15 @@ cache_config.num_heads = 32;
 cache_config.head_dim = 128;
 cache_config.max_seq_len = 2048;
 
-KVCacheManager kv_cache(cache_config);
+// 使用工厂方法进行正确的错误处理
+auto cache_result = KVCacheManager::create(cache_config);
+if (cache_result.isErr()) {
+    // 处理创建失败
+}
+auto kv_cache = std::move(cache_result.value());
 
 // 分配序列
-auto seq_result = kv_cache.allocateSequence(1024);
+auto seq_result = kv_cache->allocateSequence(1024);
 if (seq_result.isErr()) {
     // 处理分配失败
 }
@@ -262,14 +267,14 @@ int seq_id = seq_result.value();
 
 // 前向传播各层
 for (int i = 0; i < num_layers; i++) {
-    layers[i]->forward(hidden_states, kv_cache, seq_id, position, stream);
+    layers[i]->forward(hidden_states, *kv_cache, seq_id, position, stream);
 }
 
 // 所有层完成后推进序列长度
-kv_cache.advanceSeqLen(seq_id, 1);
+kv_cache->advanceSeqLen(seq_id, 1);
 
 // 完成后释放
-kv_cache.releaseSequence(seq_id);
+kv_cache->releaseSequence(seq_id);
 ```
 
 ### TransformerLayer

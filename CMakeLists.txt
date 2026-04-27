@@ -3,7 +3,7 @@ if(POLICY CMP0119)
     cmake_policy(SET CMP0119 NEW)
 endif()
 project(tiny-llm
-    VERSION 2.0.1
+    VERSION 2.0.2
     DESCRIPTION "Lightweight LLM inference engine with W8A16 quantization"
     LANGUAGES CXX
 )

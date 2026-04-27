@@ -178,12 +178,14 @@ TEST_F(IntegrationTest, KVCacheMultipleSequences) {
     config.max_seq_len = 32;
     config.max_batch_size = 4;
 
-    KVCacheManager cache(config);
+    auto cache_result = KVCacheManager::create(config);
+    ASSERT_TRUE(cache_result.isOk()) << cache_result.error();
+    auto cache = std::move(cache_result.value());
 
     // Allocate multiple sequences
     std::vector<int> seq_ids;
     for (int i = 0; i < 3; ++i) {
-        auto result = cache.allocateSequence(16);
+        auto result = cache->allocateSequence(16);
         ASSERT_TRUE(result.isOk());
         seq_ids.push_back(result.value());
     }
@@ -198,7 +200,7 @@ TEST_F(IntegrationTest, KVCacheMultipleSequences) {
 
     // Release sequences
     for (int seq_id : seq_ids) {
-        cache.releaseSequence(seq_id);
+        cache->releaseSequence(seq_id);
     }
 }
 
@@ -231,8 +233,10 @@ TEST_F(IntegrationTest, TransformerLayerDimensions) {
     kv_config.max_seq_len = config.max_seq_len;
     kv_config.max_batch_size = 1;
 
-    KVCacheManager kv_cache(kv_config);
-    auto           alloc_result = kv_cache.allocateSequence(32);
+    auto kv_cache_result = KVCacheManager::create(kv_config);
+    ASSERT_TRUE(kv_cache_result.isOk()) << kv_cache_result.error();
+    auto kv_cache = std::move(kv_cache_result.value());
+    auto alloc_result = kv_cache->allocateSequence(32);
     ASSERT_TRUE(alloc_result.isOk());
     int seq_id = alloc_result.value();
 
@@ -243,13 +247,13 @@ TEST_F(IntegrationTest, TransformerLayerDimensions) {
     half *hidden_states = randomDeviceFP16(hidden, 1.0f, 200);
 
     // Forward pass should not crash
-    layer.forward(hidden_states, kv_cache, seq_id, 0);
+    layer.forward(hidden_states, *kv_cache, seq_id, 0);
     cudaDeviceSynchronize();
 
     // TransformerLayer appends KV, but the caller owns seq_len advancement.
-    EXPECT_EQ(kv_cache.getSeqLen(seq_id), 0);
-    kv_cache.advanceSeqLen(seq_id, 1);
-    EXPECT_EQ(kv_cache.getSeqLen(seq_id), 1);
+    EXPECT_EQ(kv_cache->getSeqLen(seq_id), 0);
+    kv_cache->advanceSeqLen(seq_id, 1);
+    EXPECT_EQ(kv_cache->getSeqLen(seq_id), 1);
 
     // Cleanup
     cudaFree(hidden_states);

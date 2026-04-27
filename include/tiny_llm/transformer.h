@@ -33,7 +33,7 @@ class TransformerLayer {
                         cudaStream_t stream = 0);
 
     // Get layer index
-    int getLayerIdx() const { return layer_idx_; }
+    int getLayerIdx() const noexcept { return layer_idx_; }
 
   private:
     // Attention sublayer

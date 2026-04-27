@@ -51,7 +51,7 @@ nav_external_links:
 nav_sort: case_insensitive
 
 # Footer
-footer_content: "Copyright &copy; 2025 LessUp. Distributed under MIT License."
+footer_content: "Copyright &copy; 2026 LessUp. Distributed under MIT License."
 back_to_top: true
 back_to_top_text: "Back to top"
 
@@ -110,7 +110,7 @@ social:
     - https://github.com/LessUp/tiny-llm
 
 # Custom Variables
-version: "2.0.1"
+version: "2.0.2"
 release_url: https://github.com/LessUp/tiny-llm/releases/latest
 repo_url: https://github.com/LessUp/tiny-llm
 docs_url: https://lessup.github.io/tiny-llm/docs

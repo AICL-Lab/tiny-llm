@@ -5,43 +5,60 @@
 
 namespace tiny_llm {
 
-KVCacheManager::KVCacheManager(const KVCacheConfig &config) : config_(config) {
-
+Result<std::unique_ptr<KVCacheManager>> KVCacheManager::create(const KVCacheConfig &config) {
     // Validate configuration to prevent overflow
-    if (config_.num_layers <= 0 || config_.num_heads <= 0 || config_.head_dim <= 0 ||
-        config_.max_seq_len <= 0 || config_.max_batch_size <= 0) {
-        throw std::invalid_argument("KVCacheManager: invalid configuration parameters");
+    if (config.num_layers <= 0 || config.num_heads <= 0 || config.head_dim <= 0 ||
+        config.max_seq_len <= 0 || config.max_batch_size <= 0) {
+        return Result<std::unique_ptr<KVCacheManager>>::err(
+            "KVCacheManager: invalid configuration parameters");
     }
+
+    // Create instance using private constructor
+    auto manager = std::unique_ptr<KVCacheManager>(new KVCacheManager(config));
 
     // Calculate per-slot memory size with overflow check
     size_t kv_per_layer =
-        static_cast<size_t>(config_.num_heads) * config_.max_seq_len * config_.head_dim;
+        static_cast<size_t>(config.num_heads) * config.max_seq_len * config.head_dim;
 
-    size_t kv_total = kv_per_layer * static_cast<size_t>(config_.num_layers) * 2;
+    size_t kv_total = kv_per_layer * static_cast<size_t>(config.num_layers) * 2;
 
     if (kv_total > SIZE_MAX / sizeof(half)) {
-        throw std::runtime_error("KVCacheManager: memory size overflow");
+        return Result<std::unique_ptr<KVCacheManager>>::err(
+            "KVCacheManager: memory size overflow");
     }
-    slot_size_ = kv_total * sizeof(half);
+    manager->slot_size_ = kv_total * sizeof(half);
 
     // Total pool size for all batch slots
-    if (slot_size_ > SIZE_MAX / static_cast<size_t>(config_.max_batch_size)) {
-        throw std::runtime_error("KVCacheManager: pool size overflow");
+    if (manager->slot_size_ > SIZE_MAX / static_cast<size_t>(config.max_batch_size)) {
+        return Result<std::unique_ptr<KVCacheManager>>::err(
+            "KVCacheManager: pool size overflow");
     }
-    pool_size_ = slot_size_ * static_cast<size_t>(config_.max_batch_size);
+    manager->pool_size_ = manager->slot_size_ * static_cast<size_t>(config.max_batch_size);
 
     // Allocate GPU memory pool
-    CUDA_CHECK(cudaMalloc(&memory_pool_, pool_size_));
-    CUDA_CHECK(cudaMemset(memory_pool_, 0, pool_size_));
+    cudaError_t err = cudaMalloc(&manager->memory_pool_, manager->pool_size_);
+    if (err != cudaSuccess) {
+        return Result<std::unique_ptr<KVCacheManager>>::err(
+            std::string("KVCacheManager: cudaMalloc failed: ") + cudaGetErrorString(err));
+    }
+    err = cudaMemset(manager->memory_pool_, 0, manager->pool_size_);
+    if (err != cudaSuccess) {
+        cudaFree(manager->memory_pool_);
+        manager->memory_pool_ = nullptr;
+        return Result<std::unique_ptr<KVCacheManager>>::err(
+            std::string("KVCacheManager: cudaMemset failed: ") + cudaGetErrorString(err));
+    }
 
     // Initialize slots
-    slots_.resize(config_.max_batch_size);
-    for (auto &slot : slots_) {
+    manager->slots_.resize(config.max_batch_size);
+    for (auto &slot : manager->slots_) {
         slot.active = false;
         slot.seq_id = -1;
         slot.current_len = 0;
-        slot.max_len = config_.max_seq_len;
+        slot.max_len = config.max_seq_len;
     }
+
+    return Result<std::unique_ptr<KVCacheManager>>::ok(std::move(manager));
 }
 
 KVCacheManager::~KVCacheManager() {
@@ -243,7 +260,7 @@ Result<void> KVCacheManager::advanceSeqLen(int seq_id, int num_tokens) {
     return Result<void>::ok();
 }
 
-int KVCacheManager::getSeqLen(int seq_id) const {
+int KVCacheManager::getSeqLen(int seq_id) const noexcept {
     auto it = seq_to_slot_.find(seq_id);
     if (it == seq_to_slot_.end()) {
         return 0;
@@ -251,11 +268,11 @@ int KVCacheManager::getSeqLen(int seq_id) const {
     return slots_[it->second].current_len;
 }
 
-bool KVCacheManager::hasSequence(int seq_id) const {
+bool KVCacheManager::hasSequence(int seq_id) const noexcept {
     return seq_to_slot_.find(seq_id) != seq_to_slot_.end();
 }
 
-size_t KVCacheManager::getUsedMemory() const {
+size_t KVCacheManager::getUsedMemory() const noexcept {
     int active_count = 0;
     for (const auto &slot : slots_) {
         if (slot.active) {
@@ -265,11 +282,11 @@ size_t KVCacheManager::getUsedMemory() const {
     return active_count * slot_size_;
 }
 
-size_t KVCacheManager::getTotalMemory() const { return pool_size_; }
+size_t KVCacheManager::getTotalMemory() const noexcept { return pool_size_; }
 
-size_t KVCacheManager::getFreeMemory() const { return getTotalMemory() - getUsedMemory(); }
+size_t KVCacheManager::getFreeMemory() const noexcept { return getTotalMemory() - getUsedMemory(); }
 
-int KVCacheManager::getActiveSequenceCount() const {
+int KVCacheManager::getActiveSequenceCount() const noexcept {
     int count = 0;
     for (const auto &slot : slots_) {
         if (slot.active) {

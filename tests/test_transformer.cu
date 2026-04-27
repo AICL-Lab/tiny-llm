@@ -146,10 +146,12 @@ TEST_F(TransformerTest, KVCacheAppendRetrieve) {
     config.max_seq_len = 64;
     config.max_batch_size = 2;
 
-    KVCacheManager cache(config);
+    auto cache_result = KVCacheManager::create(config);
+    ASSERT_TRUE(cache_result.isOk()) << cache_result.error();
+    auto cache = std::move(cache_result.value());
 
     // Allocate sequence
-    auto result = cache.allocateSequence(32);
+    auto result = cache->allocateSequence(32);
     ASSERT_TRUE(result.isOk());
     int seq_id = result.value();
 
@@ -165,16 +167,16 @@ TEST_F(TransformerTest, KVCacheAppendRetrieve) {
     cudaDeviceSynchronize();
 
     // Append to cache
-    cache.appendKV(seq_id, 0, d_k.data(), d_v.data(), num_tokens);
+    cache->appendKV(seq_id, 0, d_k.data(), d_v.data(), num_tokens);
     cudaDeviceSynchronize();
 
     // appendKV writes data but does not advance the visible sequence length.
-    EXPECT_EQ(cache.getSeqLen(seq_id), 0);
-    cache.advanceSeqLen(seq_id, num_tokens);
-    EXPECT_EQ(cache.getSeqLen(seq_id), num_tokens);
+    EXPECT_EQ(cache->getSeqLen(seq_id), 0);
+    cache->advanceSeqLen(seq_id, num_tokens);
+    EXPECT_EQ(cache->getSeqLen(seq_id), num_tokens);
 
     // Get cache pointers
-    auto [k_cache, v_cache] = cache.getCache(seq_id, 0);
+    auto [k_cache, v_cache] = cache->getCache(seq_id, 0);
     EXPECT_NE(k_cache, nullptr);
     EXPECT_NE(v_cache, nullptr);
 
@@ -315,11 +317,13 @@ RC_GTEST_FIXTURE_PROP(TransformerPropertyTest, KVCachePreservesData,
     config.max_seq_len = max_seq_len;
     config.max_batch_size = 2;
 
-    KVCacheManager cache(config);
+    auto cache_result = KVCacheManager::create(config);
+    RC_ASSERT(cache_result.isOk());
+    auto cache = std::move(cache_result.value());
 
     // Allocate sequence
     int  alloc_len = max_seq_len / 2;
-    auto result = cache.allocateSequence(alloc_len);
+    auto result = cache->allocateSequence(alloc_len);
     RC_ASSERT(result.isOk());
     int seq_id = result.value();
 
@@ -350,14 +354,14 @@ RC_GTEST_FIXTURE_PROP(TransformerPropertyTest, KVCachePreservesData,
     // Append all layers in order (layer 0 first to update seq_len, then others)
     // This simulates how TransformerLayer would use it
     for (int layer = 0; layer < num_layers; ++layer) {
-        cache.appendKV(seq_id, layer, d_k_buffers[layer].data(), d_v_buffers[layer].data(),
+        cache->appendKV(seq_id, layer, d_k_buffers[layer].data(), d_v_buffers[layer].data(),
                        num_tokens);
     }
     cudaDeviceSynchronize();
 
     // Property: Data should be preserved in cache
     for (int layer = 0; layer < num_layers; ++layer) {
-        auto [k_cache, v_cache] = cache.getCache(seq_id, layer);
+        auto [k_cache, v_cache] = cache->getCache(seq_id, layer);
         RC_ASSERT(k_cache != nullptr);
         RC_ASSERT(v_cache != nullptr);
 
@@ -393,9 +397,11 @@ RC_GTEST_FIXTURE_PROP(TransformerPropertyTest, SequentialAppendEquivalence,
     config.max_seq_len = max_seq_len;
     config.max_batch_size = 2;
 
-    KVCacheManager cache(config);
+    auto cache_result = KVCacheManager::create(config);
+    RC_ASSERT(cache_result.isOk());
+    auto cache = std::move(cache_result.value());
 
-    auto result = cache.allocateSequence(max_seq_len);
+    auto result = cache->allocateSequence(max_seq_len);
     RC_ASSERT(result.isOk());
     int seq_id = result.value();
 
@@ -416,15 +422,15 @@ RC_GTEST_FIXTURE_PROP(TransformerPropertyTest, SequentialAppendEquivalence,
         d_v.copyFromHost(v_token.data(), v_token.size());
         cudaDeviceSynchronize();
 
-        cache.appendKV(seq_id, 0, d_k.data(), d_v.data(), 1);
-        cache.advanceSeqLen(seq_id, 1);
+        cache->appendKV(seq_id, 0, d_k.data(), d_v.data(), 1);
+        cache->advanceSeqLen(seq_id, 1);
     }
     cudaDeviceSynchronize();
 
     // Property: Sequential append should produce same result as batch append
-    RC_ASSERT(cache.getSeqLen(seq_id) == total_tokens);
+    RC_ASSERT(cache->getSeqLen(seq_id) == total_tokens);
 
-    auto [k_cache, v_cache] = cache.getCache(seq_id, 0);
+    auto [k_cache, v_cache] = cache->getCache(seq_id, 0);
     std::vector<half> k_retrieved(all_k.size());
     std::vector<half> v_retrieved(all_v.size());
     cudaMemcpy(k_retrieved.data(), k_cache, k_retrieved.size() * sizeof(half),

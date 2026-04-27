@@ -1,0 +1,487 @@
+{
+  "version": "1.0.0",
+  "lastScanned": 1777255406797,
+  "projectRoot": "/home/shane/dev/tiny-llm",
+  "techStack": {
+    "languages": [
+      {
+        "name": "C/C++",
+        "version": null,
+        "confidence": "high",
+        "markers": [
+          "CMakeLists.txt"
+        ]
+      }
+    ],
+    "frameworks": [],
+    "packageManager": null,
+    "runtime": null
+  },
+  "build": {
+    "buildCommand": null,
+    "testCommand": null,
+    "lintCommand": null,
+    "devCommand": null,
+    "scripts": {}
+  },
+  "conventions": {
+    "namingStyle": null,
+    "importStyle": null,
+    "testPattern": null,
+    "fileOrganization": null
+  },
+  "structure": {
+    "isMonorepo": false,
+    "workspaces": [],
+    "mainDirectories": [
+      "docs",
+      "src",
+      "tests"
+    ],
+    "gitBranches": {
+      "defaultBranch": "master",
+      "branchingStrategy": null
+    }
+  },
+  "customNotes": [],
+  "directoryMap": {
+    "_bmad": {
+      "path": "_bmad",
+      "purpose": null,
+      "fileCount": 0,
+      "lastAccessed": 1777255406776,
+      "keyFiles": []
+    },
+    "_bmad-output": {
+      "path": "_bmad-output",
+      "purpose": null,
+      "fileCount": 0,
+      "lastAccessed": 1777255406783,
+      "keyFiles": []
+    },
+    "build": {
+      "path": "build",
+      "purpose": "Build output",
+      "fileCount": 7,
+      "lastAccessed": 1777255406786,
+      "keyFiles": [
+        "CMakeCache.txt",
+        "CTestTestfile.cmake",
+        "Makefile",
+        "cmake_install.cmake",
+        "compile_commands.json"
+      ]
+    },
+    "docs": {
+      "path": "docs",
+      "purpose": "Documentation",
+      "fileCount": 0,
+      "lastAccessed": 1777255406787,
+      "keyFiles": []
+    },
+    "include": {
+      "path": "include",
+      "purpose": null,
+      "fileCount": 0,
+      "lastAccessed": 1777255406788,
+      "keyFiles": []
+    },
+    "kernels": {
+      "path": "kernels",
+      "purpose": null,
+      "fileCount": 9,
+      "lastAccessed": 1777255406788,
+      "keyFiles": [
+        "attention.cu",
+        "attention.cuh",
+        "elementwise.cu",
+        "elementwise.cuh",
+        "rmsnorm.cu"
+      ]
+    },
+    "openspec": {
+      "path": "openspec",
+      "purpose": null,
+      "fileCount": 2,
+      "lastAccessed": 1777255406789,
+      "keyFiles": [
+        "MIGRATION.md",
+        "config.yaml"
+      ]
+    },
+    "src": {
+      "path": "src",
+      "purpose": "Source code",
+      "fileCount": 8,
+      "lastAccessed": 1777255406790,
+      "keyFiles": [
+        "gguf_parser.cpp",
+        "inference_engine.cpp",
+        "kv_cache.cpp",
+        "logger.cpp",
+        "main.cpp"
+      ]
+    },
+    "tests": {
+      "path": "tests",
+      "purpose": "Test files",
+      "fileCount": 10,
+      "lastAccessed": 1777255406790,
+      "keyFiles": [
+        "test_cuda_utils.cpp",
+        "test_inference_engine.cu",
+        "test_integration.cu",
+        "test_kernels.cu",
+        "test_kv_cache.cpp"
+      ]
+    },
+    "website": {
+      "path": "website",
+      "purpose": null,
+      "fileCount": 9,
+      "lastAccessed": 1777255406790,
+      "keyFiles": [
+        "404.html",
+        "CONTRIBUTING.md",
+        "Gemfile",
+        "Gemfile.lock",
+        "_config.yml"
+      ]
+    },
+    "build/bin": {
+      "path": "build/bin",
+      "purpose": "Executable scripts",
+      "fileCount": 0,
+      "lastAccessed": 1777255406794,
+      "keyFiles": []
+    },
+    "build/lib": {
+      "path": "build/lib",
+      "purpose": "Library code",
+      "fileCount": 4,
+      "lastAccessed": 1777255406795,
+      "keyFiles": [
+        "libgmock.a",
+        "libgmock_main.a",
+        "libgtest.a"
+      ]
+    },
+    "openspec/schemas": {
+      "path": "openspec/schemas",
+      "purpose": "Schema definitions",
+      "fileCount": 0,
+      "lastAccessed": 1777255406796,
+      "keyFiles": []
+    },
+    "website/assets": {
+      "path": "website/assets",
+      "purpose": "Static assets",
+      "fileCount": 0,
+      "lastAccessed": 1777255406796,
+      "keyFiles": []
+    }
+  },
+  "hotPaths": [
+    {
+      "path": "src/model_loader.cpp",
+      "accessCount": 13,
+      "lastAccessed": 1777257673956,
+      "type": "file"
+    },
+    {
+      "path": "tests/test_transformer.cu",
+      "accessCount": 9,
+      "lastAccessed": 1777257236015,
+      "type": "file"
+    },
+    {
+      "path": "src/kv_cache.cpp",
+      "accessCount": 8,
+      "lastAccessed": 1777257759828,
+      "type": "file"
+    },
+    {
+      "path": "include/tiny_llm/kv_cache.h",
+      "accessCount": 7,
+      "lastAccessed": 1777257453553,
+      "type": "file"
+    },
+    {
+      "path": "website/_config.yml",
+      "accessCount": 6,
+      "lastAccessed": 1777258100896,
+      "type": "file"
+    },
+    {
+      "path": "src",
+      "accessCount": 5,
+      "lastAccessed": 1777255779397,
+      "type": "directory"
+    },
+    {
+      "path": "CMakeLists.txt",
+      "accessCount": 5,
+      "lastAccessed": 1777258089724,
+      "type": "file"
+    },
+    {
+      "path": "website/docs/en/QUICKSTART.md",
+      "accessCount": 4,
+      "lastAccessed": 1777257367165,
+      "type": "file"
+    },
+    {
+      "path": "include/tiny_llm/transformer.h",
+      "accessCount": 4,
+      "lastAccessed": 1777257428455,
+      "type": "file"
+    },
+    {
+      "path": "src/inference_engine.cpp",
+      "accessCount": 4,
+      "lastAccessed": 1777257795452,
+      "type": "file"
+    },
+    {
+      "path": "AGENTS.md",
+      "accessCount": 4,
+      "lastAccessed": 1777258003740,
+      "type": "file"
+    },
+    {
+      "path": "CHANGELOG.md",
+      "accessCount": 4,
+      "lastAccessed": 1777258036771,
+      "type": "file"
+    },
+    {
+      "path": "README.md",
+      "accessCount": 3,
+      "lastAccessed": 1777255779363,
+      "type": "file"
+    },
+    {
+      "path": "CONTRIBUTING.md",
+      "accessCount": 3,
+      "lastAccessed": 1777255800009,
+      "type": "file"
+    },
+    {
+      "path": "openspec/changes/normalize-archive-readiness/tasks.md",
+      "accessCount": 3,
+      "lastAccessed": 1777255995800,
+      "type": "file"
+    },
+    {
+      "path": "include/tiny_llm/types.h",
+      "accessCount": 3,
+      "lastAccessed": 1777256852250,
+      "type": "file"
+    },
+    {
+      "path": "website/docs/en/API.md",
+      "accessCount": 3,
+      "lastAccessed": 1777257338308,
+      "type": "file"
+    },
+    {
+      "path": "website/docs/zh/API.md",
+      "accessCount": 3,
+      "lastAccessed": 1777257394533,
+      "type": "file"
+    },
+    {
+      "path": "website/docs/zh/QUICKSTART.md",
+      "accessCount": 3,
+      "lastAccessed": 1777257411287,
+      "type": "file"
+    },
+    {
+      "path": "CLAUDE.md",
+      "accessCount": 2,
+      "lastAccessed": 1777255730189,
+      "type": "file"
+    },
+    {
+      "path": "include",
+      "accessCount": 2,
+      "lastAccessed": 1777255759060,
+      "type": "directory"
+    },
+    {
+      "path": "include/tiny_llm/result.h",
+      "accessCount": 2,
+      "lastAccessed": 1777255759125,
+      "type": "file"
+    },
+    {
+      "path": "src/transformer.cpp",
+      "accessCount": 2,
+      "lastAccessed": 1777255759218,
+      "type": "file"
+    },
+    {
+      "path": "tests",
+      "accessCount": 2,
+      "lastAccessed": 1777255772007,
+      "type": "directory"
+    },
+    {
+      "path": "include/tiny_llm/gguf_parser.h",
+      "accessCount": 2,
+      "lastAccessed": 1777256300155,
+      "type": "file"
+    },
+    {
+      "path": "README.zh-CN.md",
+      "accessCount": 1,
+      "lastAccessed": 1777255466026,
+      "type": "file"
+    },
+    {
+      "path": "include/tiny_llm/cuda_utils.h",
+      "accessCount": 1,
+      "lastAccessed": 1777255466220,
+      "type": "file"
+    },
+    {
+      "path": "website/index.md",
+      "accessCount": 1,
+      "lastAccessed": 1777255475051,
+      "type": "file"
+    },
+    {
+      "path": "website/docs/zh/README.md",
+      "accessCount": 1,
+      "lastAccessed": 1777255475144,
+      "type": "file"
+    },
+    {
+      "path": "website/docs/en/README.md",
+      "accessCount": 1,
+      "lastAccessed": 1777255475197,
+      "type": "file"
+    },
+    {
+      "path": "include/tiny_llm/validator.h",
+      "accessCount": 1,
+      "lastAccessed": 1777255476063,
+      "type": "file"
+    },
+    {
+      "path": "include/tiny_llm/inference_engine.h",
+      "accessCount": 1,
+      "lastAccessed": 1777255476593,
+      "type": "file"
+    },
+    {
+      "path": "include/tiny_llm/model_loader.h",
+      "accessCount": 1,
+      "lastAccessed": 1777255476772,
+      "type": "file"
+    },
+    {
+      "path": "include/tiny_llm/logger.h",
+      "accessCount": 1,
+      "lastAccessed": 1777255477006,
+      "type": "file"
+    },
+    {
+      "path": "website/docs/zh/DEVELOPER.md",
+      "accessCount": 1,
+      "lastAccessed": 1777255483010,
+      "type": "file"
+    },
+    {
+      "path": "website/docs/en/BENCHMARKS.md",
+      "accessCount": 1,
+      "lastAccessed": 1777255483203,
+      "type": "file"
+    },
+    {
+      "path": "website/docs/en/DEVELOPER.md",
+      "accessCount": 1,
+      "lastAccessed": 1777255483261,
+      "type": "file"
+    },
+    {
+      "path": "website/docs/zh/BENCHMARKS.md",
+      "accessCount": 1,
+      "lastAccessed": 1777255483373,
+      "type": "file"
+    },
+    {
+      "path": "openspec/MIGRATION.md",
+      "accessCount": 1,
+      "lastAccessed": 1777255487782,
+      "type": "file"
+    },
+    {
+      "path": "openspec/config.yaml",
+      "accessCount": 1,
+      "lastAccessed": 1777255487804,
+      "type": "file"
+    },
+    {
+      "path": "website/docs/en/TROUBLESHOOTING.md",
+      "accessCount": 1,
+      "lastAccessed": 1777255490015,
+      "type": "file"
+    },
+    {
+      "path": "website/changelog/en/v2.0.1.md",
+      "accessCount": 1,
+      "lastAccessed": 1777255490067,
+      "type": "file"
+    },
+    {
+      "path": "website/docs/zh/TROUBLESHOOTING.md",
+      "accessCount": 1,
+      "lastAccessed": 1777255490229,
+      "type": "file"
+    },
+    {
+      "path": "website/changelog/en/v2.0.0.md",
+      "accessCount": 1,
+      "lastAccessed": 1777255491500,
+      "type": "file"
+    },
+    {
+      "path": "tests/test_main.cpp",
+      "accessCount": 1,
+      "lastAccessed": 1777255500171,
+      "type": "file"
+    },
+    {
+      "path": "kernels/attention.cuh",
+      "accessCount": 1,
+      "lastAccessed": 1777255500226,
+      "type": "file"
+    },
+    {
+      "path": "kernels/w8a16_matmul.cu",
+      "accessCount": 1,
+      "lastAccessed": 1777255500289,
+      "type": "file"
+    },
+    {
+      "path": "kernels/attention.cu",
+      "accessCount": 1,
+      "lastAccessed": 1777255500376,
+      "type": "file"
+    },
+    {
+      "path": "tests/test_inference_engine.cu",
+      "accessCount": 1,
+      "lastAccessed": 1777255500404,
+      "type": "file"
+    },
+    {
+      "path": "openspec/specs/inference-engine/spec.md",
+      "accessCount": 1,
+      "lastAccessed": 1777255503595,
+      "type": "file"
+    }
+  ],
+  "userDirectives": []
+}

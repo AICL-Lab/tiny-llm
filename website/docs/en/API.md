@@ -251,10 +251,15 @@ cache_config.num_heads = 32;
 cache_config.head_dim = 128;
 cache_config.max_seq_len = 2048;
 
-KVCacheManager kv_cache(cache_config);
+// Use factory method for proper error handling
+auto cache_result = KVCacheManager::create(cache_config);
+if (cache_result.isErr()) {
+    // Handle creation failure
+}
+auto kv_cache = std::move(cache_result.value());
 
 // Allocate sequence
-auto seq_result = kv_cache.allocateSequence(1024);
+auto seq_result = kv_cache->allocateSequence(1024);
 if (seq_result.isErr()) {
     // Handle allocation failure
 }
@@ -262,14 +267,14 @@ int seq_id = seq_result.value();
 
 // Forward pass through layers
 for (int i = 0; i < num_layers; i++) {
-    layers[i]->forward(hidden_states, kv_cache, seq_id, position, stream);
+    layers[i]->forward(hidden_states, *kv_cache, seq_id, position, stream);
 }
 
 // Advance sequence length after all layers
-kv_cache.advanceSeqLen(seq_id, 1);
+kv_cache->advanceSeqLen(seq_id, 1);
 
 // Release when done
-kv_cache.releaseSequence(seq_id);
+kv_cache->releaseSequence(seq_id);
 ```
 
 ### TransformerLayer
