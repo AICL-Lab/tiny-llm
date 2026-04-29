@@ -20,6 +20,24 @@ Tiny-LLM keeps a short, release-oriented changelog. This surface is reserved for
 
 ## Releases
 
+### [2.0.2] — 2026-04-27
+
+#### Added
+- **Quantization utilities**: New `quantization.h`/`quantization.cpp` with F32→F16, Q4_0, Q8_0, W8A16 utilities
+- **CLI enhancements**: `--help`, `--version`, `--info` options for better usability
+
+#### Changed
+- **KVCacheManager**: Factory method `create()` for consistent `Result<T>` error handling
+- **Code quality**: Added `noexcept` to simple accessors, fixed clang-format-18 violations
+
+#### Infrastructure
+- CI simplification with `Jimver/cuda-toolkit` action
+- Enhanced `.clangd` LSP configuration
+
+**Details**: [English](en/v2.0.2) | [中文](zh/v2.0.2)
+
+---
+
 ### [2.0.1] — 2026-04-16
 
 #### Fixed
