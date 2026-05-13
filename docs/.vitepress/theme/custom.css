@@ -1,0 +1,341 @@
+/**
+ * Tiny-LLM Documentation - Custom Styles
+ *
+ * Brand Colors:
+ * - Primary (Tech Green): #00D4AA
+ * - CUDA Green: #76B900
+ * - Dark mode support
+ */
+
+/* ========================================
+   CSS Custom Properties (Design Tokens)
+   ======================================== */
+
+:root {
+  /* Brand Colors */
+  --tiny-llm-primary: #00D4AA;
+  --tiny-llm-primary-light: #00FFC8;
+  --tiny-llm-primary-dark: #00A888;
+  --tiny-llm-cuda-green: #76B900;
+  --tiny-llm-cuda-green-light: #8FD71A;
+
+  /* Override VitePress theme colors */
+  --vp-c-brand-1: var(--tiny-llm-primary);
+  --vp-c-brand-2: var(--tiny-llm-primary-light);
+  --vp-c-brand-3: var(--tiny-llm-primary-dark);
+  --vp-c-brand-soft: rgba(0, 212, 170, 0.14);
+
+  /* Accent colors for code */
+  --vp-code-color: var(--tiny-llm-primary);
+
+  /* Button customization */
+  --vp-button-brand-border: transparent;
+  --vp-button-brand-text: #fff;
+  --vp-button-brand-bg: var(--tiny-llm-primary);
+  --vp-button-brand-hover-border: transparent;
+  --vp-button-brand-hover-text: #fff;
+  --vp-button-brand-hover-bg: var(--tiny-llm-primary-dark);
+  --vp-button-brand-active-border: transparent;
+  --vp-button-brand-active-text: #fff;
+  --vp-button-brand-active-bg: var(--tiny-llm-primary-dark);
+
+  /* Home hero customization */
+  --vp-home-hero-name-color: transparent;
+  --vp-home-hero-name-background: linear-gradient(135deg, var(--tiny-llm-primary) 0%, var(--tiny-llm-cuda-green) 100%);
+  --vp-home-hero-image-background-image: linear-gradient(135deg, var(--tiny-llm-primary) 50%, var(--tiny-llm-cuda-green) 50%);
+  --vp-home-hero-image-filter: blur(44px);
+}
+
+/* Dark mode overrides */
+.dark {
+  --tiny-llm-primary: #00D4AA;
+  --tiny-llm-primary-light: #00FFC8;
+  --tiny-llm-primary-dark: #00A888;
+  --tiny-llm-cuda-green: #76B900;
+
+  --vp-c-brand-1: var(--tiny-llm-primary);
+  --vp-c-brand-2: var(--tiny-llm-primary-light);
+  --vp-c-brand-3: var(--tiny-llm-primary-dark);
+  --vp-c-brand-soft: rgba(0, 212, 170, 0.14);
+}
+
+/* ========================================
+   Home Page Styles
+   ======================================== */
+
+.VPHero {
+  --vp-home-hero-name-background: linear-gradient(135deg, var(--tiny-llm-primary) 0%, var(--tiny-llm-cuda-green) 100%);
+}
+
+.VPHero .name {
+  background: linear-gradient(135deg, var(--tiny-llm-primary) 0%, var(--tiny-llm-cuda-green) 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+.VPHero .tagline {
+  color: var(--vp-c-text-2);
+}
+
+/* Home hero image glow effect */
+.VPHero .image-bg {
+  background: linear-gradient(135deg, var(--tiny-llm-primary), var(--tiny-llm-cuda-green));
+  opacity: 0.3;
+  filter: blur(100px);
+}
+
+/* ========================================
+   Navigation Styles
+   ======================================== */
+
+.VPNavBar {
+  border-bottom: 1px solid var(--vp-c-divider);
+}
+
+.VPNavBar .title {
+  color: var(--tiny-llm-primary);
+  font-weight: 600;
+}
+
+/* Active nav link */
+.VPNavBarMenu .VPNavBarMenuLink.active {
+  color: var(--tiny-llm-primary);
+  border-bottom-color: var(--tiny-llm-primary);
+}
+
+/* ========================================
+   Sidebar Styles
+   ======================================== */
+
+.VPSidebar .group .title {
+  font-weight: 600;
+  color: var(--vp-c-text-1);
+}
+
+.VPSidebar .link .link-text {
+  transition: color 0.25s;
+}
+
+.VPSidebar .link:hover .link-text {
+  color: var(--tiny-llm-primary);
+}
+
+.VPSidebar .link.active .link-text {
+  color: var(--tiny-llm-primary);
+}
+
+/* ========================================
+   Code Block Styles
+   ======================================== */
+
+/* Inline code */
+:not(pre) > code {
+  background-color: var(--vp-c-mute);
+  border-radius: 4px;
+  padding: 2px 6px;
+  font-size: 0.9em;
+  color: var(--tiny-llm-primary);
+}
+
+/* Code block header */
+.vp-code-group .tabs label {
+  cursor: pointer;
+}
+
+.vp-code-group .tabs label.active {
+  color: var(--tiny-llm-primary);
+  border-bottom-color: var(--tiny-llm-primary);
+}
+
+/* ========================================
+   Custom Container Styles
+   ======================================== */
+
+.custom-block {
+  border-radius: 8px;
+}
+
+.custom-block .custom-block-title {
+  font-weight: 600;
+}
+
+/* Tip/Info block with brand color */
+.custom-block.tip {
+  border-color: var(--tiny-llm-primary);
+}
+
+.custom-block.tip .custom-block-title {
+  color: var(--tiny-llm-primary);
+}
+
+/* ========================================
+   Button Styles
+   ======================================== */
+
+.VPButton.brand {
+  background: linear-gradient(135deg, var(--tiny-llm-primary) 0%, var(--tiny-llm-cuda-green) 100%);
+  border: none;
+  transition: all 0.3s ease;
+}
+
+.VPButton.brand:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 20px rgba(0, 212, 170, 0.4);
+}
+
+/* ========================================
+   Badge Styles
+   ======================================== */
+
+.VPBadge {
+  font-weight: 500;
+}
+
+.VPBadge.tip {
+  background-color: rgba(0, 212, 170, 0.1);
+  color: var(--tiny-llm-primary);
+}
+
+/* ========================================
+   Footer Styles
+   ======================================== */
+
+.VPDocFooter .pager-link {
+  border-radius: 8px;
+  transition: all 0.25s;
+}
+
+.VPDocFooter .pager-link:hover {
+  border-color: var(--tiny-llm-primary);
+}
+
+.VPDocFooter .pager-link:hover .title {
+  color: var(--tiny-llm-primary);
+}
+
+/* ========================================
+   Mermaid Diagram Styles
+   ======================================== */
+
+.mermaid {
+  background: var(--vp-c-bg-soft);
+  border-radius: 8px;
+  padding: 16px;
+}
+
+/* ========================================
+   Typography Enhancements
+   ======================================== */
+
+h1, h2, h3, h4, h5, h6 {
+  font-weight: 600;
+}
+
+h1 {
+  font-size: 2rem;
+}
+
+h2 {
+  margin-top: 2rem;
+  border-top: 1px solid var(--vp-c-divider);
+  padding-top: 1.5rem;
+}
+
+/* First h2 should not have top margin */
+h2:first-of-type {
+  border-top: none;
+  padding-top: 0;
+  margin-top: 0;
+}
+
+/* ========================================
+   Link Styles
+   ======================================== */
+
+.vp-doc a {
+  color: var(--tiny-llm-primary);
+  text-decoration: none;
+  transition: color 0.25s;
+}
+
+.vp-doc a:hover {
+  color: var(--tiny-llm-primary-light);
+}
+
+/* External link indicator */
+.vp-doc a[target="_blank"]::after {
+  content: " ↗";
+  font-size: 0.8em;
+  opacity: 0.7;
+}
+
+/* ========================================
+   Table Styles
+   ======================================== */
+
+.vp-doc table {
+  border-collapse: collapse;
+  width: 100%;
+}
+
+.vp-doc th {
+  background-color: var(--vp-c-bg-soft);
+  font-weight: 600;
+}
+
+.vp-doc th,
+.vp-doc td {
+  border: 1px solid var(--vp-c-divider);
+  padding: 12px 16px;
+}
+
+.vp-doc tr:nth-child(2n) {
+  background-color: var(--vp-c-bg-soft);
+}
+
+/* ========================================
+   Responsive Adjustments
+   ======================================== */
+
+@media (max-width: 768px) {
+  h1 {
+    font-size: 1.5rem;
+  }
+
+  h2 {
+    font-size: 1.25rem;
+  }
+
+  .VPHero .name {
+    font-size: 2rem;
+  }
+}
+
+/* ========================================
+   Print Styles
+   ======================================== */
+
+@media print {
+  .VPNavBar,
+  .VPSidebar,
+  .VPDocFooter {
+    display: none;
+  }
+
+  :root {
+    --tiny-llm-primary: #00A888;
+  }
+}
+
+/* ========================================
+   CUDA Code Highlighting
+   ======================================== */
+
+.language-cuda .token.keyword {
+  color: var(--tiny-llm-cuda-green);
+}
+
+.language-cpp .token.keyword {
+  color: var(--tiny-llm-cuda-green);
+}
