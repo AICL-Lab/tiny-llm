@@ -10,7 +10,7 @@
 ![C++](https://img.shields.io/badge/C%2B%2B-17-00599C?logo=c%2B%2B&logoColor=white)
 ![CMake](https://img.shields.io/badge/CMake-3.18+-064F8C?logo=cmake&logoColor=white)
 
-[English](README.md) • [简体中文](README.zh-CN.md) • [文档](https://lessup.github.io/tiny-llm/) • [架构说明](https://lessup.github.io/tiny-llm/docs/zh/ARCHITECTURE) • [更新日志](https://lessup.github.io/tiny-llm/changelog/)
+[English](README.md) • [简体中文](README.zh-CN.md) • [文档](https://lessup.github.io/tiny-llm/) • [架构说明](https://lessup.github.io/tiny-llm/zh/architecture/overview) • [更新日志](https://lessup.github.io/tiny-llm/zh/changelog/)
 
 ---
 
@@ -87,15 +87,16 @@ include/tiny_llm/         公共头文件
 src/                      主机端 C++ 实现
 kernels/                  CUDA kernels
 tests/                    单元测试与属性测试
-website/                  GitHub Pages 站点与公开文档
+docs/                     VitePress 文档站点
 .github/workflows/        CI、Pages、release 自动化
 ```
 
 ## 文档与规范
 
 - **项目主页：** https://lessup.github.io/tiny-llm/
-- **架构说明：** https://lessup.github.io/tiny-llm/docs/zh/ARCHITECTURE
-- **开发者指南：** https://lessup.github.io/tiny-llm/docs/zh/DEVELOPER
+- **架构说明：** https://lessup.github.io/tiny-llm/zh/architecture/overview
+- **开发者指南：** https://lessup.github.io/tiny-llm/zh/developer
+- **API 参考：** https://lessup.github.io/tiny-llm/zh/api/
 - **OpenSpec 规范源：** `openspec/specs/`
 - **变更历史：** `openspec/changes/`
 

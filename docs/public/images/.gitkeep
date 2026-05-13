@@ -1,0 +1,10 @@
+# Static assets directory
+
+This directory contains static assets for the Tiny-LLM documentation site.
+
+## Contents
+
+- `logo.svg` - Site logo (recommended)
+- `favicon.svg` - Browser favicon
+- `apple-touch-icon.png` - iOS home screen icon
+- Any other static images or files

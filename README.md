@@ -10,7 +10,7 @@
 ![C++](https://img.shields.io/badge/C%2B%2B-17-00599C?logo=c%2B%2B&logoColor=white)
 ![CMake](https://img.shields.io/badge/CMake-3.18+-064F8C?logo=cmake&logoColor=white)
 
-[English](README.md) • [简体中文](README.zh-CN.md) • [Documentation](https://lessup.github.io/tiny-llm/) • [Architecture](https://lessup.github.io/tiny-llm/docs/en/ARCHITECTURE) • [Changelog](https://lessup.github.io/tiny-llm/changelog/)
+[English](README.md) • [简体中文](README.zh-CN.md) • [Documentation](https://lessup.github.io/tiny-llm/) • [Architecture](https://lessup.github.io/tiny-llm/en/architecture/overview) • [Changelog](https://lessup.github.io/tiny-llm/en/changelog/)
 
 ---
 
@@ -87,15 +87,16 @@ include/tiny_llm/         Public headers
 src/                      Host-side C++ implementation
 kernels/                  CUDA kernels
 tests/                    Unit and property tests
-website/                  GitHub Pages site and public docs
+docs/                     VitePress documentation site
 .github/workflows/        CI, Pages, and release automation
 ```
 
 ## Documentation and specs
 
 - **Project site:** https://lessup.github.io/tiny-llm/
-- **Architecture guide:** https://lessup.github.io/tiny-llm/docs/en/ARCHITECTURE
-- **Developer guide:** https://lessup.github.io/tiny-llm/docs/en/DEVELOPER
+- **Architecture guide:** https://lessup.github.io/tiny-llm/en/architecture/overview
+- **Developer guide:** https://lessup.github.io/tiny-llm/en/developer
+- **API reference:** https://lessup.github.io/tiny-llm/en/api/
 - **OpenSpec source of truth:** `openspec/specs/`
 - **Change history:** `openspec/changes/`
 
