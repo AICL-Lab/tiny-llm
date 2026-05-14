@@ -89,6 +89,18 @@
   --vp-home-hero-name-background: linear-gradient(135deg, var(--tiny-llm-primary) 0%, var(--tiny-llm-cuda) 100%);
 }
 
+/* Light mode: darken SVG logo for better contrast on white background */
+.VPNavBar .VPNavBarTitle .logo img,
+.VPHero .image-src {
+  filter: brightness(0.65) saturate(1.3);
+}
+
+/* Dark mode: keep original SVG colors */
+.dark .VPNavBar .VPNavBarTitle .logo img,
+.dark .VPHero .image-src {
+  filter: none;
+}
+
 .VPHero .name {
   background: linear-gradient(135deg, var(--tiny-llm-primary) 0%, var(--tiny-llm-cuda) 100%);
   -webkit-background-clip: text;
