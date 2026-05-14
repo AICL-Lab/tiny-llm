@@ -14,7 +14,7 @@ hero:
       link: /en/guide/getting-started
     - theme: alt
       text: View on GitHub
-      link: https://github.com/shane0/tiny-llm
+      link: https://github.com/AICL-Lab/tiny-llm
 
 features:
   - icon: "\U0001F680"

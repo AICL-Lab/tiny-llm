@@ -6,7 +6,7 @@ import llmstxt from 'vitepress-plugin-llms'
 export default withMermaid(
   defineConfig({
     title: 'Tiny-LLM',
-    description: 'A minimal, educational LLM inference engine in CUDA C++',
+    description: 'CUDA-native inference engine for Transformer models with W8A16 quantization',
 
     // Base URL for GitHub Pages deployment
     base: '/tiny-llm/',
@@ -21,10 +21,14 @@ export default withMermaid(
     head: [
       ['meta', { name: 'theme-color', content: '#00D4AA' }],
       ['meta', { name: 'og:type', content: 'website' }],
-      ['meta', { name: 'og:title', content: 'Tiny-LLM | Educational CUDA LLM Inference' }],
-      ['meta', { name: 'og:description', content: 'A minimal, educational LLM inference engine in CUDA C++' }],
+      ['meta', { name: 'og:title', content: 'Tiny-LLM | Technical Whitepaper' }],
+      ['meta', { name: 'og:description', content: 'CUDA-native inference engine for Transformer models with W8A16 quantization' }],
       ['link', { rel: 'icon', href: '/tiny-llm/favicon.svg' }],
       ['link', { rel: 'apple-touch-icon', href: '/tiny-llm/apple-touch-icon.png' }],
+      // Google Fonts
+      ['link', { rel: 'preconnect', href: 'https://fonts.googleapis.com' }],
+      ['link', { rel: 'preconnect', href: 'https://fonts.gstatic.com', crossorigin: '' }],
+      ['link', { rel: 'stylesheet', href: 'https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap' }],
     ],
 
     // Markdown configuration
@@ -43,29 +47,34 @@ export default withMermaid(
         lang: 'en',
         themeConfig: {
           nav: [
-            { text: 'Home', link: '/en/' },
-            { text: 'Guide', link: '/en/guide/getting-started' },
+            { text: 'Architecture', link: '/en/architecture/' },
+            { text: 'Performance', link: '/en/performance/' },
             { text: 'API', link: '/en/api/' },
+            { text: 'Guide', link: '/en/guide/getting-started' },
             { text: 'Changelog', link: '/en/changelog/' },
           ],
           sidebar: {
-            '/en/guide/': [
+            '/en/architecture/': [
               {
-                text: 'Guide',
+                text: 'Architecture',
                 items: [
-                  { text: 'Getting Started', link: '/en/guide/getting-started' },
-                  { text: 'Installation', link: '/en/guide/installation' },
-                  { text: 'Quick Start', link: '/en/guide/quickstart' },
-                  { text: 'Architecture', link: '/en/guide/architecture' },
-                  { text: 'Configuration', link: '/en/guide/configuration' },
+                  { text: 'Overview', link: '/en/architecture/' },
+                  { text: 'Inference Engine', link: '/en/architecture/inference-engine' },
+                  { text: 'W8A16 Quantization', link: '/en/architecture/quantization' },
+                  { text: 'KV Cache Design', link: '/en/architecture/kv-cache' },
+                  { text: 'CUDA Kernels', link: '/en/architecture/cuda-kernels' },
+                  { text: 'Memory Model', link: '/en/architecture/memory-model' },
                 ],
               },
+            ],
+            '/en/performance/': [
               {
-                text: 'Advanced',
+                text: 'Performance',
                 items: [
-                  { text: 'Quantization', link: '/en/guide/quantization' },
-                  { text: 'Performance', link: '/en/guide/performance' },
-                  { text: 'Troubleshooting', link: '/en/guide/troubleshooting' },
+                  { text: 'Overview', link: '/en/performance/' },
+                  { text: 'Benchmarks', link: '/en/performance/benchmarks' },
+                  { text: 'Profiling Guide', link: '/en/performance/profiling' },
+                  { text: 'Optimization', link: '/en/performance/optimization' },
                 ],
               },
             ],
@@ -78,6 +87,28 @@ export default withMermaid(
                   { text: 'ModelConfig', link: '/en/api/model-config' },
                   { text: 'Result<T>', link: '/en/api/result' },
                   { text: 'KVCacheManager', link: '/en/api/kv-cache' },
+                  { text: 'References', link: '/en/api/references' },
+                ],
+              },
+            ],
+            '/en/guide/': [
+              {
+                text: 'Guide',
+                items: [
+                  { text: 'Getting Started', link: '/en/guide/getting-started' },
+                  { text: 'Installation', link: '/en/guide/installation' },
+                  { text: 'Quick Start', link: '/en/guide/quickstart' },
+                  { text: 'Configuration', link: '/en/guide/configuration' },
+                  { text: 'Quantization', link: '/en/guide/quantization' },
+                  { text: 'Troubleshooting', link: '/en/guide/troubleshooting' },
+                ],
+              },
+            ],
+            '/en/contributing/': [
+              {
+                text: 'Contributing',
+                items: [
+                  { text: 'Developer Guide', link: '/en/contributing/' },
                 ],
               },
             ],
@@ -94,7 +125,7 @@ export default withMermaid(
             ],
           },
           editLink: {
-            pattern: 'https://github.com/shane0/tiny-llm/edit/main/docs/:path',
+            pattern: 'https://github.com/AICL-Lab/tiny-llm/edit/master/docs/:path',
             text: 'Edit this page on GitHub',
           },
           footer: {
@@ -129,29 +160,34 @@ export default withMermaid(
         link: '/zh/',
         themeConfig: {
           nav: [
-            { text: '首页', link: '/zh/' },
-            { text: '指南', link: '/zh/guide/getting-started' },
+            { text: '架构', link: '/zh/architecture/' },
+            { text: '性能', link: '/zh/performance/' },
             { text: 'API', link: '/zh/api/' },
+            { text: '指南', link: '/zh/guide/getting-started' },
             { text: '更新日志', link: '/zh/changelog/' },
           ],
           sidebar: {
-            '/zh/guide/': [
+            '/zh/architecture/': [
               {
-                text: '指南',
+                text: '架构',
                 items: [
-                  { text: '入门指南', link: '/zh/guide/getting-started' },
-                  { text: '安装', link: '/zh/guide/installation' },
-                  { text: '快速开始', link: '/zh/guide/quickstart' },
-                  { text: '架构', link: '/zh/guide/architecture' },
-                  { text: '配置', link: '/zh/guide/configuration' },
+                  { text: '概述', link: '/zh/architecture/' },
+                  { text: '推理引擎', link: '/zh/architecture/inference-engine' },
+                  { text: 'W8A16 量化', link: '/zh/architecture/quantization' },
+                  { text: 'KV 缓存设计', link: '/zh/architecture/kv-cache' },
+                  { text: 'CUDA 内核', link: '/zh/architecture/cuda-kernels' },
+                  { text: '内存模型', link: '/zh/architecture/memory-model' },
                 ],
               },
+            ],
+            '/zh/performance/': [
               {
-                text: '进阶',
+                text: '性能',
                 items: [
-                  { text: '量化', link: '/zh/guide/quantization' },
-                  { text: '性能优化', link: '/zh/guide/performance' },
-                  { text: '故障排除', link: '/zh/guide/troubleshooting' },
+                  { text: '概述', link: '/zh/performance/' },
+                  { text: '基准测试', link: '/zh/performance/benchmarks' },
+                  { text: '分析指南', link: '/zh/performance/profiling' },
+                  { text: '优化', link: '/zh/performance/optimization' },
                 ],
               },
             ],
@@ -164,6 +200,28 @@ export default withMermaid(
                   { text: 'ModelConfig', link: '/zh/api/model-config' },
                   { text: 'Result<T>', link: '/zh/api/result' },
                   { text: 'KVCacheManager', link: '/zh/api/kv-cache' },
+                  { text: '参考资料', link: '/zh/api/references' },
+                ],
+              },
+            ],
+            '/zh/guide/': [
+              {
+                text: '指南',
+                items: [
+                  { text: '入门指南', link: '/zh/guide/getting-started' },
+                  { text: '安装', link: '/zh/guide/installation' },
+                  { text: '快速开始', link: '/zh/guide/quickstart' },
+                  { text: '配置', link: '/zh/guide/configuration' },
+                  { text: '量化', link: '/zh/guide/quantization' },
+                  { text: '故障排除', link: '/zh/guide/troubleshooting' },
+                ],
+              },
+            ],
+            '/zh/contributing/': [
+              {
+                text: '贡献',
+                items: [
+                  { text: '开发者指南', link: '/zh/contributing/' },
                 ],
               },
             ],
@@ -180,7 +238,7 @@ export default withMermaid(
             ],
           },
           editLink: {
-            pattern: 'https://github.com/shane0/tiny-llm/edit/main/docs/:path',
+            pattern: 'https://github.com/AICL-Lab/tiny-llm/edit/master/docs/:path',
             text: '在 GitHub 上编辑此页',
           },
           footer: {
@@ -216,7 +274,7 @@ export default withMermaid(
       logo: '/tiny-llm/logo.svg',
       siteTitle: 'Tiny-LLM',
       socialLinks: [
-        { icon: 'github', link: 'https://github.com/shane0/tiny-llm' },
+        { icon: 'github', link: 'https://github.com/AICL-Lab/tiny-llm' },
       ],
       search: {
         provider: 'local',
@@ -240,6 +298,19 @@ export default withMermaid(
       },
     },
 
+    // Mermaid configuration
+    mermaid: {
+      theme: 'base',
+      themeVariables: {
+        primaryColor: '#00D4AA',
+        primaryTextColor: '#fff',
+        primaryBorderColor: '#00C49A',
+        lineColor: '#76B900',
+        secondaryColor: '#F59E0B',
+        tertiaryColor: '#8B5CF6',
+      },
+    },
+
     // Build options
     build: {
       chunkSizeWarningLimit: 1500,
@@ -257,17 +328,25 @@ export default withMermaid(
 
 // Plugin: llmstxt for LLM-friendly documentation
 llmstxt({
-  domain: 'https://shane0.github.io/tiny-llm',
+  domain: 'https://aicl-lab.github.io/tiny-llm',
   title: 'Tiny-LLM Documentation',
-  description: 'A minimal, educational LLM inference engine in CUDA C++',
+  description: 'CUDA-native inference engine for Transformer models with W8A16 quantization',
   sections: {
-    'Guide': {
-      title: 'Guide',
-      description: 'Getting started and usage guide',
+    'Architecture': {
+      title: 'Architecture',
+      description: 'System architecture and design',
+    },
+    'Performance': {
+      title: 'Performance',
+      description: 'Benchmarks and optimization',
     },
     'API': {
       title: 'API Reference',
       description: 'Complete API documentation',
+    },
+    'Guide': {
+      title: 'Guide',
+      description: 'Getting started and usage guide',
     },
   },
 })

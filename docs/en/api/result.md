@@ -201,4 +201,4 @@ return Result<ModelConfig>::Error(
 ## See Also
 
 - [InferenceEngine](/en/api/inference-engine) - Main API class
-- [Error Handling Guide](/en/guide/architecture#error-handling)
+- [Error Handling Guide](/en/architecture/inference-engine#error-handling)

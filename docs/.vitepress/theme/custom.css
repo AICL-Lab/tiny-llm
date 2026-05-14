@@ -1,10 +1,11 @@
 /**
- * Tiny-LLM Documentation - Custom Styles
+ * Tiny-LLM Technical Whitepaper - Custom Styles
  *
+ * Design Language: Technical whitepaper / Architecture showcase
  * Brand Colors:
- * - Primary (Tech Green): #00D4AA
- * - CUDA Green: #76B900
- * - Dark mode support
+ * - Primary (Teal): oklch(0.75 0.15 168) ≈ #00D4AA
+ * - Accent (CUDA Green): oklch(0.70 0.20 95) ≈ #76B900
+ * - Typography: Inter (base) + JetBrains Mono (code)
  */
 
 /* ========================================
@@ -12,20 +13,36 @@
    ======================================== */
 
 :root {
-  /* Brand Colors */
-  --tiny-llm-primary: #00D4AA;
-  --tiny-llm-primary-light: #00FFC8;
-  --tiny-llm-primary-dark: #00A888;
-  --tiny-llm-cuda-green: #76B900;
-  --tiny-llm-cuda-green-light: #8FD71A;
+  /* Brand Colors - OKLCH for perceptual uniformity */
+  --tiny-llm-primary: oklch(0.75 0.15 168);
+  --tiny-llm-primary-light: oklch(0.85 0.12 168);
+  --tiny-llm-primary-dark: oklch(0.60 0.18 168);
+  --tiny-llm-cuda: oklch(0.70 0.20 95);
+  --tiny-llm-cuda-light: oklch(0.80 0.18 95);
+
+  /* Fallback hex colors for older browsers */
+  --tiny-llm-primary-hex: #00D4AA;
+  --tiny-llm-primary-light-hex: #00FFC8;
+  --tiny-llm-primary-dark-hex: #00A888;
+  --tiny-llm-cuda-hex: #76B900;
+  --tiny-llm-cuda-light-hex: #8FD71A;
 
   /* Override VitePress theme colors */
   --vp-c-brand-1: var(--tiny-llm-primary);
   --vp-c-brand-2: var(--tiny-llm-primary-light);
   --vp-c-brand-3: var(--tiny-llm-primary-dark);
-  --vp-c-brand-soft: rgba(0, 212, 170, 0.14);
+  --vp-c-brand-soft: oklch(0.75 0.06 168);
 
-  /* Accent colors for code */
+  /* Refined backgrounds (whitepaper feel) */
+  --vp-c-bg: oklch(0.99 0 0);
+  --vp-c-bg-soft: oklch(0.97 0 0);
+  --vp-c-bg-mute: oklch(0.94 0 0);
+
+  /* Typography */
+  --vp-font-family-base: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  --vp-font-family-mono: 'JetBrains Mono', 'Fira Code', 'Cascadia Code', monospace;
+
+  /* Code accent */
   --vp-code-color: var(--tiny-llm-primary);
 
   /* Button customization */
@@ -41,22 +58,27 @@
 
   /* Home hero customization */
   --vp-home-hero-name-color: transparent;
-  --vp-home-hero-name-background: linear-gradient(135deg, var(--tiny-llm-primary) 0%, var(--tiny-llm-cuda-green) 100%);
-  --vp-home-hero-image-background-image: linear-gradient(135deg, var(--tiny-llm-primary) 50%, var(--tiny-llm-cuda-green) 50%);
+  --vp-home-hero-name-background: linear-gradient(135deg, var(--tiny-llm-primary) 0%, var(--tiny-llm-cuda) 100%);
+  --vp-home-hero-image-background-image: linear-gradient(135deg, var(--tiny-llm-primary) 50%, var(--tiny-llm-cuda) 50%);
   --vp-home-hero-image-filter: blur(44px);
 }
 
 /* Dark mode overrides */
 .dark {
-  --tiny-llm-primary: #00D4AA;
-  --tiny-llm-primary-light: #00FFC8;
-  --tiny-llm-primary-dark: #00A888;
-  --tiny-llm-cuda-green: #76B900;
+  --tiny-llm-primary: oklch(0.75 0.15 168);
+  --tiny-llm-primary-light: oklch(0.85 0.12 168);
+  --tiny-llm-primary-dark: oklch(0.60 0.18 168);
+  --tiny-llm-cuda: oklch(0.70 0.20 95);
 
   --vp-c-brand-1: var(--tiny-llm-primary);
   --vp-c-brand-2: var(--tiny-llm-primary-light);
   --vp-c-brand-3: var(--tiny-llm-primary-dark);
-  --vp-c-brand-soft: rgba(0, 212, 170, 0.14);
+  --vp-c-brand-soft: oklch(0.75 0.06 168 / 0.16);
+
+  /* True dark for whitepaper */
+  --vp-c-bg: oklch(0.13 0 0);
+  --vp-c-bg-soft: oklch(0.17 0 0);
+  --vp-c-bg-mute: oklch(0.21 0 0);
 }
 
 /* ========================================
@@ -64,14 +86,18 @@
    ======================================== */
 
 .VPHero {
-  --vp-home-hero-name-background: linear-gradient(135deg, var(--tiny-llm-primary) 0%, var(--tiny-llm-cuda-green) 100%);
+  --vp-home-hero-name-background: linear-gradient(135deg, var(--tiny-llm-primary) 0%, var(--tiny-llm-cuda) 100%);
 }
 
 .VPHero .name {
-  background: linear-gradient(135deg, var(--tiny-llm-primary) 0%, var(--tiny-llm-cuda-green) 100%);
+  background: linear-gradient(135deg, var(--tiny-llm-primary) 0%, var(--tiny-llm-cuda) 100%);
   -webkit-background-clip: text;
   background-clip: text;
   -webkit-text-fill-color: transparent;
+}
+
+.VPHero .text {
+  letter-spacing: -0.02em;
 }
 
 .VPHero .tagline {
@@ -80,9 +106,20 @@
 
 /* Home hero image glow effect */
 .VPHero .image-bg {
-  background: linear-gradient(135deg, var(--tiny-llm-primary), var(--tiny-llm-cuda-green));
+  background: linear-gradient(135deg, var(--tiny-llm-primary), var(--tiny-llm-cuda));
   opacity: 0.3;
   filter: blur(100px);
+}
+
+/* Feature grid styling */
+.VPFeatures .VPFeature .box {
+  border-radius: 12px;
+  transition: all 0.3s ease;
+}
+
+.VPFeatures .VPFeature .box:hover {
+  border-color: var(--tiny-llm-primary);
+  box-shadow: 0 0 0 1px oklch(0.75 0.06 168 / 0.3);
 }
 
 /* ========================================
@@ -91,11 +128,13 @@
 
 .VPNavBar {
   border-bottom: 1px solid var(--vp-c-divider);
+  backdrop-filter: blur(12px);
 }
 
 .VPNavBar .title {
   color: var(--tiny-llm-primary);
   font-weight: 600;
+  font-family: var(--vp-font-family-mono);
 }
 
 /* Active nav link */
@@ -111,6 +150,9 @@
 .VPSidebar .group .title {
   font-weight: 600;
   color: var(--vp-c-text-1);
+  text-transform: uppercase;
+  font-size: 0.8em;
+  letter-spacing: 0.05em;
 }
 
 .VPSidebar .link .link-text {
@@ -123,6 +165,7 @@
 
 .VPSidebar .link.active .link-text {
   color: var(--tiny-llm-primary);
+  font-weight: 500;
 }
 
 /* ========================================
@@ -136,11 +179,26 @@
   padding: 2px 6px;
   font-size: 0.9em;
   color: var(--tiny-llm-primary);
+  font-family: var(--vp-font-family-mono);
 }
 
-/* Code block header */
+/* Code blocks */
+.vp-doc div[class*='language-'] {
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.vp-doc div[class*='language-'] code {
+  font-family: var(--vp-font-family-mono);
+  font-size: 0.875em;
+  line-height: 1.7;
+}
+
+/* Code group header */
 .vp-code-group .tabs label {
   cursor: pointer;
+  font-family: var(--vp-font-family-mono);
+  font-size: 0.85em;
 }
 
 .vp-code-group .tabs label.active {
@@ -169,19 +227,30 @@
   color: var(--tiny-llm-primary);
 }
 
+/* Warning block with CUDA green accent */
+.custom-block.warning {
+  border-color: var(--tiny-llm-cuda);
+}
+
+.custom-block.warning .custom-block-title {
+  color: var(--tiny-llm-cuda);
+}
+
 /* ========================================
    Button Styles
    ======================================== */
 
 .VPButton.brand {
-  background: linear-gradient(135deg, var(--tiny-llm-primary) 0%, var(--tiny-llm-cuda-green) 100%);
+  background: linear-gradient(135deg, var(--tiny-llm-primary) 0%, var(--tiny-llm-cuda) 100%);
   border: none;
   transition: all 0.3s ease;
+  font-family: var(--vp-font-family-base);
+  font-weight: 500;
 }
 
 .VPButton.brand:hover {
   transform: translateY(-2px);
-  box-shadow: 0 4px 20px rgba(0, 212, 170, 0.4);
+  box-shadow: 0 4px 20px oklch(0.75 0.15 168 / 0.4);
 }
 
 /* ========================================
@@ -190,10 +259,12 @@
 
 .VPBadge {
   font-weight: 500;
+  font-family: var(--vp-font-family-mono);
+  font-size: 0.8em;
 }
 
 .VPBadge.tip {
-  background-color: rgba(0, 212, 170, 0.1);
+  background-color: oklch(0.75 0.06 168 / 0.14);
   color: var(--tiny-llm-primary);
 }
 
@@ -220,8 +291,14 @@
 
 .mermaid {
   background: var(--vp-c-bg-soft);
-  border-radius: 8px;
-  padding: 16px;
+  border: 1px solid var(--vp-c-divider);
+  border-radius: 12px;
+  padding: 24px;
+  margin: 16px 0;
+}
+
+.dark .mermaid {
+  background: var(--vp-c-bg-mute);
 }
 
 /* ========================================
@@ -230,10 +307,12 @@
 
 h1, h2, h3, h4, h5, h6 {
   font-weight: 600;
+  letter-spacing: -0.02em;
 }
 
 h1 {
   font-size: 2rem;
+  line-height: 1.2;
 }
 
 h2 {
@@ -247,6 +326,11 @@ h2:first-of-type {
   border-top: none;
   padding-top: 0;
   margin-top: 0;
+}
+
+/* Paragraph spacing */
+.vp-doc p {
+  line-height: 1.75;
 }
 
 /* ========================================
@@ -271,27 +355,176 @@ h2:first-of-type {
 }
 
 /* ========================================
-   Table Styles
+   Table Styles (Research Paper)
    ======================================== */
 
 .vp-doc table {
   border-collapse: collapse;
   width: 100%;
+  font-variant-numeric: tabular-nums;
 }
 
 .vp-doc th {
   background-color: var(--vp-c-bg-soft);
   font-weight: 600;
+  font-size: 0.9em;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  border-bottom: 2px solid var(--tiny-llm-primary);
 }
 
 .vp-doc th,
 .vp-doc td {
   border: 1px solid var(--vp-c-divider);
-  padding: 12px 16px;
+  padding: 10px 16px;
+  text-align: left;
 }
 
 .vp-doc tr:nth-child(2n) {
   background-color: var(--vp-c-bg-soft);
+}
+
+.vp-doc td code {
+  font-size: 0.85em;
+}
+
+/* ========================================
+   TechSpec Component Styles
+   ======================================== */
+
+.tech-spec {
+  background: var(--vp-c-bg-soft);
+  border: 1px solid var(--vp-c-divider);
+  border-left: 3px solid var(--tiny-llm-primary);
+  border-radius: 8px;
+  padding: 16px 20px;
+  margin: 16px 0;
+}
+
+.tech-spec .spec-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.tech-spec .spec-header h3 {
+  margin: 0;
+  font-size: 1em;
+  color: var(--tiny-llm-primary);
+}
+
+.tech-spec .spec-header .icon {
+  font-size: 1.2em;
+}
+
+.tech-spec .spec-body {
+  font-size: 0.9em;
+  line-height: 1.6;
+}
+
+/* ========================================
+   PerfChart Component Styles
+   ======================================== */
+
+.perf-chart {
+  margin: 16px 0;
+}
+
+.perf-chart .metric-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 8px;
+}
+
+.perf-chart .label {
+  min-width: 100px;
+  font-size: 0.85em;
+  font-family: var(--vp-font-family-mono);
+  color: var(--vp-c-text-2);
+}
+
+.perf-chart .bar-container {
+  flex: 1;
+  background: var(--vp-c-bg-mute);
+  border-radius: 4px;
+  height: 24px;
+  overflow: hidden;
+}
+
+.perf-chart .bar {
+  height: 100%;
+  background: linear-gradient(90deg, var(--tiny-llm-primary), var(--tiny-llm-cuda));
+  border-radius: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  padding-right: 8px;
+  font-size: 0.75em;
+  font-family: var(--vp-font-family-mono);
+  color: #fff;
+  min-width: fit-content;
+  transition: width 0.6s ease;
+}
+
+/* ========================================
+   KernelProfile Component Styles
+   ======================================== */
+
+.kernel-profile {
+  background: var(--vp-c-bg-soft);
+  border: 1px solid var(--vp-c-divider);
+  border-radius: 8px;
+  padding: 16px 20px;
+  margin: 16px 0;
+}
+
+.kernel-profile .kernel-name {
+  font-family: var(--vp-font-family-mono);
+  font-size: 0.9em;
+  color: var(--tiny-llm-cuda);
+  background: oklch(0.70 0.08 95 / 0.14);
+  padding: 2px 8px;
+  border-radius: 4px;
+}
+
+.kernel-profile .metrics {
+  display: flex;
+  gap: 24px;
+  margin-top: 12px;
+}
+
+.kernel-profile .metric {
+  text-align: center;
+}
+
+.kernel-profile .metric .value {
+  font-family: var(--vp-font-family-mono);
+  font-size: 1.4em;
+  font-weight: 600;
+  color: var(--tiny-llm-primary);
+}
+
+.kernel-profile .metric .unit {
+  font-size: 0.7em;
+  color: var(--vp-c-text-3);
+}
+
+.kernel-profile .metric .label {
+  display: block;
+  font-size: 0.75em;
+  color: var(--vp-c-text-2);
+  margin-top: 4px;
+}
+
+/* ========================================
+   View Transitions (Theme Toggle)
+   ======================================== */
+
+::view-transition-old(root),
+::view-transition-new(root) {
+  animation-duration: 0.3s;
 }
 
 /* ========================================
@@ -310,32 +543,103 @@ h2:first-of-type {
   .VPHero .name {
     font-size: 2rem;
   }
+
+  .kernel-profile .metrics {
+    flex-wrap: wrap;
+    gap: 16px;
+  }
 }
 
 /* ========================================
-   Print Styles
+   Print Styles (PDF-ready)
    ======================================== */
 
 @media print {
-  .VPNavBar,
+  .VPNav,
   .VPSidebar,
-  .VPDocFooter {
-    display: none;
+  .VPDocFooter,
+  .VPDocAside {
+    display: none !important;
+  }
+
+  .VPContent {
+    padding: 0 !important;
   }
 
   :root {
     --tiny-llm-primary: #00A888;
+    --tiny-llm-cuda: #76B900;
+  }
+
+  h1, h2, h3 {
+    page-break-after: avoid;
+  }
+
+  pre, table, .mermaid {
+    page-break-inside: avoid;
+  }
+
+  .vp-doc table {
+    font-size: 0.85em;
+  }
+
+  a {
+    color: #00A888;
+    text-decoration: underline;
+  }
+
+  .vp-doc a[target="_blank"]::after {
+    display: none;
   }
 }
 
 /* ========================================
-   CUDA Code Highlighting
+   CUDA/C++ Code Highlighting
    ======================================== */
 
 .language-cuda .token.keyword {
-  color: var(--tiny-llm-cuda-green);
+  color: var(--tiny-llm-cuda);
 }
 
 .language-cpp .token.keyword {
-  color: var(--tiny-llm-cuda-green);
+  color: var(--tiny-llm-cuda);
+}
+
+.language-cpp .token.function {
+  color: var(--tiny-llm-primary);
+}
+
+/* ========================================
+   Scrollbar Styling
+   ======================================== */
+
+.vp-doc ::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+.vp-doc ::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.vp-doc ::-webkit-scrollbar-thumb {
+  background: var(--vp-c-divider);
+  border-radius: 3px;
+}
+
+.vp-doc ::-webkit-scrollbar-thumb:hover {
+  background: var(--vp-c-text-3);
+}
+
+/* ========================================
+   Doc Content Width
+   ======================================== */
+
+.vp-doc .content-container {
+  max-width: 900px;
+}
+
+/* Architecture pages get wider layout for diagrams */
+.vp-doc.architecture .content-container {
+  max-width: 1000px;
 }

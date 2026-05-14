@@ -110,5 +110,5 @@ Typical perplexity changes for common models:
 
 ## Next Steps
 
-- [Performance Guide](/en/guide/performance) - Optimization techniques
+- [Performance Guide](/en/performance/optimization) - Optimization techniques
 - [API Reference](/en/api/inference-engine) - Engine API

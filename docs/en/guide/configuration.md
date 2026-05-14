@@ -116,4 +116,4 @@ struct QuantizationConfig {
 ## Next Steps
 
 - [API Reference](/en/api/) - Complete API documentation
-- [Performance Guide](/en/guide/performance) - Optimization techniques
+- [Performance Guide](/en/performance/optimization) - Optimization techniques

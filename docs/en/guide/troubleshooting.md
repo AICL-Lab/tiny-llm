@@ -1,189 +1,236 @@
+---
+layout: doc
+title: "Troubleshooting"
+description: "Common issues and solutions for Tiny-LLM"
+---
+
 # Troubleshooting
 
-This guide covers common issues and their solutions.
+Common issues and solutions for Tiny-LLM.
 
-## Installation Issues
+## Build Issues
 
-### CUDA Not Found
+### CUDA not found
 
-**Error**: `Could not find CUDA`
+**Error**: `Could not find CUDA` or `nvcc not found`
 
-**Solution**:
+**Solutions**:
 ```bash
 # Check CUDA installation
 nvcc --version
 
-# Set CUDA path if needed
-export CUDA_HOME=/usr/local/cuda
-export PATH=$CUDA_HOME/bin:$PATH
-export LD_LIBRARY_PATH=$CUDA_HOME/lib64:$LD_LIBRARY_PATH
+# Set CUDA path explicitly
+cmake .. -DCUDA_TOOLKIT_ROOT_DIR=/usr/local/cuda-12.2
+
+# Or add to PATH
+export PATH=/usr/local/cuda/bin:$PATH
+export LD_LIBRARY_PATH=/usr/local/cuda/lib64:$LD_LIBRARY_PATH
 ```
 
-### CMake Version Too Old
+### CMake version too old
 
 **Error**: `CMake 3.18 or higher is required`
 
-**Solution**:
+**Solutions**:
 ```bash
-# Install newer CMake
-pip install cmake --upgrade
-# or
-sudo apt install cmake
+# Using pip
+pip install --upgrade cmake
+
+# Using snap (Ubuntu)
+sudo snap install cmake --classic
+
+# Build from source
+curl -L https://cmake.org/files/v3.28/cmake-3.28.0.tar.gz | tar xz
+cd cmake-3.28.0 && ./bootstrap && make && sudo make install
 ```
 
-### Compiler Not Supporting C++17
+### C++17 not supported
 
-**Error**: `C++17 feature not supported`
+**Error**: `error: 'auto' in lambda parameter not supported`
 
-**Solution**:
+**Solutions**:
 ```bash
-# Install GCC 9+
-sudo apt install gcc-9 g++-9
+# Check compiler version
+gcc --version  # Should be 9+
+clang --version  # Should be 10+
 
-# Set as default
-sudo update-alternatives --install /usr/bin/gcc gcc /usr/bin/gcc-9 90
-sudo update-alternatives --install /usr/bin/g++ g++ /usr/bin/g++-9 90
+# Specify compiler
+cmake .. -DCMAKE_CXX_COMPILER=g++-11
+
+# Or use environment variable
+CC=gcc-11 CXX=g++-11 cmake ..
 ```
 
-## Build Issues
+### CUDA architecture mismatch
 
-### NVCC Out of Memory
+**Error**: `No kernel image is available for execution on the device`
 
-**Error**: `nvcc fatal : Out of memory`
-
-**Solution**:
+**Solutions**:
 ```bash
-# Reduce parallel jobs
-cmake --build build -j2  # Instead of -j$(nproc)
-```
+# Check your GPU compute capability
+nvidia-smi --query-gpu=compute_cap --format=csv
 
-### Undefined Symbol Errors
+# Build for your specific architecture
+cmake .. -DCUDA_ARCH="80"  # For SM 8.0 (A100)
+cmake .. -DCUDA_ARCH="86"  # For SM 8.6 (RTX 3090)
+cmake .. -DCUDA_ARCH="89"  # For SM 8.9 (RTX 4090)
 
-**Error**: `undefined reference to 'cublas...'`
-
-**Solution**:
-```bash
-# Ensure CUDA libraries are linked
-cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DCUDA_TOOLKIT_ROOT_DIR=/usr/local/cuda
+# Or use native detection
+cmake .. -DCUDA_ARCH="native"
 ```
 
 ## Runtime Issues
 
-### CUDA Out of Memory
+### CUDA out of memory
 
-**Error**: `CUDA out of memory`
+**Error**: `CUDA out of memory` or `cudaErrorMemoryAllocation`
 
-**Solution**:
+**Solutions**:
+
+1. **Reduce batch size**
+   ```cpp
+   cache_config.max_batch_size = 1;  // Reduce from 4
+   ```
+
+2. **Reduce sequence length**
+   ```cpp
+   config.max_seq_len = 1024;  // Reduce from 2048
+   ```
+
+3. **Monitor memory**
+   ```cpp
+   size_t free, total;
+   cudaMemGetInfo(&free, &total);
+   std::cout << "Free: " << free / 1024 / 1024 << " MB" << std::endl;
+   ```
+
+### Illegal memory access
+
+**Error**: `an illegal memory access was encountered`
+
+**Possible causes**:
+- Incorrect model file format
+- Dimension mismatch between model and config
+- Uninitialized memory
+
+**Solutions**:
+
+1. **Enable debug mode**
+   ```bash
+   cmake .. -DCMAKE_BUILD_TYPE=Debug
+   CUDA_LAUNCH_BLOCKING=1 ./tiny_llm_demo
+   ```
+
+2. **Run with cuda-memcheck**
+   ```bash
+   cuda-memcheck ./tiny_llm_demo
+   compute-sanitizer ./tiny_llm_demo
+   ```
+
+3. **Verify model dimensions**
+   ```cpp
+   std::cout << "Config: " << config.hidden_dim 
+             << " x " << config.num_layers << std::endl;
+   ```
+
+### Slow generation speed
+
+**Possible causes**:
+- Debug build
+- Not using W8A16 quantization
+- Incorrect CUDA architecture
+
+**Solutions**:
+
+1. **Use Release build**
+   ```bash
+   cmake .. -DCMAKE_BUILD_TYPE=Release
+   ```
+
+2. **Verify GPU utilization**
+   ```bash
+   watch -n 1 nvidia-smi
+   ```
+
+3. **Profile the application**
+   ```bash
+   nsys profile -o profile ./tiny_llm_demo
+   nsys-ui profile.qdrep
+   ```
+
+## Performance Issues
+
+### Low GPU utilization
+
+**Symptom**: GPU utilization < 50%
+
+**Solutions**:
+
+1. **Increase batch size**
+2. **Check memory bandwidth bound operations**
+3. **Profile kernels with Nsight Compute**
+
+### Memory bandwidth bottleneck
+
+**Symptom**: Decode phase slower than expected
+
+**Cause**: Attention decode is memory bandwidth bound
+
+**Solutions**:
+- Use faster GPU with higher bandwidth
+- Reduce KV cache size (smaller batch/seq_len)
+- Enable flash attention (if available)
+
+## Model Loading Issues
+
+### Invalid model file
+
+**Error**: `Failed to load model: invalid format`
+
+**Checklist**:
+- [ ] File exists and is readable
+- [ ] Magic number matches (first 4 bytes)
+- [ ] Version is supported
+- [ ] Dimensions match config
+
+### Dimension mismatch
+
+**Error**: `Weight dimension mismatch`
+
+**Solutions**:
 ```cpp
-// Reduce context length
-config.max_seq_len = 1024;
-
-// Reduce batch size
-config.max_batch_size = 1;
+// Verify config
+std::cout << "vocab_size: " << config.vocab_size << std::endl;
+std::cout << "hidden_dim: " << config.hidden_dim << std::endl;
+std::cout << "intermediate_dim: " << config.intermediate_dim << std::endl;
 ```
-
-### Slow Generation
-
-**Symptom**: Very slow token generation
-
-**Solutions**:
-
-1. Check GPU utilization:
-   ```bash
-   nvidia-smi dmon
-   ```
-
-2. Verify model is on GPU:
-   ```cpp
-   std::cout << engine.device() << std::endl;  // Should print "cuda:0"
-   ```
-
-3. Enable optimizations:
-   ```cpp
-   config.enable_flash_attention = true;
-   config.enable_cuda_graphs = true;
-   ```
-
-### Incorrect Output
-
-**Symptom**: Generated text is garbage or wrong
-
-**Solutions**:
-
-1. Verify model file integrity:
-   ```bash
-   sha256sum model.bin
-   ```
-
-2. Check vocabulary size matches:
-   ```cpp
-   std::cout << engine.config().vocab_size << std::endl;
-   ```
-
-3. Ensure correct tokenizer:
-   ```cpp
-   // Verify tokenization
-   auto tokens = engine.encode("Hello");
-   for (auto t : tokens) std::cout << t << " ";
-   ```
-
-## Quantization Issues
-
-### Accuracy Degradation
-
-**Symptom**: Poor generation quality after quantization
-
-**Solutions**:
-
-1. Use smaller group size:
-   ```cpp
-   quant_config.group_size = 64;  // Instead of 128
-   ```
-
-2. Verify quantization was successful:
-   ```bash
-   ./build/bin/tinyllm-quant --verify model.bin
-   ```
-
-### Quantization Fails
-
-**Error**: `Quantization failed: invalid weights`
-
-**Solution**:
-- Ensure input model is valid FP16/FP32
-- Check for NaN/Inf values:
-  ```bash
-  python -c "import torch; m = torch.load('model.bin'); print(torch.isnan(m).any())"
-  ```
-
-## Platform-Specific Issues
-
-### Linux
-
-**Permission denied for GPU**:
-```bash
-sudo usermod -aG video $USER
-# Log out and back in
-```
-
-### Windows
-
-**DLL not found**:
-- Add CUDA bin directory to PATH
-- Copy required DLLs to executable directory
 
 ## Getting Help
 
-If you can't resolve an issue:
+### Debug Information to Include
 
-1. Check existing [GitHub Issues](https://github.com/shane0/tiny-llm/issues)
-2. Search [Discussions](https://github.com/shane0/tiny-llm/discussions)
-3. Create a new issue with:
-   - Error message and stack trace
-   - Your system information (`nvidia-smi`, `nvcc --version`)
-   - Steps to reproduce
+When reporting issues, please provide:
 
-## Next Steps
+1. **System info**
+   ```bash
+   nvidia-smi
+   nvcc --version
+   cmake --version
+   ```
 
-- [Performance Guide](/en/guide/performance) - Optimization techniques
-- [API Reference](/en/api/) - Complete API documentation
+2. **Build output**
+   ```bash
+   cmake .. 2>&1 | tee cmake.log
+   make VERBOSE=1 2>&1 | tee build.log
+   ```
+
+3. **Runtime error**
+   ```bash
+   CUDA_LAUNCH_BLOCKING=1 ./tiny_llm_demo 2>&1 | tee runtime.log
+   ```
+
+### Resources
+
+- [GitHub Issues](https://github.com/AICL-Lab/tiny-llm/issues)
+- [Documentation](https://lessup.github.io/tiny-llm/)
+- [API Reference](https://lessup.github.io/tiny-llm/docs/en/API)
