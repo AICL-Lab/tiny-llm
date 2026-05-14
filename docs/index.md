@@ -36,34 +36,6 @@ features:
     details: Cross-platform support with CMake build system for Linux and Windows
 ---
 
-<script setup>
-import { onMounted } from 'vue'
-import { useRouter } from 'vitepress'
-
-const router = useRouter()
-
-onMounted(() => {
-  // Auto-redirect based on browser language preference
-  // This mimics the behavior of kimi-cli docs
-  const navigatorLanguage = navigator.language.toLowerCase()
-  const storedLang = localStorage.getItem('tiny-llm-lang')
-
-  // If user has no stored preference, try to detect from browser
-  if (!storedLang) {
-    if (navigatorLanguage.startsWith('zh')) {
-      // Chinese browser, redirect to Chinese docs
-      router.go('/zh/')
-    } else {
-      // Default to English
-      router.go('/en/')
-    }
-  } else {
-    // User has a stored preference, redirect to that
-    router.go(`/${storedLang}/`)
-  }
-})
-</script>
-
 <style>
 /* Custom home page styles */
 .VPHero .name {
