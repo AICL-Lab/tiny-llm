@@ -271,7 +271,7 @@ export default withMermaid(
 
     // Theme configuration (shared across locales)
     themeConfig: {
-      logo: '/tiny-llm/logo.svg',
+      logo: '/logo.svg',
       siteTitle: 'Tiny-LLM',
       socialLinks: [
         { icon: 'github', link: 'https://github.com/AICL-Lab/tiny-llm' },

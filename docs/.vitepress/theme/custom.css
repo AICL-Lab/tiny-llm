@@ -20,6 +20,11 @@
   --tiny-llm-cuda: oklch(0.70 0.20 95);
   --tiny-llm-cuda-light: oklch(0.80 0.18 95);
 
+  /* SVG Colors - Light mode uses darker shades for contrast */
+  --svg-primary: oklch(0.55 0.18 168);
+  --svg-cuda: oklch(0.55 0.22 95);
+  --svg-bg-opacity: 0.12;
+
   /* Fallback hex colors for older browsers */
   --tiny-llm-primary-hex: #00D4AA;
   --tiny-llm-primary-light-hex: #00FFC8;
@@ -70,6 +75,11 @@
   --tiny-llm-primary-dark: oklch(0.60 0.18 168);
   --tiny-llm-cuda: oklch(0.70 0.20 95);
 
+  /* SVG Colors - Dark mode uses full brand brightness */
+  --svg-primary: oklch(0.75 0.15 168);
+  --svg-cuda: oklch(0.70 0.20 95);
+  --svg-bg-opacity: 0.08;
+
   --vp-c-brand-1: var(--tiny-llm-primary);
   --vp-c-brand-2: var(--tiny-llm-primary-light);
   --vp-c-brand-3: var(--tiny-llm-primary-dark);
@@ -89,16 +99,28 @@
   --vp-home-hero-name-background: linear-gradient(135deg, var(--tiny-llm-primary) 0%, var(--tiny-llm-cuda) 100%);
 }
 
-/* Light mode: darken SVG logo for better contrast on white background */
-.VPNavBar .VPNavBarTitle .logo img,
+/* Hero image uses CSS mask for theme-aware coloring */
 .VPHero .image-src {
-  filter: brightness(0.65) saturate(1.3);
+  /* Use the SVG as a mask, apply gradient background */
+  mask: url('/images/logo.svg') no-repeat center;
+  mask-size: contain;
+  -webkit-mask: url('/images/logo.svg') no-repeat center;
+  -webkit-mask-size: contain;
+  background: linear-gradient(135deg, var(--svg-primary) 0%, var(--svg-cuda) 100%);
+  width: 200px;
+  height: 200px;
 }
 
-/* Dark mode: keep original SVG colors */
-.dark .VPNavBar .VPNavBarTitle .logo img,
+/* Fallback for browsers without mask support - use filter */
+@supports not (mask: url('data:image/svg+xml')) {
+  .VPHero .image-src {
+    filter: brightness(0.7) saturate(1.2);
+  }
+}
+
 .dark .VPHero .image-src {
-  filter: none;
+  /* Dark mode: brighter colors */
+  background: linear-gradient(135deg, var(--svg-primary) 0%, var(--svg-cuda) 100%);
 }
 
 .VPHero .name {
