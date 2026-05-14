@@ -1,0 +1,19 @@
+<svg viewBox="0 0 200 200" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="grad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#00D4AA"/>
+      <stop offset="100%" stop-color="#76B900"/>
+    </linearGradient>
+  </defs>
+  <!-- Background circle -->
+  <circle cx="100" cy="100" r="95" fill="url(#grad)" opacity="0.1"/>
+  <!-- Geometric "T" shape -->
+  <path d="M40 35 L160 35 L160 55 L110 55 L110 165 L90 165 L90 55 L40 55 Z"
+        fill="url(#grad)"/>
+  <!-- Circuit accent dots -->
+  <circle cx="100" cy="35" r="8" fill="#76B900"/>
+  <circle cx="100" cy="165" r="8" fill="#00D4AA"/>
+  <!-- Side accents -->
+  <rect x="30" y="90" width="15" height="4" rx="2" fill="#76B900" opacity="0.6"/>
+  <rect x="155" y="90" width="15" height="4" rx="2" fill="#00D4AA" opacity="0.6"/>
+</svg>

@@ -30,7 +30,7 @@ nvcc --version
 ### 2. 克隆仓库
 
 ```bash
-git clone https://github.com/shane0/tiny-llm.git
+git clone https://github.com/AICL-Lab/tiny-llm.git
 cd tiny-llm
 ```
 
@@ -68,4 +68,4 @@ ctest --test-dir build --output-on-failure
 ## 下一步
 
 - [快速入门教程](/zh/guide/quickstart) - 构建您的第一个推理
-- [架构概览](/zh/guide/architecture) - 了解内部原理
+- [架构概览](/zh/architecture/inference-engine) - 了解内部原理

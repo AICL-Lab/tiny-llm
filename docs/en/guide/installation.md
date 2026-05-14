@@ -30,7 +30,7 @@ nvcc --version
 ### 2. Clone the Repository
 
 ```bash
-git clone https://github.com/shane0/tiny-llm.git
+git clone https://github.com/AICL-Lab/tiny-llm.git
 cd tiny-llm
 ```
 
@@ -68,4 +68,4 @@ See the [Troubleshooting Guide](/en/guide/troubleshooting) for common issues.
 ## Next Steps
 
 - [Quick Start Tutorial](/en/guide/quickstart) - Build your first inference
-- [Architecture Overview](/en/guide/architecture) - Understand the internals
+- [Architecture Overview](/en/architecture/inference-engine) - Understand the internals

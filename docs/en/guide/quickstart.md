@@ -75,6 +75,6 @@ g++ -std=c++17 my_app.cpp -o my_app -I/path/to/tiny-llm/include -L/path/to/tiny-
 
 ## Next Steps
 
-- [Architecture Overview](/en/guide/architecture) - Learn about the internals
+- [Architecture Overview](/en/architecture/inference-engine) - Learn about the internals
 - [Configuration Guide](/en/guide/configuration) - Detailed configuration options
 - [API Reference](/en/api/) - Complete API documentation

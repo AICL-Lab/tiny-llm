@@ -24,7 +24,7 @@ Before you begin, ensure you have:
 
 ```bash
 # Clone the repository
-git clone https://github.com/shane0/tiny-llm.git
+git clone https://github.com/AICL-Lab/tiny-llm.git
 cd tiny-llm
 
 # Configure and build
@@ -39,4 +39,4 @@ ctest --test-dir build --output-on-failure
 
 - [Installation Guide](/en/guide/installation) - Detailed installation instructions
 - [Quick Start Tutorial](/en/guide/quickstart) - Build your first inference
-- [Architecture Overview](/en/guide/architecture) - Understand the internals
+- [Architecture Overview](/en/architecture/inference-engine) - Understand the internals
