@@ -1,10 +1,24 @@
 <script setup lang="ts">
 // Layout.vue - 扩展 VitePress 默认布局
 // 使用插槽替换导航栏 logo 为内联 SVG
+import { onMounted, watch } from 'vue'
+import { useData } from 'vitepress'
 import DefaultTheme from 'vitepress/theme'
 import InlineLogo from './components/InlineLogo.vue'
 
 const { Layout } = DefaultTheme
+const { lang } = useData()
+
+// 持久化用户语言偏好
+onMounted(() => {
+  watch(lang, (newLang) => {
+    if (newLang === 'zh-CN') {
+      localStorage.setItem('tiny-llm-lang', 'zh')
+    } else {
+      localStorage.setItem('tiny-llm-lang', 'en')
+    }
+  }, { immediate: true })
+})
 </script>
 
 <template>
