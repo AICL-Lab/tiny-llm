@@ -40,14 +40,6 @@ Result<ModelWeights> ModelLoader::loadGGUF(const std::string &path, ModelConfig 
         tensor_map[t.name] = &t;
     }
 
-    ModelWeights weights;
-    bool         success = false;
-    auto         cleanup_on_error = [&]() {
-        if (!success) {
-            freeWeights(weights);
-        }
-    };
-
     // Helper function to find tensor
     auto find_tensor = [&](const std::string &name) -> const GGUFTensorInfo * {
         auto it = tensor_map.find(name);
@@ -57,279 +49,80 @@ Result<ModelWeights> ModelLoader::loadGGUF(const std::string &path, ModelConfig 
         return nullptr;
     };
 
-    // Load token embedding
-    // GGUF naming: token_embd.weight
-    const GGUFTensorInfo *embed_tensor = find_tensor("token_embd.weight");
-    if (!embed_tensor) {
-        // Try alternative names
-        embed_tensor = find_tensor("tok_embeddings.weight");
-    }
-
-    if (embed_tensor) {
-        TLLM_DEBUG("Loading token embedding from tensor: {}", embed_tensor->name);
-        auto data_result = parser.readTensorData(*embed_tensor);
-        if (data_result.isErr()) {
-            cleanup_on_error();
-            return Result<ModelWeights>::err("Failed to read token embedding: " +
-                                             data_result.error());
-        }
-
-        size_t embed_size = static_cast<size_t>(config.vocab_size) * config.hidden_dim;
-        CUDA_CHECK(cudaMalloc(&weights.token_embedding, embed_size * sizeof(half)));
-
-        // Convert to FP16 if needed
-        const auto &data = data_result.value();
-        if (embed_tensor->type == GGMLType::F16) {
-            CUDA_CHECK(cudaMemcpy(weights.token_embedding, data.data(), data.size(),
-                                  cudaMemcpyHostToDevice));
-        } else if (embed_tensor->type == GGMLType::F32) {
-            // Convert F32 to F16 using utility function
-            auto f16_result =
-                convertF32ToF16(reinterpret_cast<const float *>(data.data()), embed_size);
-            if (f16_result.isOk()) {
-                CUDA_CHECK(cudaMemcpy(weights.token_embedding, f16_result.value().data(),
-                                      embed_size * sizeof(half), cudaMemcpyHostToDevice));
-            } else {
-                TLLM_WARN("Failed to convert embedding: {}", f16_result.error());
+    auto find_any_tensor =
+        [&](std::initializer_list<const char *> names) -> const GGUFTensorInfo * {
+        for (const char *name : names) {
+            if (const auto *tensor = find_tensor(name)) {
+                return tensor;
             }
-        } else {
-            TLLM_WARN("Unsupported embedding type: {}, skipping",
-                      static_cast<int>(embed_tensor->type));
         }
-    } else {
-        TLLM_WARN("Token embedding tensor not found, using zeros");
-        size_t embed_size = static_cast<size_t>(config.vocab_size) * config.hidden_dim;
-        CUDA_CHECK(cudaMalloc(&weights.token_embedding, embed_size * sizeof(half)));
-        CUDA_CHECK(cudaMemset(weights.token_embedding, 0, embed_size * sizeof(half)));
-    }
+        return nullptr;
+    };
 
-    // Load layer weights
-    weights.layers.resize(config.num_layers);
+    std::vector<std::string> missing_tensors;
+    auto                     require_tensor = [&](std::initializer_list<const char *> names) {
+        if (!find_any_tensor(names)) {
+            std::string joined;
+            for (const char *name : names) {
+                if (!joined.empty()) {
+                    joined += " | ";
+                }
+                joined += name;
+            }
+            missing_tensors.push_back(std::move(joined));
+        }
+    };
 
+    require_tensor({"token_embd.weight", "tok_embeddings.weight"});
     for (int layer = 0; layer < config.num_layers; ++layer) {
-        auto &lw = weights.layers[layer];
-
-        // GGUF tensor naming convention:
-        // - blk.{N}.attn_q.weight
-        // - blk.{N}.attn_k.weight
-        // - blk.{N}.attn_v.weight
-        // - blk.{N}.attn_output.weight (or attn_out)
-        // - blk.{N}.ffn_gate.weight (w1)
-        // - blk.{N}.ffn_up.weight (w3)
-        // - blk.{N}.ffn_down.weight (w2)
-        // - blk.{N}.attn_norm.weight
-        // - blk.{N}.ffn_norm.weight
-
-        std::string layer_prefix = "blk." + std::to_string(layer) + ".";
-
-        // Alternative LLaMA naming
-        std::string llama_prefix = "layers." + std::to_string(layer) + ".";
-
-        auto find_layer_tensor = [&](const std::string &suffix) -> const GGUFTensorInfo * {
-            const GGUFTensorInfo *t = find_tensor(layer_prefix + suffix);
-            if (!t) {
-                t = find_tensor(llama_prefix + suffix);
+        const std::string layer_prefix = "blk." + std::to_string(layer) + ".";
+        const std::string llama_prefix = "layers." + std::to_string(layer) + ".";
+        auto              require_layer_tensor = [&](std::initializer_list<const char *> suffixes) {
+            for (const char *suffix : suffixes) {
+                if (find_tensor(layer_prefix + suffix) || find_tensor(llama_prefix + suffix)) {
+                    return;
+                }
             }
-            return t;
+            std::string joined;
+            for (const char *suffix : suffixes) {
+                if (!joined.empty()) {
+                    joined += " | ";
+                }
+                joined += layer_prefix + suffix;
+                joined += " | ";
+                joined += llama_prefix + suffix;
+            }
+            missing_tensors.push_back(std::move(joined));
         };
 
-        // Load attention weights (Q, K, V, O)
-        // For now, load as FP16 placeholders (full quantization support would need conversion)
-        int hidden = config.hidden_dim;
-        int kv_dim = config.num_kv_heads * config.head_dim;
+        require_layer_tensor({"attn_q.weight"});
+        require_layer_tensor({"attn_k.weight"});
+        require_layer_tensor({"attn_v.weight"});
+        require_layer_tensor({"attn_output.weight", "attn_out.weight"});
+        require_layer_tensor({"ffn_gate.weight"});
+        require_layer_tensor({"ffn_down.weight"});
+        require_layer_tensor({"ffn_up.weight"});
+        require_layer_tensor({"attn_norm.weight"});
+        require_layer_tensor({"ffn_norm.weight"});
+    }
 
-        // Helper to allocate zero-initialized weight
-        auto alloc_zero_weight = [](int rows, int cols) -> QuantizedWeight {
-            QuantizedWeight qw;
-            qw.rows = rows;
-            qw.cols = cols;
-            qw.group_size = 128;
-            CUDA_CHECK(cudaMalloc(&qw.data, qw.weightElements() * sizeof(int8_t)));
-            CUDA_CHECK(cudaMalloc(&qw.scales, qw.scaleElements() * sizeof(half)));
-            CUDA_CHECK(cudaMemset(qw.data, 0, qw.weightElements() * sizeof(int8_t)));
-            CUDA_CHECK(cudaMemset(qw.scales, 0, qw.scaleElements() * sizeof(half)));
-            return qw;
-        };
+    require_tensor({"output_norm.weight", "norm.weight"});
+    require_tensor({"output.weight", "lm_head.weight"});
 
-        // Load Q weight
-        const GGUFTensorInfo *q_tensor = find_layer_tensor("attn_q.weight");
-        if (q_tensor) {
-            TLLM_TRACE("Loading Q weight from: {}", q_tensor->name);
-            // For now, allocate placeholder (full GGUF quantization support requires conversion)
-            lw.wq = alloc_zero_weight(hidden, hidden);
-        } else {
-            TLLM_WARN("Layer {} Q weight not found", layer);
-            lw.wq = alloc_zero_weight(hidden, hidden);
-        }
-
-        // Load K weight
-        const GGUFTensorInfo *k_tensor = find_layer_tensor("attn_k.weight");
-        if (k_tensor) {
-            TLLM_TRACE("Loading K weight from: {}", k_tensor->name);
-            lw.wk = alloc_zero_weight(hidden, kv_dim);
-        } else {
-            lw.wk = alloc_zero_weight(hidden, kv_dim);
-        }
-
-        // Load V weight
-        const GGUFTensorInfo *v_tensor = find_layer_tensor("attn_v.weight");
-        if (v_tensor) {
-            TLLM_TRACE("Loading V weight from: {}", v_tensor->name);
-            lw.wv = alloc_zero_weight(hidden, kv_dim);
-        } else {
-            lw.wv = alloc_zero_weight(hidden, kv_dim);
-        }
-
-        // Load O weight
-        const GGUFTensorInfo *o_tensor = find_layer_tensor("attn_output.weight");
-        if (!o_tensor) {
-            o_tensor = find_layer_tensor("attn_out.weight");
-        }
-        if (o_tensor) {
-            TLLM_TRACE("Loading O weight from: {}", o_tensor->name);
-            lw.wo = alloc_zero_weight(hidden, hidden);
-        } else {
-            lw.wo = alloc_zero_weight(hidden, hidden);
-        }
-
-        // Load FFN weights
-        const GGUFTensorInfo *w1_tensor = find_layer_tensor("ffn_gate.weight");
-        const GGUFTensorInfo *w2_tensor = find_layer_tensor("ffn_down.weight");
-        const GGUFTensorInfo *w3_tensor = find_layer_tensor("ffn_up.weight");
-        int                   inter = config.intermediate_dim;
-
-        if (w1_tensor) {
-            TLLM_TRACE("Loading w1 (gate) weight from: {}", w1_tensor->name);
-        }
-        if (w2_tensor) {
-            TLLM_TRACE("Loading w2 (down) weight from: {}", w2_tensor->name);
-        }
-        if (w3_tensor) {
-            TLLM_TRACE("Loading w3 (up) weight from: {}", w3_tensor->name);
-        }
-
-        lw.w1 = alloc_zero_weight(hidden, inter);
-        lw.w2 = alloc_zero_weight(inter, hidden);
-        lw.w3 = alloc_zero_weight(hidden, inter);
-
-        // Load normalization weights
-        const GGUFTensorInfo *attn_norm = find_layer_tensor("attn_norm.weight");
-        if (attn_norm) {
-            auto data_result = parser.readTensorData(*attn_norm);
-            if (data_result.isOk()) {
-                CUDA_CHECK(cudaMalloc(&lw.rms_att_weight, hidden * sizeof(half)));
-                // Convert if needed
-                if (attn_norm->type == GGMLType::F32) {
-                    auto f16_result = convertF32ToF16(
-                        reinterpret_cast<const float *>(data_result.value().data()), hidden);
-                    if (f16_result.isOk()) {
-                        CUDA_CHECK(cudaMemcpy(lw.rms_att_weight, f16_result.value().data(),
-                                              hidden * sizeof(half), cudaMemcpyHostToDevice));
-                    }
-                } else {
-                    CUDA_CHECK(cudaMemcpy(lw.rms_att_weight, data_result.value().data(),
-                                          hidden * sizeof(half), cudaMemcpyHostToDevice));
-                }
+    if (!missing_tensors.empty()) {
+        std::string missing;
+        for (size_t i = 0; i < missing_tensors.size(); ++i) {
+            if (i > 0) {
+                missing += ", ";
             }
-        } else {
-            TLLM_WARN("Layer {} attention norm not found", layer);
-            CUDA_CHECK(cudaMalloc(&lw.rms_att_weight, hidden * sizeof(half)));
-            CUDA_CHECK(cudaMemset(lw.rms_att_weight, 0, hidden * sizeof(half)));
+            missing += missing_tensors[i];
         }
-
-        const GGUFTensorInfo *ffn_norm = find_layer_tensor("ffn_norm.weight");
-        if (ffn_norm) {
-            auto data_result = parser.readTensorData(*ffn_norm);
-            if (data_result.isOk()) {
-                CUDA_CHECK(cudaMalloc(&lw.rms_ffn_weight, hidden * sizeof(half)));
-                if (ffn_norm->type == GGMLType::F32) {
-                    auto f16_result = convertF32ToF16(
-                        reinterpret_cast<const float *>(data_result.value().data()), hidden);
-                    if (f16_result.isOk()) {
-                        CUDA_CHECK(cudaMemcpy(lw.rms_ffn_weight, f16_result.value().data(),
-                                              hidden * sizeof(half), cudaMemcpyHostToDevice));
-                    }
-                } else {
-                    CUDA_CHECK(cudaMemcpy(lw.rms_ffn_weight, data_result.value().data(),
-                                          hidden * sizeof(half), cudaMemcpyHostToDevice));
-                }
-            }
-        } else {
-            TLLM_WARN("Layer {} FFN norm not found", layer);
-            CUDA_CHECK(cudaMalloc(&lw.rms_ffn_weight, hidden * sizeof(half)));
-            CUDA_CHECK(cudaMemset(lw.rms_ffn_weight, 0, hidden * sizeof(half)));
-        }
-
-        TLLM_TRACE("Loaded layer {}/{}", layer + 1, config.num_layers);
+        return Result<ModelWeights>::err("GGUF runtime tensors missing: " + missing);
     }
 
-    // Load final norm
-    const GGUFTensorInfo *output_norm = find_tensor("output_norm.weight");
-    if (!output_norm) {
-        output_norm = find_tensor("norm.weight");
-    }
-    if (output_norm) {
-        TLLM_DEBUG("Loading final norm from: {}", output_norm->name);
-        auto data_result = parser.readTensorData(*output_norm);
-        if (data_result.isOk()) {
-            CUDA_CHECK(cudaMalloc(&weights.final_norm_weight, config.hidden_dim * sizeof(half)));
-            if (output_norm->type == GGMLType::F32) {
-                auto f16_result = convertF32ToF16(
-                    reinterpret_cast<const float *>(data_result.value().data()), config.hidden_dim);
-                if (f16_result.isOk()) {
-                    CUDA_CHECK(cudaMemcpy(weights.final_norm_weight, f16_result.value().data(),
-                                          config.hidden_dim * sizeof(half),
-                                          cudaMemcpyHostToDevice));
-                }
-            } else {
-                CUDA_CHECK(cudaMemcpy(weights.final_norm_weight, data_result.value().data(),
-                                      config.hidden_dim * sizeof(half), cudaMemcpyHostToDevice));
-            }
-        }
-    } else {
-        TLLM_WARN("Output norm not found");
-        CUDA_CHECK(cudaMalloc(&weights.final_norm_weight, config.hidden_dim * sizeof(half)));
-        CUDA_CHECK(cudaMemset(weights.final_norm_weight, 0, config.hidden_dim * sizeof(half)));
-    }
-
-    // Load LM head
-    const GGUFTensorInfo *lm_head = find_tensor("output.weight");
-    if (!lm_head) {
-        lm_head = find_tensor("lm_head.weight");
-    }
-    if (lm_head) {
-        TLLM_DEBUG("Loading LM head from: {}", lm_head->name);
-        // For now, allocate placeholder (full support needs quantization conversion)
-        weights.lm_head.rows = config.hidden_dim;
-        weights.lm_head.cols = config.vocab_size;
-        weights.lm_head.group_size = 128;
-        CUDA_CHECK(
-            cudaMalloc(&weights.lm_head.data, weights.lm_head.weightElements() * sizeof(int8_t)));
-        CUDA_CHECK(
-            cudaMalloc(&weights.lm_head.scales, weights.lm_head.scaleElements() * sizeof(half)));
-        CUDA_CHECK(
-            cudaMemset(weights.lm_head.data, 0, weights.lm_head.weightElements() * sizeof(int8_t)));
-        CUDA_CHECK(
-            cudaMemset(weights.lm_head.scales, 0, weights.lm_head.scaleElements() * sizeof(half)));
-    } else {
-        TLLM_WARN("LM head tensor not found");
-        weights.lm_head.rows = config.hidden_dim;
-        weights.lm_head.cols = config.vocab_size;
-        weights.lm_head.group_size = 128;
-        CUDA_CHECK(
-            cudaMalloc(&weights.lm_head.data, weights.lm_head.weightElements() * sizeof(int8_t)));
-        CUDA_CHECK(
-            cudaMalloc(&weights.lm_head.scales, weights.lm_head.scaleElements() * sizeof(half)));
-        CUDA_CHECK(
-            cudaMemset(weights.lm_head.data, 0, weights.lm_head.weightElements() * sizeof(int8_t)));
-        CUDA_CHECK(
-            cudaMemset(weights.lm_head.scales, 0, weights.lm_head.scaleElements() * sizeof(half)));
-    }
-
-    success = true;
-    TLLM_INFO("GGUF model loaded successfully");
-
-    return Result<ModelWeights>::ok(std::move(weights));
+    return Result<ModelWeights>::err(
+        "GGUF runtime tensor conversion is not implemented; use GGUF parsing/metadata surfaces "
+        "only or convert to the supported binary runtime format first.");
 }
 
 Result<ModelWeights> ModelLoader::loadBin(const std::string &path, const ModelConfig &config) {

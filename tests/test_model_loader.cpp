@@ -4,6 +4,7 @@
 #include <cstdlib>
 #include <fstream>
 #include <gtest/gtest.h>
+#include <limits>
 #include <random>
 // #include <rapidcheck.h>
 // NOTE: rapidcheck/gtest disabled due to GCC 11/12 std::function bug
@@ -55,8 +56,143 @@ class TempFile {
     std::string path_;
 };
 
+namespace {
+
+void appendBytes(std::vector<uint8_t> &out, const void *data, size_t size) {
+    const auto *bytes = static_cast<const uint8_t *>(data);
+    out.insert(out.end(), bytes, bytes + size);
+}
+
+template <typename T>
+void appendValue(std::vector<uint8_t> &out, const T &value) {
+    appendBytes(out, &value, sizeof(T));
+}
+
+void appendString(std::vector<uint8_t> &out, const std::string &value) {
+    uint64_t size = value.size();
+    appendValue(out, size);
+    appendBytes(out, value.data(), value.size());
+}
+
+struct GGUFFileBuilder {
+    std::vector<uint8_t> metadata_entries;
+    std::vector<uint8_t> tensor_entries;
+    uint64_t             metadata_count = 0;
+    uint64_t             tensor_count = 0;
+
+    template <typename T>
+    void addScalarMetadata(const std::string &key, GGUFType type, const T &value) {
+        appendString(metadata_entries, key);
+        uint32_t raw_type = static_cast<uint32_t>(type);
+        appendValue(metadata_entries, raw_type);
+        appendValue(metadata_entries, value);
+        ++metadata_count;
+    }
+
+    void addArrayMetadataHeader(const std::string &key, GGUFType elem_type, uint64_t count) {
+        appendString(metadata_entries, key);
+        uint32_t raw_type = static_cast<uint32_t>(GGUFType::ARRAY);
+        appendValue(metadata_entries, raw_type);
+        uint32_t raw_elem_type = static_cast<uint32_t>(elem_type);
+        appendValue(metadata_entries, raw_elem_type);
+        appendValue(metadata_entries, count);
+        ++metadata_count;
+    }
+
+    void writeTo(const TempFile &file) const {
+        std::vector<uint8_t> bytes;
+        appendValue(bytes, GGUF_MAGIC);
+        uint32_t version = 3;
+        appendValue(bytes, version);
+        appendValue(bytes, tensor_count);
+        appendValue(bytes, metadata_count);
+        bytes.insert(bytes.end(), metadata_entries.begin(), metadata_entries.end());
+        bytes.insert(bytes.end(), tensor_entries.begin(), tensor_entries.end());
+
+        constexpr uint64_t kAlignment = 32;
+        size_t             aligned_size = (bytes.size() + kAlignment - 1) & ~(kAlignment - 1);
+        bytes.resize(aligned_size, 0);
+        file.writeBytes(bytes);
+    }
+};
+
+} // namespace
+
 // Unit tests for GGUF header parsing
 class GGUFHeaderTest : public ::testing::Test {};
+
+TEST(GGUFTensorInfoTest, NumElementsReturnsZeroOnOverflow) {
+    GGUFTensorInfo info;
+    info.dimensions = {std::numeric_limits<uint64_t>::max(), 2};
+
+    EXPECT_EQ(info.numElements(), 0u);
+}
+
+TEST(GGUFTensorInfoTest, CalculateSizeReturnsZeroOnOverflow) {
+    GGUFTensorInfo info;
+    info.type = GGMLType::F32;
+    info.dimensions = {std::numeric_limits<uint64_t>::max(), 2};
+
+    EXPECT_EQ(info.calculateSize(), 0u);
+}
+
+TEST_F(GGUFHeaderTest, OversizedArrayReturnsErrorInsteadOfThrowing) {
+    TempFile        file(".gguf");
+    GGUFFileBuilder gguf;
+    gguf.addArrayMetadataHeader("bad.array", GGUFType::UINT32,
+                                std::numeric_limits<uint64_t>::max() / sizeof(uint32_t));
+    gguf.writeTo(file);
+
+    GGUFParser parser(file.path());
+
+    EXPECT_NO_THROW({
+        auto result = parser.parse();
+        EXPECT_TRUE(result.isErr());
+        if (result.isErr()) {
+            EXPECT_NE(result.error().find("Array"), std::string::npos);
+        }
+    });
+}
+
+TEST_F(GGUFHeaderTest, ExtractModelConfigIgnoresNumericArchitectureMetadata) {
+    TempFile        file(".gguf");
+    GGUFFileBuilder gguf;
+    gguf.addScalarMetadata("general.architecture", GGUFType::UINT32, uint32_t{1234});
+    gguf.writeTo(file);
+
+    GGUFParser parser(file.path());
+    auto       parse_result = parser.parse();
+    ASSERT_TRUE(parse_result.isOk()) << parse_result.error();
+
+    auto config_result = parser.extractModelConfig();
+    ASSERT_TRUE(config_result.isOk()) << config_result.error();
+    EXPECT_EQ(config_result.value().hidden_dim, ModelConfig{}.hidden_dim);
+}
+
+TEST_F(GGUFHeaderTest, IncompleteRuntimeGGUFReturnsStructuredErrorWithoutThrowing) {
+    TempFile        file(".gguf");
+    GGUFFileBuilder gguf;
+    gguf.addScalarMetadata("llama.embedding_length", GGUFType::UINT32, uint32_t{8});
+    gguf.addScalarMetadata("llama.block_count", GGUFType::UINT32, uint32_t{1});
+    gguf.addScalarMetadata("llama.attention.head_count", GGUFType::UINT32, uint32_t{1});
+    gguf.addScalarMetadata("llama.attention.head_count_kv", GGUFType::UINT32, uint32_t{1});
+    gguf.addScalarMetadata("llama.context_length", GGUFType::UINT32, uint32_t{16});
+    gguf.addScalarMetadata("llama.feed_forward_length", GGUFType::UINT32, uint32_t{16});
+    gguf.addScalarMetadata("tokenizer.ggml.model.vocab_size", GGUFType::UINT32, uint32_t{32});
+    gguf.writeTo(file);
+
+    ModelConfig config;
+
+    EXPECT_NO_THROW({
+        auto result = ModelLoader::loadGGUF(file.path(), config);
+        EXPECT_TRUE(result.isErr());
+        if (result.isErr()) {
+            EXPECT_TRUE(result.error().find("missing") != std::string::npos ||
+                        result.error().find("required") != std::string::npos ||
+                        result.error().find("unsupported") != std::string::npos);
+        }
+    });
+}
 
 TEST_F(GGUFHeaderTest, ValidHeader) {
     TempFile file(".gguf");
