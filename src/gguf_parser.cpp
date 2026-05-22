@@ -3,8 +3,38 @@
 
 #include <algorithm>
 #include <cstring>
+#include <limits>
 
 namespace tiny_llm {
+
+namespace {
+
+bool safeMultiplySize(size_t lhs, size_t rhs, size_t &out) {
+    if (lhs != 0 && rhs > std::numeric_limits<size_t>::max() / lhs) {
+        out = 0;
+        return false;
+    }
+    out = lhs * rhs;
+    return true;
+}
+
+template <typename T>
+bool canAllocateArray(uint64_t count) {
+    return count <= std::numeric_limits<size_t>::max() / sizeof(T);
+}
+
+size_t remainingBytes(std::ifstream &file) {
+    const std::streampos current = file.tellg();
+    file.seekg(0, std::ios::end);
+    const std::streampos end = file.tellg();
+    file.seekg(current);
+    if (current < 0 || end < current) {
+        return 0;
+    }
+    return static_cast<size_t>(end - current);
+}
+
+} // namespace
 
 GGUFParser::GGUFParser(const std::string &path) : path_(path) {}
 
@@ -273,34 +303,50 @@ Result<GGUFValue> GGUFParser::readArray(std::ifstream &file) {
     }
 
     TLLM_TRACE("Reading array of {} elements, type {}", count, static_cast<uint32_t>(elem_type));
+    const size_t remaining = remainingBytes(file);
 
     // Handle different array types
     switch (elem_type) {
     case GGUFType::UINT32: {
+        if (!canAllocateArray<uint32_t>(count) || count > remaining / sizeof(uint32_t)) {
+            return Result<GGUFValue>::err("Array too large: " + std::to_string(count));
+        }
         std::vector<uint32_t> arr(count);
         file.read(reinterpret_cast<char *>(arr.data()), count * 4);
         if (!file) return Result<GGUFValue>::err("Failed to read uint32 array");
         return Result<GGUFValue>::ok(GGUFValue{arr});
     }
     case GGUFType::INT32: {
+        if (!canAllocateArray<int32_t>(count) || count > remaining / sizeof(int32_t)) {
+            return Result<GGUFValue>::err("Array too large: " + std::to_string(count));
+        }
         std::vector<int32_t> arr(count);
         file.read(reinterpret_cast<char *>(arr.data()), count * 4);
         if (!file) return Result<GGUFValue>::err("Failed to read int32 array");
         return Result<GGUFValue>::ok(GGUFValue{arr});
     }
     case GGUFType::FLOAT32: {
+        if (!canAllocateArray<float>(count) || count > remaining / sizeof(float)) {
+            return Result<GGUFValue>::err("Array too large: " + std::to_string(count));
+        }
         std::vector<float> arr(count);
         file.read(reinterpret_cast<char *>(arr.data()), count * 4);
         if (!file) return Result<GGUFValue>::err("Failed to read float array");
         return Result<GGUFValue>::ok(GGUFValue{arr});
     }
     case GGUFType::FLOAT64: {
+        if (!canAllocateArray<double>(count) || count > remaining / sizeof(double)) {
+            return Result<GGUFValue>::err("Array too large: " + std::to_string(count));
+        }
         std::vector<double> arr(count);
         file.read(reinterpret_cast<char *>(arr.data()), count * 8);
         if (!file) return Result<GGUFValue>::err("Failed to read double array");
         return Result<GGUFValue>::ok(GGUFValue{arr});
     }
     case GGUFType::STRING: {
+        if (count > remaining / sizeof(uint64_t)) {
+            return Result<GGUFValue>::err("Array too large: " + std::to_string(count));
+        }
         std::vector<std::string> arr;
         arr.reserve(count);
         for (uint64_t i = 0; i < count; ++i) {
@@ -338,6 +384,10 @@ Result<std::string> GGUFParser::readString(std::ifstream &file) {
     // Sanity check
     if (length > 1024 * 1024) {
         return Result<std::string>::err("String too long: " + std::to_string(length));
+    }
+
+    if (length == 0) {
+        return Result<std::string>::ok({});
     }
 
     std::string str(length, '\0');
@@ -403,13 +453,13 @@ Result<ModelConfig> GGUFParser::extractModelConfig() const {
     get_int("llama.attention.head_count", config.num_heads);
     get_int("llama.attention.head_count_kv", config.num_kv_heads);
     get_int("llama.context_length", config.max_seq_len);
-    get_int("general.architecture", config.hidden_dim); // fallback
 
     // Try alternative keys (some models use different naming)
-    get_int("llama.embedding_length", config.hidden_dim);
-    if (config.hidden_dim == 4096) { // default
-        get_int("llama.embedding_length", config.hidden_dim);
-    }
+    get_int("general.embedding_length", config.hidden_dim);
+    get_int("general.block_count", config.num_layers);
+    get_int("general.head_count", config.num_heads);
+    get_int("general.head_count_kv", config.num_kv_heads);
+    get_int("general.context_length", config.max_seq_len);
 
     // Tokenizer metadata
     get_int("tokenizer.ggml.model.vocab_size", config.vocab_size);
@@ -472,7 +522,10 @@ Result<std::vector<uint8_t>> GGUFParser::readTensorData(const GGUFTensorInfo &te
                                                  std::to_string(read_offset));
     }
 
-    size_t               size = tensor.calculateSize();
+    size_t size = tensor.calculateSize();
+    if (!tensor.dimensions.empty() && size == 0) {
+        return Result<std::vector<uint8_t>>::err("Tensor size overflow for: " + tensor.name);
+    }
     std::vector<uint8_t> data(size);
     file.read(reinterpret_cast<char *>(data.data()), size);
 
@@ -491,43 +544,63 @@ size_t GGUFTensorInfo::numElements() const {
     if (dimensions.empty()) return 0;
     size_t n = 1;
     for (auto d : dimensions) {
-        n *= d;
+        size_t next = 0;
+        if (!safeMultiplySize(n, static_cast<size_t>(d), next)) {
+            return 0;
+        }
+        n = next;
     }
     return n;
 }
 
 size_t GGUFTensorInfo::calculateSize() const {
     size_t num_elem = numElements();
+    if (!dimensions.empty() && num_elem == 0) {
+        return 0;
+    }
+
+    auto scaledSize = [&](size_t bytes_per_elem) -> size_t {
+        size_t size = 0;
+        return safeMultiplySize(num_elem, bytes_per_elem, size) ? size : 0;
+    };
+    auto blockScaledSize = [&](size_t block_size, size_t bytes_per_block) -> size_t {
+        if (block_size == 0) {
+            return 0;
+        }
+        const size_t blocks = (num_elem + block_size - 1) / block_size;
+        size_t       size = 0;
+        return safeMultiplySize(blocks, bytes_per_block, size) ? size : 0;
+    };
 
     // Bytes per element for each type
     switch (type) {
     case GGMLType::F32:
-        return num_elem * 4;
+        return scaledSize(4);
     case GGMLType::F16:
-        return num_elem * 2;
+        return scaledSize(2);
     case GGMLType::I8:
         return num_elem;
     case GGMLType::I16:
-        return num_elem * 2;
+        return scaledSize(2);
     case GGMLType::I32:
-        return num_elem * 4;
+        return scaledSize(4);
     case GGMLType::I64:
-        return num_elem * 8;
+        return scaledSize(8);
     case GGMLType::F64:
-        return num_elem * 8;
+        return scaledSize(8);
     case GGMLType::Q8_0:
         // Q8_0: 32 values per block, each block has 32 int8 + 1 half scale
-        return (num_elem / 32) * (32 + 2);
+        return blockScaledSize(32, 32 + 2);
     case GGMLType::Q4_0:
         // Q4_0: 32 values per block, each block has 16 int8 + 1 half scale
-        return (num_elem / 32) * (16 + 2);
+        return blockScaledSize(32, 16 + 2);
     case GGMLType::Q4_1:
         // Q4_1: 32 values per block, each block has 16 int8 + 2 half (scale + min)
-        return (num_elem / 32) * (16 + 4);
+        return blockScaledSize(32, 16 + 4);
     default:
         // Default to 2 bytes per element (FP16)
         TLLM_WARN("Unknown tensor type {}, assuming FP16 size", static_cast<uint32_t>(type));
-        return num_elem * 2;
+        return scaledSize(2);
     }
 }
 

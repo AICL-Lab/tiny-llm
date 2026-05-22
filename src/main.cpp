@@ -31,7 +31,8 @@ void printHelp(const char *program_name) {
     std::cout << "  " << program_name << "                    # Show CUDA readiness" << std::endl;
     std::cout << "  " << program_name << " --info            # Show detailed device info"
               << std::endl;
-    std::cout << "  " << program_name << " model.gguf        # Load GGUF model (partial support)"
+    std::cout << "  " << program_name
+              << " model.gguf        # Inspect GGUF support notes (runtime load unsupported)"
               << std::endl;
 }
 
@@ -177,8 +178,8 @@ int main(int argc, char **argv) {
     // Handle model path argument
     if (!model_path.empty()) {
         if (model_path.size() >= 5 && model_path.substr(model_path.size() - 5) == ".gguf") {
-            std::cout << "\nRuntime note: GGUF parsing is partial and runtime GGUF loading is not "
-                         "supported yet."
+            std::cout << "\nRuntime note: GGUF parsing/validation is available, but runtime GGUF "
+                         "loading is intentionally unsupported."
                       << std::endl;
             std::cout << "Use the test binary format consumed by ModelLoader::loadBin() for "
                          "end-to-end loading."
