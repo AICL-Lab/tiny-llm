@@ -1,80 +1,52 @@
 # Quick Start
 
-This tutorial will guide you through your first inference with Tiny-LLM.
+This page shows the smallest end-to-end runtime path that matches the current codebase.
 
-## Prerequisites
-
-Make sure you have [installed Tiny-LLM](/en/guide/installation) first.
-
-## Basic Usage
-
-### 1. Loading a Model
+## 1. Load a supported runtime model
 
 ```cpp
-#include <tiny-llm/inference_engine.h>
-
-using namespace tinyllm;
+#include <iostream>
+#include <tiny_llm/inference_engine.h>
 
 int main() {
-    // Create the inference engine
-    InferenceEngine engine;
+    using namespace tiny_llm;
 
-    // Load model from file
-    Result<void> result = engine.load("model.bin");
-    if (!result.ok()) {
-        std::cerr << "Failed to load model: " << result.error() << std::endl;
+    ModelConfig config;
+    auto engine_result = InferenceEngine::load("model.bin", config);
+    if (engine_result.isErr()) {
+        std::cerr << engine_result.error() << '\n';
         return 1;
     }
-
-    return 0;
 }
 ```
 
-### 2. Running Inference
+## 2. Generate token IDs
 
 ```cpp
-#include <tiny-llm/inference_engine.h>
-#include <iostream>
+using namespace tiny_llm;
 
-int main() {
-    InferenceEngine engine;
-    engine.load("model.bin");
+auto engine = std::move(engine_result.value());
 
-    // Generate text from prompt
-    std::string prompt = "The future of AI is";
-    Result<std::string> result = engine.generate(prompt, /*max_tokens=*/50);
+GenerationConfig generation;
+generation.max_new_tokens = 32;
+generation.do_sample = true;
+generation.temperature = 0.7f;
 
-    if (result.ok()) {
-        std::cout << "Generated: " << result.value() << std::endl;
-    } else {
-        std::cerr << "Error: " << result.error() << std::endl;
-    }
-
-    return 0;
+auto output = engine->generate({1, 15043, 29892}, generation);
+if (output.isErr()) {
+    std::cerr << output.error() << '\n';
+    return 1;
 }
 ```
 
-### 3. Configuration Options
+## 3. Know the boundary
 
-```cpp
-GenerationConfig config;
-config.max_tokens = 100;
-config.temperature = 0.7f;
-config.top_p = 0.9f;
-config.top_k = 50;
-
-Result<std::string> result = engine.generate(prompt, config);
-```
-
-## Building Your Application
-
-```bash
-# Compile your application
-g++ -std=c++17 my_app.cpp -o my_app -I/path/to/tiny-llm/include -L/path/to/tiny-llm/build -ltinyllm
-```
+- `InferenceEngine::load()` uses the supported binary runtime format.
+- `GGUFParser` is the entry point for GGUF parsing and inspection.
+- The public runtime API works on token IDs, not raw strings.
 
 ## Next Steps
 
-- [Architecture Overview](/en/architecture/inference-engine) - Learn about the internals
-- [Configuration Guide](/en/guide/configuration) - Detailed configuration options
-- [API Reference](/en/api/) - Complete API documentation
+- [Architecture Overview](/en/architecture/)
+- [API Reference](/en/api/)
+- [Installation](/en/guide/installation)

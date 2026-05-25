@@ -47,7 +47,7 @@ class TempFile {
         write(&value, sizeof(T));
     }
 
-    void writeBytes(const std::vector<uint8_t> &bytes) {
+    void writeBytes(const std::vector<uint8_t> &bytes) const {
         std::ofstream file(path_, std::ios::binary);
         file.write(reinterpret_cast<const char *>(bytes.data()), bytes.size());
     }

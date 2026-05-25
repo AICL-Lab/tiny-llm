@@ -1,44 +1,40 @@
-# Tiny-LLM Inference Engine
+# Tiny-LLM
 
-> CUDA-native C++ inference engine for focused Transformer deployments.
+> CUDA-native C++ inference engine for focused Transformer workloads.
 
-[![CI](https://github.com/LessUp/tiny-llm/actions/workflows/ci.yml/badge.svg)](https://github.com/LessUp/tiny-llm/actions/workflows/ci.yml)
-[![Pages](https://github.com/LessUp/tiny-llm/actions/workflows/pages.yml/badge.svg)](https://lessup.github.io/tiny-llm/)
-[![Release](https://img.shields.io/github/v/release/LessUp/tiny-llm?include_prereleases&label=version)](https://github.com/LessUp/tiny-llm/releases)
+[![CI](https://github.com/AICL-Lab/tiny-llm/actions/workflows/ci.yml/badge.svg)](https://github.com/AICL-Lab/tiny-llm/actions/workflows/ci.yml)
+[![Pages](https://github.com/AICL-Lab/tiny-llm/actions/workflows/pages.yml/badge.svg)](https://aicl-lab.github.io/tiny-llm/)
+[![Release](https://img.shields.io/github/v/release/AICL-Lab/tiny-llm?include_prereleases&label=version)](https://github.com/AICL-Lab/tiny-llm/releases)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 ![CUDA](https://img.shields.io/badge/CUDA-11.0+-76B900?logo=nvidia&logoColor=white)
 ![C++](https://img.shields.io/badge/C%2B%2B-17-00599C?logo=c%2B%2B&logoColor=white)
 ![CMake](https://img.shields.io/badge/CMake-3.18+-064F8C?logo=cmake&logoColor=white)
 
-[English](README.md) • [简体中文](README.zh-CN.md) • [Documentation](https://lessup.github.io/tiny-llm/) • [Architecture](https://lessup.github.io/tiny-llm/en/architecture/overview) • [Changelog](https://lessup.github.io/tiny-llm/en/changelog/)
+[English](README.md) • [简体中文](README.zh-CN.md) • [Documentation](https://aicl-lab.github.io/tiny-llm/) • [Architecture](https://aicl-lab.github.io/tiny-llm/en/architecture/) • [API](https://aicl-lab.github.io/tiny-llm/en/api/) • [Changelog](CHANGELOG.md)
 
 ---
 
 ## Overview
 
-Tiny-LLM is a lightweight inference engine for Transformer workloads on NVIDIA GPUs. It is built around a focused CUDA/C++ stack: W8A16 quantization, explicit KV cache management, hand-tuned kernels, and a repository workflow designed to keep the codebase coherent as it hardens.
+Tiny-LLM keeps the repository surface deliberately small: CUDA/C++17 kernels, W8A16 quantization, explicit KV cache management, and a narrow runtime path that is easier to audit and maintain.
 
-## Why Tiny-LLM
+## What is implemented
 
-- **W8A16 quantization** with INT8 weights and FP16 activations
-- **Explicit KV cache management** for incremental decoding
+- **W8A16 inference path** with INT8 weights and FP16 activations
+- **Explicit KV cache management** for autoregressive decoding
 - **CUDA-native kernels** with shared-memory and warp-level optimization patterns
-- **Minimal runtime surface** with `spdlog` as the primary runtime dependency
-- **OpenSpec-governed development** so architecture, docs, and changes stay aligned
+- **`Result<T>`-based fallible APIs** for host-side error propagation
+- **GoogleTest + RapidCheck coverage** for core runtime paths
 
-## Core capabilities
+## Model-loading surfaces
 
-| Capability | What it covers | Status |
-|---|---|---|
-| W8A16 inference path | Quantized weights, FP16 activations, CUDA kernels | Stable |
-| KV cache manager | Sequence allocation, growth, and release | Stable |
-| Sampling utilities | Greedy, temperature, top-k, top-p | Stable |
-| Error handling | `Result<T>`-based fallible APIs | Stable |
-| Test strategy | GoogleTest + RapidCheck coverage for core paths | Active |
+- `InferenceEngine::load()` currently accepts the repository's supported **binary runtime format**.
+- `GGUFParser` is available for **GGUF parsing, metadata extraction, and tensor inspection**.
+- Direct GGUF runtime loading is **not** part of the current inference path.
 
 ## Build from source
 
-Tiny-LLM requires a working CUDA toolchain (`nvcc` on `PATH` or an equivalent configured install).
+Tiny-LLM requires a working CUDA toolchain (`nvcc` on `PATH` or an equivalent configured installation).
 
 | Component | Minimum |
 |---|---|
@@ -48,7 +44,7 @@ Tiny-LLM requires a working CUDA toolchain (`nvcc` on `PATH` or an equivalent co
 | C++ Compiler | GCC 9+ or Clang 10+ |
 
 ```bash
-git clone https://github.com/LessUp/tiny-llm.git
+git clone https://github.com/AICL-Lab/tiny-llm.git
 cd tiny-llm
 
 cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTS=ON
@@ -59,54 +55,55 @@ ctest --test-dir build --output-on-failure --timeout 300
 ## Minimal usage example
 
 ```cpp
+#include <iostream>
 #include <tiny_llm/inference_engine.h>
 
 int main() {
+    using namespace tiny_llm;
+
     ModelConfig config;
     config.vocab_size = 32000;
     config.hidden_dim = 4096;
     config.num_layers = 32;
 
-    auto engine = InferenceEngine::load("model.bin", config).value();
+    auto engine_result = InferenceEngine::load("model.bin", config);
+    if (engine_result.isErr()) {
+        std::cerr << engine_result.error() << '\n';
+        return 1;
+    }
 
     GenerationConfig gen;
-    gen.max_new_tokens = 256;
+    gen.max_new_tokens = 64;
     gen.temperature = 0.7f;
     gen.top_p = 0.9f;
+    gen.do_sample = true;
 
-    auto output = engine.generate({1, 15043, 29892}, gen);
-    (void)output;
+    auto engine = std::move(engine_result.value());
+    auto output = engine->generate({1, 15043, 29892}, gen);
+    if (output.isErr()) {
+        std::cerr << output.error() << '\n';
+        return 1;
+    }
+
+    return 0;
 }
 ```
 
 ## Repository map
 
 ```text
-openspec/                 Current specs, active changes, archived changes, schemas
 include/tiny_llm/         Public headers
 src/                      Host-side C++ implementation
 kernels/                  CUDA kernels
 tests/                    Unit and property tests
 docs/                     VitePress documentation site
 .github/workflows/        CI, Pages, and release automation
+CHANGELOG.md              Canonical tracked release history
 ```
-
-## Documentation and specs
-
-- **Project site:** https://lessup.github.io/tiny-llm/
-- **Architecture guide:** https://lessup.github.io/tiny-llm/en/architecture/overview
-- **Developer guide:** https://lessup.github.io/tiny-llm/en/developer
-- **API reference:** https://lessup.github.io/tiny-llm/en/api/
-- **OpenSpec source of truth:** `openspec/specs/`
-- **Change history:** `openspec/changes/`
 
 ## Contributing
 
-Tiny-LLM uses an OpenSpec-first workflow for non-trivial changes.
-
-- Start with [CONTRIBUTING.md](CONTRIBUTING.md)
-- Read repository-specific constraints in [AGENTS.md](AGENTS.md)
-- Use `/opsx:propose`, `/opsx:apply`, and `/opsx:archive` for structured work
+Read [CONTRIBUTING.md](CONTRIBUTING.md) before sending changes. Keep changes focused, keep docs aligned with the real runtime surface, and keep the repository free of duplicate workflow scaffolding.
 
 ## License
 

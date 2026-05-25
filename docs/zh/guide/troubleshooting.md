@@ -252,5 +252,5 @@ std::cout << "intermediate_dim: " << config.intermediate_dim << std::endl;
 ### 资源
 
 - [GitHub Issues](https://github.com/AICL-Lab/tiny-llm/issues)
-- [文档](https://lessup.github.io/tiny-llm/)
+- [文档](https://aicl-lab.github.io/tiny-llm/)
 - [API 参考](/zh/api/inference-engine)

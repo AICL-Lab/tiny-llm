@@ -1,165 +1,51 @@
-# Architecture Overview
+# Inference Engine
 
-Tiny-LLM is designed with simplicity and educational value in mind while maintaining production-quality performance.
+`InferenceEngine` is the public runtime entry point for Tiny-LLM. It owns loaded runtime weights, creates the KV cache, builds the Transformer layer stack, and drives prefill/decode generation.
 
-## Core Components
-
-```
-┌─────────────────────────────────────────────────────┐
-│                  InferenceEngine                     │
-│                    (Public API)                      │
-├─────────────────────────────────────────────────────┤
-│                                                      │
-│  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐ │
-│  │ ModelConfig │  │   Result\<T\> │  │  KVCache    │ │
-│  │             │  │             │  │  Manager    │ │
-│  └─────────────┘  └─────────────┘  └─────────────┘ │
-│                                                      │
-├─────────────────────────────────────────────────────┤
-│               TransformerLayer                       │
-│  ┌─────────────────┐    ┌─────────────────┐        │
-│  │  Attention      │    │      FFN        │        │
-│  │  (W8A16)        │    │    (W8A16)      │        │
-│  └─────────────────┘    └─────────────────┘        │
-├─────────────────────────────────────────────────────┤
-│               QuantizedWeight                        │
-│         (INT8 weights + per-group scales)           │
-├─────────────────────────────────────────────────────┤
-│                  CUDA Kernels                        │
-│   (Attention, FFN, Quantization, Memory Ops)        │
-└─────────────────────────────────────────────────────┘
-```
-
-## Component Responsibilities
-
-### InferenceEngine
-
-The public API that orchestrates model loading and generation:
-
-- `load()` - Load model weights from disk
-- `generate()` - Generate text from a prompt
-- `encode()` - Tokenize input text
-
-### Result\<T\>
-
-No-exception error propagation mechanism:
+## Public API
 
 ```cpp
-Result<void> result = engine.load("model.bin");
-if (!result.ok()) {
-    // Handle error
-    std::cerr << result.error() << std::endl;
-}
+#include <tiny_llm/inference_engine.h>
+
+namespace tiny_llm {
+
+class InferenceEngine {
+public:
+    static Result<std::unique_ptr<InferenceEngine>> load(
+        const std::string& model_path,
+        const ModelConfig& config);
+
+    Result<std::vector<int>> generate(
+        const std::vector<int>& prompt_tokens,
+        const GenerationConfig& config);
+
+    const GenerationStats& getStats() const;
+    void resetStats();
+};
+
+} // namespace tiny_llm
 ```
 
-### ModelConfig
+## Loading Boundary
 
-Holds model hyperparameters:
+- `InferenceEngine::load()` uses the supported **binary runtime format**.
+- `.gguf` paths are rejected by the runtime path with a structured error.
+- GGUF parsing and metadata extraction live on `GGUFParser`, not on the runtime fast path.
 
-| Parameter | Type | Description |
-|-----------|------|-------------|
-| `vocab_size` | `size_t` | Vocabulary size |
-| `hidden_dim` | `size_t` | Hidden dimension |
-| `num_layers` | `size_t` | Number of transformer layers |
-| `num_heads` | `size_t` | Number of attention heads |
-| `max_seq_len` | `size_t` | Maximum sequence length |
+## Responsibilities
 
-### QuantizedWeight
+1. Validate `ModelConfig` before runtime setup.
+2. Load runtime weights through `ModelLoader::loadBin()`.
+3. Allocate the CUDA stream and reusable hidden/logit buffers.
+4. Create `KVCacheManager` and the `TransformerLayer` stack.
+5. Run prefill once, then decode token-by-token until EOS or the generation limit.
 
-INT8 quantized weights with per-group scales:
+## Inputs and Outputs
 
-- Weights stored as INT8
-- Per-group scaling factors for dequantization
-- Supports W8A16 inference pattern
+- **Input:** prompt token IDs (`std::vector<int>`)
+- **Output:** generated token IDs via `Result<std::vector<int>>`
+- **Stats:** prefill time, decode time, throughput, and token counts
 
-### TransformerLayer
+## Failure Model
 
-Single transformer layer with:
-
-- Multi-head self-attention
-- Feed-forward network
-- Layer normalization
-- Residual connections
-
-### KVCacheManager
-
-Manages key-value cache for efficient generation:
-
-- Pre-allocated cache slots
-- Per-sequence cache management
-- Memory-efficient caching strategy
-
-## Memory Layout
-
-```
-┌────────────────────────────────────────┐
-│           Weight Memory                │
-│  ┌──────────────────────────────────┐  │
-│  │   Embedding Table (FP16)         │  │
-│  └──────────────────────────────────┘  │
-│  ┌──────────────────────────────────┐  │
-│  │   Layer Weights (INT8 + Scales)  │  │
-│  │   ┌────────────────────────────┐ │  │
-│  │   │  Q, K, V Projections       │ │  │
-│  │   │  Output Projection         │ │  │
-│  │   │  FFN Up/Down Projections   │ │  │
-│  │   └────────────────────────────┘ │  │
-│  └──────────────────────────────────┘  │
-│  ┌──────────────────────────────────┐  │
-│  │   Output Layer (FP16)           │  │
-│  └──────────────────────────────────┘  │
-└────────────────────────────────────────┘
-```
-
-## Data Flow
-
-```
-Input Text
-    │
-    ▼
-┌─────────────┐
-│  Tokenizer  │
-└─────────────┘
-    │
-    ▼
-Token IDs
-    │
-    ▼
-┌─────────────────┐
-│  Embedding      │  ← FP16 Lookup
-└─────────────────┘
-    │
-    ▼
-┌─────────────────────────────────────┐
-│         Transformer Layers          │
-│  ┌─────────────────────────────┐    │
-│  │     Self-Attention          │    │  ← W8A16 Quantized
-│  │  (Q×K^T / √d) → Softmax → V │    │
-│  └─────────────────────────────┘    │
-│              │                      │
-│              ▼                      │
-│  ┌─────────────────────────────┐    │
-│  │     Feed-Forward Network    │    │  ← W8A16 Quantized
-│  │     Linear → GELU → Linear  │    │
-│  └─────────────────────────────┘    │
-└─────────────────────────────────────┘
-    │
-    ▼
-┌─────────────────┐
-│  Output Layer   │  ← FP16 Logits
-└─────────────────┘
-    │
-    ▼
-┌─────────────────┐
-│   Sampling      │
-└─────────────────┘
-    │
-    ▼
-Output Tokens
-```
-
-## Next Steps
-
-- [Quantization Guide](/en/guide/quantization) - Learn about INT8 quantization
-- [Performance Guide](/en/performance/optimization) - Optimization techniques
-- [API Reference](/en/api/) - Detailed API documentation
+The runtime surface returns `Result<T>` errors for invalid config, unsupported runtime inputs, allocation failures, and generation validation failures. Callers should check `isErr()` before reading `value()`.

@@ -3,8 +3,8 @@ layout: home
 
 hero:
   name: "Tiny-LLM"
-  text: "Educational CUDA LLM Inference"
-  tagline: A minimal, educational LLM inference engine in CUDA C++ with INT8 quantization
+  text: "CUDA C++ Inference, Kept Small"
+  tagline: Focused Transformer inference engine with W8A16 kernels, explicit KV cache management, and a deliberately small repository surface.
   image:
     src: /images/logo.svg
     alt: Tiny-LLM Logo
@@ -17,37 +17,22 @@ hero:
       link: https://github.com/AICL-Lab/tiny-llm
 
 features:
-  - icon: "\U0001F680"
-    title: High Performance
-    details: Optimized CUDA kernels for attention, FFN, and quantized inference with W8A16 quantization
-  - icon: "\U0001F4DA"
-    title: Educational
-    details: Clean, well-documented codebase designed for learning LLM inference internals
-  - icon: "\U0001F4CA"
-    title: INT8 Quantization
-    details: Per-group INT8 quantization for memory efficiency with minimal accuracy loss
-  - icon: "\U0001F512"
-    title: No-Exception Design
-    details: Result\<T\> based error propagation for predictable and safe error handling
-  - icon: "\U0001F9E0"
-    title: KV Cache
-    details: Pre-allocated KV cache manager for efficient autoregressive generation
-  - icon: "\U0001F310"
-    details: Cross-platform support with CMake build system for Linux and Windows
+  - icon: "⚡"
+    title: W8A16 Runtime
+    details: INT8 weights with FP16 activations for a compact CUDA inference path.
+  - icon: "📦"
+    title: Narrow Loading Surface
+    details: Runtime loading stays on the supported binary path, while GGUF parsing remains available for inspection and validation.
+  - icon: "🧠"
+    title: Explicit KV Cache
+    details: Pre-allocated sequence slots keep autoregressive decoding predictable.
+  - icon: "🛡️"
+    title: "Result<T> APIs"
+    details: Host-side fallible operations return explicit results instead of hiding failures.
+  - icon: "🧪"
+    title: Tested Core
+    details: GoogleTest and RapidCheck cover the core loader, cache, and generation paths.
+  - icon: "📚"
+    title: Focused Docs
+    details: Pages documents the engine itself instead of duplicating process and changelog scaffolding.
 ---
-
-<style>
-/* Custom home page styles */
-.VPHero .name {
-  background: linear-gradient(135deg, #00D4AA 0%, #76B900 100%);
-  -webkit-background-clip: text;
-  background-clip: text;
-  -webkit-text-fill-color: transparent;
-}
-
-.VPHero .image-bg {
-  background: linear-gradient(135deg, #00D4AA, #76B900);
-  opacity: 0.2;
-  filter: blur(100px);
-}
-</style>

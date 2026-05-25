@@ -21,7 +21,7 @@ export default withMermaid(
     head: [
       ['meta', { name: 'theme-color', content: '#00D4AA' }],
       ['meta', { name: 'og:type', content: 'website' }],
-      ['meta', { name: 'og:title', content: 'Tiny-LLM | Technical Whitepaper' }],
+      ['meta', { name: 'og:title', content: 'Tiny-LLM | CUDA-Native Inference Engine' }],
       ['meta', { name: 'og:description', content: 'CUDA-native inference engine for Transformer models with W8A16 quantization' }],
       ['link', { rel: 'icon', href: '/tiny-llm/favicon.svg' }],
       ['link', { rel: 'apple-touch-icon', href: '/tiny-llm/apple-touch-icon.png' }],
@@ -51,7 +51,6 @@ export default withMermaid(
             { text: 'Performance', link: '/en/performance/' },
             { text: 'API', link: '/en/api/' },
             { text: 'Guide', link: '/en/guide/getting-started' },
-            { text: 'Changelog', link: '/en/changelog/' },
           ],
           sidebar: {
             '/en/architecture/': [
@@ -112,17 +111,6 @@ export default withMermaid(
                 ],
               },
             ],
-            '/en/changelog/': [
-              {
-                text: 'Changelog',
-                items: [
-                  { text: 'Overview', link: '/en/changelog/' },
-                  { text: 'v2.0.2', link: '/en/changelog/v2.0.2' },
-                  { text: 'v2.0.1', link: '/en/changelog/v2.0.1' },
-                  { text: 'v2.0.0', link: '/en/changelog/v2.0.0' },
-                ],
-              },
-            ],
           },
           editLink: {
             pattern: 'https://github.com/AICL-Lab/tiny-llm/edit/master/docs/:path',
@@ -164,7 +152,6 @@ export default withMermaid(
             { text: '性能', link: '/zh/performance/' },
             { text: 'API', link: '/zh/api/' },
             { text: '指南', link: '/zh/guide/getting-started' },
-            { text: '更新日志', link: '/zh/changelog/' },
           ],
           sidebar: {
             '/zh/architecture/': [
@@ -222,17 +209,6 @@ export default withMermaid(
                 text: '贡献',
                 items: [
                   { text: '开发者指南', link: '/zh/contributing/' },
-                ],
-              },
-            ],
-            '/zh/changelog/': [
-              {
-                text: '更新日志',
-                items: [
-                  { text: '概述', link: '/zh/changelog/' },
-                  { text: 'v2.0.2', link: '/zh/changelog/v2.0.2' },
-                  { text: 'v2.0.1', link: '/zh/changelog/v2.0.1' },
-                  { text: 'v2.0.0', link: '/zh/changelog/v2.0.0' },
                 ],
               },
             ],

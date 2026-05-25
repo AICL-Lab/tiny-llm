@@ -1,81 +1,52 @@
 # API 参考
 
-欢迎使用 Tiny-LLM API 参考文档。
+Tiny-LLM 在 `tiny_llm` 命名空间下暴露了一套很紧凑的公共 C++ 接口。
 
-## 核心组件
+## 主要头文件
 
-| 组件 | 描述 |
-|------|------|
-| [InferenceEngine](/zh/api/inference-engine) | 主推理引擎类 |
-| [ModelConfig](/zh/api/model-config) | 模型超参数 |
-| [Result\<T\>](/zh/api/result) | 错误处理包装器 |
-| [KVCacheManager](/zh/api/kv-cache) | 键值缓存管理 |
+| 头文件 | 用途 |
+|--------|------|
+| `<tiny_llm/inference_engine.h>` | 运行时加载与 token 生成 |
+| `<tiny_llm/model_loader.h>` | 宿主侧运行时模型加载辅助 |
+| `<tiny_llm/gguf_parser.h>` | GGUF 解析、元数据提取、tensor 检查 |
+| `<tiny_llm/kv_cache.h>` | KV cache 分配与序列管理 |
+| `<tiny_llm/result.h>` | `Result<T>` 错误传播 |
+| `<tiny_llm/types.h>` | 共享配置、权重与统计类型 |
 
 ## 快速示例
 
 ```cpp
-#include <tiny-llm/inference_engine.h>
-#include <tiny-llm/model_config.h>
-#include <tiny-llm/result.h>
-
-using namespace tinyllm;
+#include <iostream>
+#include <tiny_llm/inference_engine.h>
 
 int main() {
-    // 创建引擎
-    InferenceEngine engine;
+    using namespace tiny_llm;
 
-    // 加载模型
-    Result<void> load_result = engine.load("model.bin");
-    if (!load_result.ok()) {
-        std::cerr << "错误: " << load_result.error() << std::endl;
+    ModelConfig config;
+    auto engine_result = InferenceEngine::load("model.bin", config);
+    if (engine_result.isErr()) {
+        std::cerr << engine_result.error() << '\n';
         return 1;
     }
 
-    // 生成文本
-    GenerationConfig config;
-    config.max_tokens = 100;
-    config.temperature = 0.7f;
-
-    Result<std::string> result = engine.generate("你好，世界！", config);
-    if (result.ok()) {
-        std::cout << result.value() << std::endl;
+    auto engine = std::move(engine_result.value());
+    auto output = engine->generate({1, 15043, 29892}, GenerationConfig{});
+    if (output.isErr()) {
+        std::cerr << output.error() << '\n';
+        return 1;
     }
-
-    return 0;
 }
 ```
 
-## 错误处理
+## 加载边界
 
-所有操作返回 `Result\<T\>` 进行安全的错误传播：
+- 用 `InferenceEngine::load()` 加载支持的二进制运行时格式。
+- 需要 GGUF 解析或元数据访问时使用 `GGUFParser`。
+- 不要假设公共接口里存在 tokenizer 或“输入字符串直接生成字符串”的 API。
 
-```cpp
-Result\<T\> result = some_operation();
-if (!result.ok()) {
-    // 处理错误
-    std::cerr << result.error() << std::endl;
-} else {
-    // 使用结果
-    T value = result.value();
-}
-```
+## 参考页面
 
-## 命名空间
-
-所有公共 API 都在 `tinyllm` 命名空间中：
-
-```cpp
-using namespace tinyllm;
-// 或
-tinyllm::InferenceEngine engine;
-```
-
-## 头文件
-
-| 头文件 | 描述 |
-|--------|------|
-| `<tiny-llm/inference_engine.h>` | 主引擎类 |
-| `<tiny-llm/model_config.h>` | 配置结构体 |
-| `<tiny-llm/result.h>` | Result 类型 |
-| `<tiny-llm/kv_cache.h>` | 缓存管理 |
-| `<tiny-llm/tokenizer.h>` | 分词工具 |
+- [InferenceEngine](/zh/api/inference-engine)
+- [Result&lt;T&gt;](/zh/api/result)
+- [KVCacheManager](/zh/api/kv-cache)
+- [ModelConfig](/zh/api/model-config)

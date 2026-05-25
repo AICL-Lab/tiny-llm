@@ -1,81 +1,52 @@
 # API Reference
 
-Welcome to the Tiny-LLM API reference documentation.
+Tiny-LLM exposes a compact public C++ surface under the `tiny_llm` namespace.
 
-## Core Components
+## Primary Headers
 
-| Component | Description |
-|-----------|-------------|
-| [InferenceEngine](/en/api/inference-engine) | Main inference engine class |
-| [ModelConfig](/en/api/model-config) | Model hyperparameters |
-| [Result\<T\>](/en/api/result) | Error handling wrapper |
-| [KVCacheManager](/en/api/kv-cache) | Key-value cache management |
+| Header | Purpose |
+|--------|---------|
+| `<tiny_llm/inference_engine.h>` | Runtime loading and token generation |
+| `<tiny_llm/model_loader.h>` | Host-side runtime model loading helpers |
+| `<tiny_llm/gguf_parser.h>` | GGUF parsing, metadata extraction, tensor inspection |
+| `<tiny_llm/kv_cache.h>` | KV cache allocation and sequence management |
+| `<tiny_llm/result.h>` | `Result<T>` error propagation |
+| `<tiny_llm/types.h>` | Shared config, weight, and stats types |
 
 ## Quick Example
 
 ```cpp
-#include <tiny-llm/inference_engine.h>
-#include <tiny-llm/model_config.h>
-#include <tiny-llm/result.h>
-
-using namespace tinyllm;
+#include <iostream>
+#include <tiny_llm/inference_engine.h>
 
 int main() {
-    // Create engine
-    InferenceEngine engine;
+    using namespace tiny_llm;
 
-    // Load model
-    Result<void> load_result = engine.load("model.bin");
-    if (!load_result.ok()) {
-        std::cerr << "Error: " << load_result.error() << std::endl;
+    ModelConfig config;
+    auto engine_result = InferenceEngine::load("model.bin", config);
+    if (engine_result.isErr()) {
+        std::cerr << engine_result.error() << '\n';
         return 1;
     }
 
-    // Generate text
-    GenerationConfig config;
-    config.max_tokens = 100;
-    config.temperature = 0.7f;
-
-    Result<std::string> result = engine.generate("Hello, world!", config);
-    if (result.ok()) {
-        std::cout << result.value() << std::endl;
+    auto engine = std::move(engine_result.value());
+    auto output = engine->generate({1, 15043, 29892}, GenerationConfig{});
+    if (output.isErr()) {
+        std::cerr << output.error() << '\n';
+        return 1;
     }
-
-    return 0;
 }
 ```
 
-## Error Handling
+## Loading Surface
 
-All operations return `Result\<T\>` for safe error propagation:
+- Use `InferenceEngine::load()` for the supported binary runtime format.
+- Use `GGUFParser` when you need GGUF parsing or metadata access.
+- Do not assume a tokenizer or text-string generation API exists in the public surface.
 
-```cpp
-Result\<T\> result = some_operation();
-if (!result.ok()) {
-    // Handle error
-    std::cerr << result.error() << std::endl;
-} else {
-    // Use result
-    T value = result.value();
-}
-```
+## Reference Pages
 
-## Namespaces
-
-All public APIs are in the `tinyllm` namespace:
-
-```cpp
-using namespace tinyllm;
-// or
-tinyllm::InferenceEngine engine;
-```
-
-## Header Files
-
-| Header | Description |
-|--------|-------------|
-| `<tiny-llm/inference_engine.h>` | Main engine class |
-| `<tiny-llm/model_config.h>` | Configuration structs |
-| `<tiny-llm/result.h>` | Result type |
-| `<tiny-llm/kv_cache.h>` | Cache management |
-| `<tiny-llm/tokenizer.h>` | Tokenization utilities |
+- [InferenceEngine](/en/api/inference-engine)
+- [Result&lt;T&gt;](/en/api/result)
+- [KVCacheManager](/en/api/kv-cache)
+- [ModelConfig](/en/api/model-config)
