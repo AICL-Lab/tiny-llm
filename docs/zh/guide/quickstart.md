@@ -1,80 +1,52 @@
 # 快速开始
 
-本教程将引导您完成使用 Tiny-LLM 进行首次推理。
+本页展示与当前代码库一致的最小运行时路径。
 
-## 前提条件
-
-请确保您已经[安装 Tiny-LLM](/zh/guide/installation)。
-
-## 基本用法
-
-### 1. 加载模型
+## 1. 加载支持的运行时模型
 
 ```cpp
-#include <tiny-llm/inference_engine.h>
-
-using namespace tinyllm;
+#include <iostream>
+#include <tiny_llm/inference_engine.h>
 
 int main() {
-    // 创建推理引擎
-    InferenceEngine engine;
+    using namespace tiny_llm;
 
-    // 从文件加载模型
-    Result<void> result = engine.load("model.bin");
-    if (!result.ok()) {
-        std::cerr << "加载模型失败: " << result.error() << std::endl;
+    ModelConfig config;
+    auto engine_result = InferenceEngine::load("model.bin", config);
+    if (engine_result.isErr()) {
+        std::cerr << engine_result.error() << '\n';
         return 1;
     }
-
-    return 0;
 }
 ```
 
-### 2. 运行推理
+## 2. 生成 token ID
 
 ```cpp
-#include <tiny-llm/inference_engine.h>
-#include <iostream>
+using namespace tiny_llm;
 
-int main() {
-    InferenceEngine engine;
-    engine.load("model.bin");
+auto engine = std::move(engine_result.value());
 
-    // 从提示词生成文本
-    std::string prompt = "人工智能的未来是";
-    Result<std::string> result = engine.generate(prompt, /*max_tokens=*/50);
+GenerationConfig generation;
+generation.max_new_tokens = 32;
+generation.do_sample = true;
+generation.temperature = 0.7f;
 
-    if (result.ok()) {
-        std::cout << "生成结果: " << result.value() << std::endl;
-    } else {
-        std::cerr << "错误: " << result.error() << std::endl;
-    }
-
-    return 0;
+auto output = engine->generate({1, 15043, 29892}, generation);
+if (output.isErr()) {
+    std::cerr << output.error() << '\n';
+    return 1;
 }
 ```
 
-### 3. 配置选项
+## 3. 明确边界
 
-```cpp
-GenerationConfig config;
-config.max_tokens = 100;
-config.temperature = 0.7f;
-config.top_p = 0.9f;
-config.top_k = 50;
-
-Result<std::string> result = engine.generate(prompt, config);
-```
-
-## 编译您的应用程序
-
-```bash
-# 编译您的应用程序
-g++ -std=c++17 my_app.cpp -o my_app -I/path/to/tiny-llm/include -L/path/to/tiny-llm/build -ltinyllm
-```
+- `InferenceEngine::load()` 使用支持的二进制运行时格式。
+- `GGUFParser` 是 GGUF 解析与检查入口。
+- 公共运行时 API 面向 token ID，而不是原始字符串。
 
 ## 下一步
 
-- [架构概览](/zh/architecture/inference-engine) - 了解内部原理
-- [配置指南](/zh/guide/configuration) - 详细的配置选项
-- [API 参考](/zh/api/) - 完整的 API 文档
+- [架构概览](/zh/architecture/)
+- [API 参考](/zh/api/)
+- [安装说明](/zh/guide/installation)

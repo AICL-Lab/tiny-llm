@@ -3,98 +3,72 @@ layout: home
 
 hero:
   name: "Tiny-LLM"
-  text: "技术白皮书"
-  tagline: 支持 W8A16 量化的 CUDA 原生推理引擎
+  text: "CUDA 原生推理引擎"
+  tagline: 面向聚焦型 Transformer 推理，提供 W8A16 kernel、显式 KV Cache 管理，以及更低维护成本的仓库表面。
   image:
     src: /images/logo.svg
     alt: Tiny-LLM Logo
   actions:
     - theme: brand
-      text: 架构
-      link: /zh/architecture/
+      text: 开始使用
+      link: /zh/guide/getting-started
     - theme: alt
-      text: 性能
-      link: /zh/performance/
+      text: API 参考
+      link: /zh/api/
 
 features:
   - icon: "⚡"
-    title: W8A16 量化
-    details: INT8 权重 + FP16 激活 — 50% 内存减少，<1% 精度损失
-  - icon: "🔧"
-    title: CUDA 原生内核
-    details: Tensor Core INT8 矩阵乘法，优化的注意力解码，warp 级原语
+    title: W8A16 推理
+    details: INT8 权重 + FP16 激活，保持精简的 CUDA 运行时路径。
   - icon: "📦"
-    title: KV 缓存管理器
-    details: 预分配槽位，O(1) 增量解码，序列生命周期管理
+    title: 二进制运行时路径
+    details: "`InferenceEngine::load()` 面向当前引擎支持的二进制运行时格式。"
+  - icon: "🔎"
+    title: GGUF 解析工具
+    details: 保留 GGUF 解析、元数据提取和 tensor 检查能力，但不再假装它就是运行时加载路径。
+  - icon: "🧠"
+    title: 显式 KV Cache
+    details: 预分配序列槽位，让自回归解码更可预测。
   - icon: "🛡️"
-    title: Result<T> 模式
-    details: 无异常错误传播，可预测的控制流和安全的资源处理
-  - icon: "📊"
-    title: OpenSpec 治理
-    details: 需求驱动开发，自动化测试覆盖率验证
+    title: "Result<T> API"
+    details: 宿主侧失败显式可见，便于排查和收敛。
   - icon: "🧪"
-    title: 基于属性的测试
-    details: RapidCheck 集成，跨输入空间的不变量验证
+    title: 核心测试覆盖
+    details: GoogleTest 与 RapidCheck 覆盖核心加载、缓存和生成路径。
 ---
 
-## 核心结果
+## 运行时边界
 
-| 指标 | 数值 | vs FP16 |
-|------|------|---------|
-| **内存** | 7.8 GB | **↓50%** |
-| **解码** | 85 tok/s | **↑9%** |
-| **精度** | 9.12 ppl | Δ 0.4% |
+| 能力 | 状态 | 说明 |
+|------|------|------|
+| 二进制运行时加载 | 支持 | `InferenceEngine::load()` 使用这条路径 |
+| GGUF 解析与检查 | 支持 | 使用 `GGUFParser` 读取元数据和 tensor |
+| 直接 GGUF 运行时加载 | 不支持 | 运行时加载器会拒绝 `.gguf` 路径 |
 
-*基准测试：LLaMA-7B, RTX 4090, INT8 权重*
-
-## 架构
+## 架构示意
 
 ```mermaid
 flowchart LR
-    A[模型文件] --> B[GGUF 解析器]
-    B --> C[推理引擎]
-    C --> D[Transformer 层]
-    D --> E[KV 缓存]
-    D --> F[W8A16 矩阵乘法]
-    F --> G[采样]
-    G --> H[输出 Token]
+    A[二进制运行时模型] --> B[InferenceEngine::load()]
+    C[GGUF 文件] --> D[GGUFParser]
+    B --> E[Transformer 层]
+    E --> F[KV Cache]
+    E --> G[W8A16 矩阵乘法]
+    G --> H[采样]
+    H --> I[输出 Tokens]
+    D --> J[元数据 / Tensor 检查]
 
-    style C fill:#00D4AA,stroke:#00C49A,color:#fff
-    style F fill:#76B900,stroke:#5a8f00,color:#fff
+    style B fill:#00D4AA,stroke:#00C49A,color:#fff
+    style G fill:#76B900,stroke:#5a8f00,color:#fff
+    style D fill:#8B5CF6,stroke:#7c3aed,color:#fff
 ```
 
-## 快速开始
+## 从这里开始
 
-```bash
-# 克隆
-git clone https://github.com/AICL-Lab/tiny-llm.git
-cd tiny-llm
-
-# 构建（需要 CUDA 11.0+）
-cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTS=ON
-cmake --build build -j$(nproc)
-
-# 测试
-ctest --test-dir build --output-on-failure
-```
-
-## 文档
-
-| 资源 | 描述 |
+| 资源 | 用途 |
 |------|------|
-| [架构概述](/zh/architecture/) | 系统设计和数据流 |
-| [W8A16 量化](/zh/architecture/quantization) | 量化方案详情 |
-| [CUDA 内核](/zh/architecture/cuda-kernels) | 内核优化技术 |
-| [性能](/zh/performance/) | 基准测试和分析指南 |
-| [API 参考](/zh/api/) | 完整 API 文档 |
-
-## 核心组件
-
-| 组件 | 职责 |
-|------|------|
-| `Result<T>` | 无异常错误传播 |
-| `ModelConfig` | 模型超参数（vocab_size, hidden_dim 等） |
-| `QuantizedWeight` | INT8 权重和每组缩放因子 |
-| `TransformerLayer` | W8A16 量化注意力 + FFN |
-| `KVCacheManager` | 预分配的序列缓存槽位 |
-| `InferenceEngine` | 公共 API：load(), generate() |
+| [开始使用](/zh/guide/getting-started) | 最小构建与首次运行路径 |
+| [架构说明](/zh/architecture/) | 运行时结构与职责划分 |
+| [API 参考](/zh/api/) | 公共头文件与类型 |
+| [性能](/zh/performance/) | 基准和优化说明 |
+| [GitHub 仓库](https://github.com/AICL-Lab/tiny-llm) | 源码、Issue、Release |

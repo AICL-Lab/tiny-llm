@@ -2,22 +2,14 @@
 
 ## Project mode
 
-Tiny-LLM is in a final hardening phase. Prefer cleanup, alignment, and reliability work over new roadmap expansion.
+Tiny-LLM is in a final hardening phase. Prefer cleanup, consolidation, and reliability work over roadmap expansion.
 
-## Required workflow
+## Repository priorities
 
-- Use OpenSpec for non-trivial work.
-- Read the active change in `openspec/changes/<name>/` before editing.
-- Treat `openspec/specs/` as the current behavior contract.
-- Keep changes scoped to the active task instead of mixing unrelated cleanup.
-
-## Repository-specific rules
-
-- Do not reintroduce legacy `/specs` guidance.
-- Prefer deleting or merging stale docs over adding parallel explanations.
-- Keep README, Pages, changelog surfaces, and GitHub metadata aligned.
+- Keep the repository free of AI-specific governance scaffolding and duplicate instruction surfaces.
+- Keep README, GitHub Pages, and the root `CHANGELOG.md` aligned with the actual project.
+- Prefer deleting or rewriting stale docs over preserving parallel explanations.
 - Do not assume CI will auto-format or auto-commit fixes.
-- Use `gh` for repository metadata updates.
 
 ## Engineering constraints
 

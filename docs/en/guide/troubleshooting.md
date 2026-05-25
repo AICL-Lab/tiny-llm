@@ -232,5 +232,5 @@ When reporting issues, please provide:
 ### Resources
 
 - [GitHub Issues](https://github.com/AICL-Lab/tiny-llm/issues)
-- [Documentation](https://lessup.github.io/tiny-llm/)
-- [API Reference](https://lessup.github.io/tiny-llm/docs/en/API)
+- [Documentation](https://aicl-lab.github.io/tiny-llm/)
+- [API Reference](https://aicl-lab.github.io/tiny-llm/en/api/)
