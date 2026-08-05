@@ -141,20 +141,7 @@ void TransformerLayer::forward(half *hidden_states, KVCacheManager &kv_cache, in
     }
 
     // Single token decode
-    const int num_tokens = 1;
-    const int hidden_dim = config_.hidden_dim;
-
-    // Attention sublayer with residual
-    // x = x + attention(rms_norm(x))
-    rmsNorm(hidden_states, weights_.rms_att_weight, norm_output_, num_tokens, stream);
-    attention(norm_output_, attn_output_, kv_cache, seq_id, position, num_tokens, stream);
-    kernels::add_inplace(hidden_states, attn_output_, num_tokens * hidden_dim, stream);
-
-    // FFN sublayer with residual
-    // x = x + ffn(rms_norm(x))
-    rmsNorm(hidden_states, weights_.rms_ffn_weight, norm_output_, num_tokens, stream);
-    feedForward(norm_output_, ffn_output_, num_tokens, stream);
-    kernels::add_inplace(hidden_states, ffn_output_, num_tokens * hidden_dim, stream);
+    runLayer(hidden_states, kv_cache, seq_id, position, 1, stream);
 }
 
 void TransformerLayer::forwardPrefill(half *hidden_states, KVCacheManager &kv_cache, int seq_id,
@@ -183,15 +170,19 @@ void TransformerLayer::forwardPrefill(half *hidden_states, KVCacheManager &kv_ca
     }
 
     // Multiple tokens prefill
-    const int num_tokens = seq_len;
+    runLayer(hidden_states, kv_cache, seq_id, 0, seq_len, stream);
+}
+
+void TransformerLayer::runLayer(half *hidden_states, KVCacheManager &kv_cache, int seq_id,
+                                int position, int num_tokens, cudaStream_t stream) {
     const int hidden_dim = config_.hidden_dim;
 
-    // Attention sublayer
+    // Attention sublayer with residual: x = x + attention(rms_norm(x))
     rmsNorm(hidden_states, weights_.rms_att_weight, norm_output_, num_tokens, stream);
-    attention(norm_output_, attn_output_, kv_cache, seq_id, 0, num_tokens, stream);
+    attention(norm_output_, attn_output_, kv_cache, seq_id, position, num_tokens, stream);
     kernels::add_inplace(hidden_states, attn_output_, num_tokens * hidden_dim, stream);
 
-    // FFN sublayer
+    // FFN sublayer with residual: x = x + ffn(rms_norm(x))
     rmsNorm(hidden_states, weights_.rms_ffn_weight, norm_output_, num_tokens, stream);
     feedForward(norm_output_, ffn_output_, num_tokens, stream);
     kernels::add_inplace(hidden_states, ffn_output_, num_tokens * hidden_dim, stream);

@@ -49,6 +49,6 @@ flowchart LR
 
 ## 下一步
 
-- [推理引擎](/zh/architecture/inference-engine)
-- [API 参考](/zh/api/)
-- [性能指南](/zh/performance/)
+- [推理引擎](/architecture/inference-engine)
+- [API 参考](/api/)
+- [性能指南](/performance/)

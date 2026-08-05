@@ -147,44 +147,6 @@ class Validator {
     // ── Position/Length Validation ────────────────────────────────────
 
     /**
-     * @brief Validate position index
-     * @param position Position index to validate
-     * @param max_seq_len Maximum sequence length
-     * @param context Optional context string for error messages
-     * @return Result<void> indicating success or error with message
-     */
-    static Result<void> validatePosition(int position, int max_seq_len,
-                                         const std::string &context = "") {
-        if (position < 0 || position >= max_seq_len) {
-            return Result<void>::err(buildContext(
-                context, "Invalid position: " + std::to_string(position) + " (valid range: 0-" +
-                             std::to_string(max_seq_len - 1) + ")"));
-        }
-        return Result<void>::ok();
-    }
-
-    /**
-     * @brief Validate sequence length
-     * @param seq_len Sequence length to validate
-     * @param max_seq_len Maximum sequence length
-     * @param context Optional context string for error messages
-     * @return Result<void> indicating success or error with message
-     */
-    static Result<void> validateSeqLen(int seq_len, int max_seq_len,
-                                       const std::string &context = "") {
-        if (seq_len <= 0) {
-            return Result<void>::err(
-                buildContext(context, "seq_len must be positive: " + std::to_string(seq_len)));
-        }
-        if (seq_len > max_seq_len) {
-            return Result<void>::err(buildContext(context, "seq_len " + std::to_string(seq_len) +
-                                                               " exceeds max_seq_len " +
-                                                               std::to_string(max_seq_len)));
-        }
-        return Result<void>::ok();
-    }
-
-    /**
      * @brief Validate that prompt length doesn't exceed max_seq_len
      * @param prompt_len Prompt length
      * @param max_new_tokens Maximum new tokens to generate
@@ -226,40 +188,6 @@ class Validator {
         return Result<void>::ok();
     }
 
-    // ── Range Validation ──────────────────────────────────────────────
-
-    /**
-     * @brief Validate that a value is within a range
-     * @param value Value to validate
-     * @param min Minimum value (inclusive)
-     * @param max Maximum value (inclusive)
-     * @param name Name for error message
-     * @return Result<void> indicating success or error with message
-     */
-    static Result<void> validateRange(int value, int min, int max, const std::string &name) {
-        if (value < min || value > max) {
-            return Result<void>::err(name + " value " + std::to_string(value) + " out of range [" +
-                                     std::to_string(min) + ", " + std::to_string(max) + "]");
-        }
-        return Result<void>::ok();
-    }
-
-    /**
-     * @brief Validate that a float value is within a range
-     * @param value Value to validate
-     * @param min Minimum value (inclusive)
-     * @param max Maximum value (inclusive)
-     * @param name Name for error message
-     * @return Result<void> indicating success or error with message
-     */
-    static Result<void> validateRange(float value, float min, float max, const std::string &name) {
-        if (value < min || value > max) {
-            return Result<void>::err(name + " value " + std::to_string(value) + " out of range [" +
-                                     std::to_string(min) + ", " + std::to_string(max) + "]");
-        }
-        return Result<void>::ok();
-    }
-
     // ── Layer Index Validation ────────────────────────────────────────
 
     /**
@@ -293,30 +221,5 @@ class Validator {
         return context + ": " + message;
     }
 };
-
-// ── Convenience Macros ────────────────────────────────────────────────
-
-/**
- * @brief Validate condition and return error if false
- * @param condition Condition to validate
- * @param message Error message if condition is false
- */
-#define TLLM_VALIDATE(condition, message)                                                          \
-    do {                                                                                           \
-        if (!(condition)) {                                                                        \
-            return tiny_llm::Result<void>::err(message);                                           \
-        }                                                                                          \
-    } while (0)
-
-/**
- * @brief Validate and propagate error if any
- * @param result Result to check
- */
-#define TLLM_VALIDATE_RESULT(result)                                                               \
-    do {                                                                                           \
-        if ((result).isErr()) {                                                                    \
-            return tiny_llm::Result<void>::err((result).error());                                  \
-        }                                                                                          \
-    } while (0)
 
 } // namespace tiny_llm

@@ -47,6 +47,6 @@ if (output.isErr()) {
 
 ## 下一步
 
-- [架构概览](/zh/architecture/)
-- [API 参考](/zh/api/)
-- [安装说明](/zh/guide/installation)
+- [架构概览](/architecture/)
+- [API 参考](/api/)
+- [安装说明](/guide/installation)

@@ -251,6 +251,6 @@ if (utilization > 0.9f) {
 
 ## See Also
 
-- [ModelConfig](/en/api/model-config) - Configuration options
-- [Performance Guide](/en/performance/optimization) - Optimization tips
-- [Architecture](/en/architecture/inference-engine#kv-cache) - Architecture details
+- [ModelConfig](/api/model-config) - Configuration options
+- [Performance Guide](/performance/optimization) - Optimization tips
+- [Architecture](/architecture/inference-engine#kv-cache) - Architecture details

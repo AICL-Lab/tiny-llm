@@ -123,5 +123,5 @@ config.enable_cuda_graphs = true;
 
 ## 下一步
 
-- [故障排除指南](/zh/guide/troubleshooting) - 常见问题
-- [API 参考](/zh/api/) - 完整的 API 文档
+- [故障排除指南](/guide/troubleshooting) - 常见问题
+- [API 参考](/api/) - 完整的 API 文档

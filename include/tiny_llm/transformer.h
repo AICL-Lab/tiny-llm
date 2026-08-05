@@ -47,6 +47,10 @@ class TransformerLayer {
     void rmsNorm(const half *x, const half *weight, half *output, int num_tokens,
                  cudaStream_t stream);
 
+    // Shared attention + FFN residual block for forward/forwardPrefill
+    void runLayer(half *hidden_states, KVCacheManager &kv_cache, int seq_id, int position,
+                  int num_tokens, cudaStream_t stream);
+
     // Allocate intermediate buffers
     void allocateBuffers();
     void freeBuffers();

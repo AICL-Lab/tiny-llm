@@ -46,7 +46,7 @@ int main() {
 
 ## 参考页面
 
-- [InferenceEngine](/zh/api/inference-engine)
-- [Result&lt;T&gt;](/zh/api/result)
-- [KVCacheManager](/zh/api/kv-cache)
-- [ModelConfig](/zh/api/model-config)
+- [InferenceEngine](/api/inference-engine)
+- [Result&lt;T&gt;](/api/result)
+- [KVCacheManager](/api/kv-cache)
+- [ModelConfig](/api/model-config)

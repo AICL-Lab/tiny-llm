@@ -241,4 +241,4 @@ compute-sanitizer --tool memcheck ./build/bin/tinyllm-bench
 
 - [量化](./quantization) - W8A16 实现细节
 - [KV 缓存](./kv-cache) - 缓存管理策略
-- [性能](/zh/performance/) - 内存对性能的影响
+- [性能](/performance/) - 内存对性能的影响

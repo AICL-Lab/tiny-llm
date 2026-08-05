@@ -74,6 +74,6 @@ xychart-beta
 
 性能由架构决策驱动：
 
-- [W8A16 量化](/zh/architecture/quantization) - 内存减少
-- [CUDA 内核](/zh/architecture/cuda-kernels) - 计算优化
-- [KV 缓存](/zh/architecture/kv-cache) - 高效解码
+- [W8A16 量化](/architecture/quantization) - 内存减少
+- [CUDA 内核](/architecture/cuda-kernels) - 计算优化
+- [KV 缓存](/architecture/kv-cache) - 高效解码

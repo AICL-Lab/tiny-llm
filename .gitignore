@@ -4,9 +4,6 @@ bin/
 lib/
 out/
 
-# Website build directory
-website/_site/
-
 # CMake generated files
 CMakeCache.txt
 CMakeFiles/
@@ -85,14 +82,6 @@ coverage/
 # Cache directories
 .cache/
 
-# OMC local state (AI tooling)
-.omc/state/
-.omc/sessions/
-
 # Profiling data
 *.prof
 *.nvprof
-
-# BMad Method V6
-_bmad/
-_bmad-output/

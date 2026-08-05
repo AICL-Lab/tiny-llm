@@ -110,5 +110,5 @@ enum class QuantizationType {
 
 ## 下一步
 
-- [性能指南](/zh/performance/optimization) - 优化技术
-- [API 参考](/zh/api/inference-engine) - 引擎 API
+- [性能指南](/performance/optimization) - 优化技术
+- [API 参考](/api/inference-engine) - 引擎 API

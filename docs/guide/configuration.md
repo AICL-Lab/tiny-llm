@@ -115,5 +115,5 @@ struct QuantizationConfig {
 
 ## 下一步
 
-- [API 参考](/zh/api/) - 完整的 API 文档
-- [性能指南](/zh/performance/optimization) - 优化技术
+- [API 参考](/api/) - 完整的 API 文档
+- [性能指南](/performance/optimization) - 优化技术

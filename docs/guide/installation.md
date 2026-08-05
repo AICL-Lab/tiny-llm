@@ -63,9 +63,9 @@ ctest --test-dir build --output-on-failure
 
 ## 故障排除
 
-常见问题请参阅[故障排除指南](/zh/guide/troubleshooting)。
+常见问题请参阅[故障排除指南](/guide/troubleshooting)。
 
 ## 下一步
 
-- [快速入门教程](/zh/guide/quickstart) - 构建您的第一个推理
-- [架构概览](/zh/architecture/inference-engine) - 了解内部原理
+- [快速入门教程](/guide/quickstart) - 构建您的第一个推理
+- [架构概览](/architecture/inference-engine) - 了解内部原理

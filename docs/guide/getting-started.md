@@ -37,6 +37,6 @@ ctest --test-dir build --output-on-failure
 
 ## 下一步
 
-- [安装指南](/zh/guide/installation) - 详细的安装说明
-- [快速入门教程](/zh/guide/quickstart) - 构建您的第一个推理
-- [架构概览](/zh/architecture/inference-engine) - 了解内部原理
+- [安装指南](/guide/installation) - 详细的安装说明
+- [快速入门教程](/guide/quickstart) - 构建您的第一个推理
+- [架构概览](/architecture/inference-engine) - 了解内部原理

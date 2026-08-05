@@ -149,4 +149,4 @@ std::cout << "已用: " << (total - free) / 1024 / 1024 << " MB" << std::endl;
 
 - [优化指南](./optimization) - 应用分析洞察
 - [基准测试](./benchmarks) - 与基线比较
-- [CUDA 内核](/zh/architecture/cuda-kernels) - 内核实现细节
+- [CUDA 内核](/architecture/cuda-kernels) - 内核实现细节

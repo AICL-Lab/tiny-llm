@@ -6,7 +6,7 @@ import llmstxt from 'vitepress-plugin-llms'
 export default withMermaid(
   defineConfig({
     title: 'Tiny-LLM',
-    description: 'CUDA-native inference engine for Transformer models with W8A16 quantization',
+    description: '面向聚焦型 Transformer 工作负载的 CUDA 原生 C++ 推理引擎',
 
     // Base URL for GitHub Pages deployment
     base: '/tiny-llm/',
@@ -21,8 +21,8 @@ export default withMermaid(
     head: [
       ['meta', { name: 'theme-color', content: '#00D4AA' }],
       ['meta', { name: 'og:type', content: 'website' }],
-      ['meta', { name: 'og:title', content: 'Tiny-LLM | CUDA-Native Inference Engine' }],
-      ['meta', { name: 'og:description', content: 'CUDA-native inference engine for Transformer models with W8A16 quantization' }],
+      ['meta', { name: 'og:title', content: 'Tiny-LLM | CUDA 原生推理引擎' }],
+      ['meta', { name: 'og:description', content: '面向聚焦型 Transformer 工作负载的 CUDA 原生 C++ 推理引擎' }],
       ['link', { rel: 'icon', href: '/tiny-llm/favicon.svg' }],
       ['link', { rel: 'apple-touch-icon', href: '/tiny-llm/apple-touch-icon.png' }],
       // Google Fonts
@@ -40,233 +40,134 @@ export default withMermaid(
       lineNumbers: true,
     },
 
-    // Locales for i18n
-    locales: {
-      root: {
-        label: 'English',
-        lang: 'en',
-        themeConfig: {
-          nav: [
-            { text: 'Architecture', link: '/en/architecture/' },
-            { text: 'Performance', link: '/en/performance/' },
-            { text: 'API', link: '/en/api/' },
-            { text: 'Guide', link: '/en/guide/getting-started' },
-          ],
-          sidebar: {
-            '/en/architecture/': [
-              {
-                text: 'Architecture',
-                items: [
-                  { text: 'Overview', link: '/en/architecture/' },
-                  { text: 'Inference Engine', link: '/en/architecture/inference-engine' },
-                  { text: 'W8A16 Quantization', link: '/en/architecture/quantization' },
-                  { text: 'KV Cache Design', link: '/en/architecture/kv-cache' },
-                  { text: 'CUDA Kernels', link: '/en/architecture/cuda-kernels' },
-                  { text: 'Memory Model', link: '/en/architecture/memory-model' },
-                ],
-              },
-            ],
-            '/en/performance/': [
-              {
-                text: 'Performance',
-                items: [
-                  { text: 'Overview', link: '/en/performance/' },
-                  { text: 'Benchmarks', link: '/en/performance/benchmarks' },
-                  { text: 'Profiling Guide', link: '/en/performance/profiling' },
-                  { text: 'Optimization', link: '/en/performance/optimization' },
-                ],
-              },
-            ],
-            '/en/api/': [
-              {
-                text: 'API Reference',
-                items: [
-                  { text: 'Overview', link: '/en/api/' },
-                  { text: 'InferenceEngine', link: '/en/api/inference-engine' },
-                  { text: 'ModelConfig', link: '/en/api/model-config' },
-                  { text: 'Result<T>', link: '/en/api/result' },
-                  { text: 'KVCacheManager', link: '/en/api/kv-cache' },
-                  { text: 'References', link: '/en/api/references' },
-                ],
-              },
-            ],
-            '/en/guide/': [
-              {
-                text: 'Guide',
-                items: [
-                  { text: 'Getting Started', link: '/en/guide/getting-started' },
-                  { text: 'Installation', link: '/en/guide/installation' },
-                  { text: 'Quick Start', link: '/en/guide/quickstart' },
-                  { text: 'Configuration', link: '/en/guide/configuration' },
-                  { text: 'Quantization', link: '/en/guide/quantization' },
-                  { text: 'Troubleshooting', link: '/en/guide/troubleshooting' },
-                ],
-              },
-            ],
-            '/en/contributing/': [
-              {
-                text: 'Contributing',
-                items: [
-                  { text: 'Developer Guide', link: '/en/contributing/' },
-                ],
-              },
-            ],
-          },
-          editLink: {
-            pattern: 'https://github.com/AICL-Lab/tiny-llm/edit/master/docs/:path',
-            text: 'Edit this page on GitHub',
-          },
-          footer: {
-            message: 'Released under the MIT License.',
-            copyright: 'Copyright © 2024-present Tiny-LLM Contributors',
-          },
-          docFooter: {
-            prev: 'Previous',
-            next: 'Next',
-          },
-          outline: {
-            label: 'On this page',
-          },
-          lastUpdated: {
-            text: 'Last updated',
-            formatOptions: {
-              dateStyle: 'medium',
-              timeStyle: 'short',
-            },
-          },
-          langMenuLabel: 'Language',
-          returnToTopLabel: 'Return to top',
-          sidebarMenuLabel: 'Menu',
-          darkModeSwitchLabel: 'Theme',
-          lightModeSwitchTitle: 'Switch to light theme',
-          darkModeSwitchTitle: 'Switch to dark theme',
-        },
-      },
-      zh: {
-        label: '简体中文',
-        lang: 'zh-CN',
-        link: '/zh/',
-        themeConfig: {
-          nav: [
-            { text: '架构', link: '/zh/architecture/' },
-            { text: '性能', link: '/zh/performance/' },
-            { text: 'API', link: '/zh/api/' },
-            { text: '指南', link: '/zh/guide/getting-started' },
-          ],
-          sidebar: {
-            '/zh/architecture/': [
-              {
-                text: '架构',
-                items: [
-                  { text: '概述', link: '/zh/architecture/' },
-                  { text: '推理引擎', link: '/zh/architecture/inference-engine' },
-                  { text: 'W8A16 量化', link: '/zh/architecture/quantization' },
-                  { text: 'KV 缓存设计', link: '/zh/architecture/kv-cache' },
-                  { text: 'CUDA 内核', link: '/zh/architecture/cuda-kernels' },
-                  { text: '内存模型', link: '/zh/architecture/memory-model' },
-                ],
-              },
-            ],
-            '/zh/performance/': [
-              {
-                text: '性能',
-                items: [
-                  { text: '概述', link: '/zh/performance/' },
-                  { text: '基准测试', link: '/zh/performance/benchmarks' },
-                  { text: '分析指南', link: '/zh/performance/profiling' },
-                  { text: '优化', link: '/zh/performance/optimization' },
-                ],
-              },
-            ],
-            '/zh/api/': [
-              {
-                text: 'API 参考',
-                items: [
-                  { text: '概述', link: '/zh/api/' },
-                  { text: 'InferenceEngine', link: '/zh/api/inference-engine' },
-                  { text: 'ModelConfig', link: '/zh/api/model-config' },
-                  { text: 'Result<T>', link: '/zh/api/result' },
-                  { text: 'KVCacheManager', link: '/zh/api/kv-cache' },
-                  { text: '参考资料', link: '/zh/api/references' },
-                ],
-              },
-            ],
-            '/zh/guide/': [
-              {
-                text: '指南',
-                items: [
-                  { text: '入门指南', link: '/zh/guide/getting-started' },
-                  { text: '安装', link: '/zh/guide/installation' },
-                  { text: '快速开始', link: '/zh/guide/quickstart' },
-                  { text: '配置', link: '/zh/guide/configuration' },
-                  { text: '量化', link: '/zh/guide/quantization' },
-                  { text: '故障排除', link: '/zh/guide/troubleshooting' },
-                ],
-              },
-            ],
-            '/zh/contributing/': [
-              {
-                text: '贡献',
-                items: [
-                  { text: '开发者指南', link: '/zh/contributing/' },
-                ],
-              },
-            ],
-          },
-          editLink: {
-            pattern: 'https://github.com/AICL-Lab/tiny-llm/edit/master/docs/:path',
-            text: '在 GitHub 上编辑此页',
-          },
-          footer: {
-            message: '基于 MIT 许可证发布',
-            copyright: '版权所有 © 2024至今 Tiny-LLM 贡献者',
-          },
-          docFooter: {
-            prev: '上一页',
-            next: '下一页',
-          },
-          outline: {
-            label: '页面导航',
-          },
-          lastUpdated: {
-            text: '最后更新于',
-            formatOptions: {
-              dateStyle: 'medium',
-              timeStyle: 'short',
-            },
-          },
-          langMenuLabel: '语言',
-          returnToTopLabel: '返回顶部',
-          sidebarMenuLabel: '菜单',
-          darkModeSwitchLabel: '主题',
-          lightModeSwitchTitle: '切换到浅色模式',
-          darkModeSwitchTitle: '切换到深色模式',
-        },
-      },
-    },
+    // 单语站点：root 即中文，无需 i18n locale 切换
+    lang: 'zh-CN',
 
-    // Theme configuration (shared across locales)
+    // Theme configuration
     themeConfig: {
       logo: '/logo.svg',
       siteTitle: 'Tiny-LLM',
+
+      nav: [
+        { text: '架构', link: '/architecture/' },
+        { text: '性能', link: '/performance/' },
+        { text: 'API', link: '/api/' },
+        { text: '指南', link: '/guide/getting-started' },
+      ],
+
+      sidebar: {
+        '/architecture/': [
+          {
+            text: '架构',
+            items: [
+              { text: '概述', link: '/architecture/' },
+              { text: '推理引擎', link: '/architecture/inference-engine' },
+              { text: 'W8A16 量化', link: '/architecture/quantization' },
+              { text: 'KV 缓存设计', link: '/architecture/kv-cache' },
+              { text: 'CUDA 内核', link: '/architecture/cuda-kernels' },
+              { text: '内存模型', link: '/architecture/memory-model' },
+            ],
+          },
+        ],
+        '/performance/': [
+          {
+            text: '性能',
+            items: [
+              { text: '概述', link: '/performance/' },
+              { text: '基准测试', link: '/performance/benchmarks' },
+              { text: '分析指南', link: '/performance/profiling' },
+              { text: '优化', link: '/performance/optimization' },
+            ],
+          },
+        ],
+        '/api/': [
+          {
+            text: 'API 参考',
+            items: [
+              { text: '概述', link: '/api/' },
+              { text: 'InferenceEngine', link: '/api/inference-engine' },
+              { text: 'ModelConfig', link: '/api/model-config' },
+              { text: 'Result<T>', link: '/api/result' },
+              { text: 'KVCacheManager', link: '/api/kv-cache' },
+              { text: '参考资料', link: '/api/references' },
+            ],
+          },
+        ],
+        '/guide/': [
+          {
+            text: '指南',
+            items: [
+              { text: '入门指南', link: '/guide/getting-started' },
+              { text: '安装', link: '/guide/installation' },
+              { text: '快速开始', link: '/guide/quickstart' },
+              { text: '配置', link: '/guide/configuration' },
+              { text: '量化', link: '/guide/quantization' },
+              { text: '故障排除', link: '/guide/troubleshooting' },
+            ],
+          },
+        ],
+        '/contributing/': [
+          {
+            text: '贡献',
+            items: [
+              { text: '开发者指南', link: '/contributing/' },
+            ],
+          },
+        ],
+      },
+
       socialLinks: [
         { icon: 'github', link: 'https://github.com/AICL-Lab/tiny-llm' },
       ],
+
+      editLink: {
+        pattern: 'https://github.com/AICL-Lab/tiny-llm/edit/master/docs/:path',
+        text: '在 GitHub 上编辑此页',
+      },
+
+      footer: {
+        message: '基于 MIT 许可证发布',
+        copyright: '版权所有 © 2024至今 Tiny-LLM 贡献者',
+      },
+
+      docFooter: {
+        prev: '上一页',
+        next: '下一页',
+      },
+
+      outline: {
+        label: '页面导航',
+      },
+
+      lastUpdated: {
+        text: '最后更新于',
+        formatOptions: {
+          dateStyle: 'medium',
+          timeStyle: 'short',
+        },
+      },
+
+      returnToTopLabel: '返回顶部',
+      sidebarMenuLabel: '菜单',
+      darkModeSwitchLabel: '主题',
+      lightModeSwitchTitle: '切换到浅色模式',
+      darkModeSwitchTitle: '切换到深色模式',
+
       search: {
         provider: 'local',
         options: {
           translations: {
             button: {
-              buttonText: 'Search',
-              buttonAriaLabel: 'Search',
+              buttonText: '搜索',
+              buttonAriaLabel: '搜索',
             },
             modal: {
-              noResultsText: 'No results for',
-              resetButtonTitle: 'Reset search',
+              noResultsText: '无搜索结果',
+              resetButtonTitle: '重置搜索',
               footer: {
-                selectText: 'to select',
-                navigateText: 'to navigate',
-                closeText: 'to close',
+                selectText: '选择',
+                navigateText: '导航',
+                closeText: '关闭',
               },
             },
           },
@@ -305,24 +206,24 @@ export default withMermaid(
 // Plugin: llmstxt for LLM-friendly documentation
 llmstxt({
   domain: 'https://aicl-lab.github.io/tiny-llm',
-  title: 'Tiny-LLM Documentation',
-  description: 'CUDA-native inference engine for Transformer models with W8A16 quantization',
+  title: 'Tiny-LLM 文档',
+  description: '面向聚焦型 Transformer 工作负载的 CUDA 原生 C++ 推理引擎',
   sections: {
     'Architecture': {
-      title: 'Architecture',
-      description: 'System architecture and design',
+      title: '架构',
+      description: '系统架构与设计',
     },
     'Performance': {
-      title: 'Performance',
-      description: 'Benchmarks and optimization',
+      title: '性能',
+      description: '基准测试与优化',
     },
     'API': {
-      title: 'API Reference',
-      description: 'Complete API documentation',
+      title: 'API 参考',
+      description: '完整 API 文档',
     },
     'Guide': {
-      title: 'Guide',
-      description: 'Getting started and usage guide',
+      title: '指南',
+      description: '入门与使用指南',
     },
   },
 })

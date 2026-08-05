@@ -190,6 +190,6 @@ struct QuantizationConfig {
 
 ## See Also
 
-- [InferenceEngine](/en/api/inference-engine) - Main API class
-- [Result\<T\>](/en/api/result) - Error handling
-- [KVCacheManager](/en/api/kv-cache) - Cache management
+- [InferenceEngine](/api/inference-engine) - Main API class
+- [Result\<T\>](/api/result) - Error handling
+- [KVCacheManager](/api/kv-cache) - Cache management
