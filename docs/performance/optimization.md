@@ -1,6 +1,6 @@
 # 优化
 
-本页区分**已实现的优化**与**计划中的优化**。计划项的落地顺序见 [ROADMAP](../../ROADMAP.md)。
+本页区分**已实现的优化**与**计划中的优化**。计划项的落地顺序见 [ROADMAP](https://github.com/AICL-Lab/tiny-llm/blob/master/ROADMAP.md)。
 
 ## 已实现的优化
 

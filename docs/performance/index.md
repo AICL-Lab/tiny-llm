@@ -22,7 +22,7 @@
 
 ## 基准测试计划
 
-见 [ROADMAP](../../ROADMAP.md) 第 2 阶段。目标产出：
+见 [ROADMAP](https://github.com/AICL-Lab/tiny-llm/blob/master/ROADMAP.md) 第 2 阶段。目标产出：
 
 - 真实模型（Qwen2-0.5B / TinyLlama-1.1B GGUF）端到端生成
 - 对比基线：llama.cpp（相同硬件、相同量化格式）
