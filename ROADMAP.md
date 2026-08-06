@@ -11,11 +11,15 @@
 
 ## 阶段 1：端到端跑通真实模型（最高优先级）
 
-- [ ] 实现 tokenizer（BPE，先支持 Qwen2 / LLaMA 词表格式，可从 GGUF 内嵌词表读取）
-- [ ] 用真实 GGUF 模型验证加载路径（Qwen2-0.5B 或 TinyLlama-1.1B，Q4_0/Q8_0/F16 各一）
-- [ ] CLI 支持 `tiny_llm_demo model.gguf --prompt "..."` 端到端生成
+- [x] 本机 CUDA 构建环境（CUDA 12.9 toolkit + gcc 13，`cmake --build` 全绿）
+- [x] 用真实 GGUF 模型验证加载路径（Qwen2.5-0.5B-Instruct Q4_K_M，469MB，291 tensors）：
+      架构感知配置提取、vocab 派生、Q5_0/Q4_K/Q6_K 反量化，与 Python gguf 参考实现一致
+- [x] `--inspect` CPU-only 检查模式（无需 GPU 即可验证任意 GGUF 文件）
+- [x] 修复加载路径暴露的真实 bug（架构前缀硬编码、vocab_size 来源错误、
+      未知量化类型静默假设 FP16），均有回归测试
+- [ ] 实现 tokenizer（Qwen2.5 为 gpt2 风格 BPE，GGUF 内嵌 tokens+merges，从 GGUF 读取）
+- [ ] GPU 环境验证权重上传与端到端生成（需有卡机器：`tiny_llm_demo model.gguf --prompt "..."`）
 - [ ] 与 llama.cpp 同模型同输入对比输出一致性（token 级 diff）
-- [ ] 修复加载路径暴露的真实 bug，逐项写回归测试
 
 **完成证据**：一条命令从 GGUF 到文本输出，且与 llama.cpp 输出对齐。
 
