@@ -1,127 +1,52 @@
-# 性能
+# 优化
 
-本指南介绍 Tiny-LLM 的性能优化技术。
+本页区分**已实现的优化**与**计划中的优化**。计划项的落地顺序见 [ROADMAP](../../ROADMAP.md)。
 
-## 基准测试
+## 已实现的优化
 
-### 运行基准测试
+### 1. W8A16 量化推理路径
 
-```bash
-./build/bin/tinyllm-bench --model model.bin --prompt "你好，世界！"
-```
+- INT8 权重 + FP16 激活，分组量化（`QuantizationParams::group_size`，默认 128，对称量化无零点）
+- 权重显存占用约为 FP16 的 1/2（不含 scale 开销）
+- 实现：`kernels/w8a16_matmul.cu`、`src/quantization.cpp`
 
-### 关键指标
+### 2. 显存预分配的 KV Cache
 
-| 指标 | 描述 |
-|------|------|
-| **Tokens/秒** | 生成吞吐量 |
-| **首个 Token 时间** | 首个 token 的延迟 |
-| **内存使用** | GPU 内存消耗 |
-| **利用率** | GPU 计算利用率 |
+- `KVCacheManager` 按 `KVCacheConfig`（层数、头数、head_dim、max_seq_len、max_batch_size）一次性预分配
+- 避免 decode 阶段动态分配；显存上界在启动时即可计算
+- 每序列 KV 显存估算公式：`2 × num_layers × num_kv_heads × head_dim × max_seq_len × 2 bytes`
 
-## 优化技术
+### 3. 共享内存与 warp 级 kernel 模式
 
-### 1. KV 缓存调优
+- `kernels/` 下的 attention / rmsnorm / elementwise kernel 使用共享内存分块与 warp 级归约
+- GQA 支持：`ModelConfig::num_kv_heads` 与 `num_heads` 可不同
 
-```cpp
-KVCacheConfig config;
-config.max_batch_size = 1;     // 单序列
-config.max_seq_len = 2048;      // 满足您的需求
-config.enable_swapping = false; // 单 GPU 时禁用
-```
+## 计划中的优化（按 ROADMAP 顺序）
 
-### 2. 批处理大小
+| 优化项 | 预期收益 | 状态 |
+|--------|----------|------|
+| 真实模型端到端 + 基准脚本 | 使所有优化可度量 | 待做（前置条件） |
+| CUDA Graphs | 降低 decode 阶段 kernel launch 开销 | 待做 |
+| FlashAttention 风格 attention | prefill 阶段显存与速度 | 待做（可复用 [cuflash-attn](https://github.com/AICL-Lab/cuflash-attn) 的经验） |
+| KV Cache swapping/offload | 支持超出显存的并发序列 | 待做 |
+| 连续批处理 | 吞吐导向场景 | 待做（调度层设计见 [paged-infer](https://github.com/AICL-Lab/paged-infer)） |
 
-对于吞吐量关键的应用：
+> 注意：上表中的配置开关（如 CUDA Graphs 开关）**目前尚不存在于代码中**，实现前请勿在任何文档中引用。
 
-```cpp
-// 批量处理多个序列
-engine.setBatchSize(8);
-```
+## 内存估算方法（理论值，非实测）
 
-### 3. Flash Attention
+推理时显存主要由三部分组成：
 
-启用 Flash Attention 以加速推理：
+| 组件 | 估算公式 |
+|------|----------|
+| 模型权重 (W8A16) | `num_params × 1 byte + scale 开销` |
+| KV Cache | `2 × num_layers × num_kv_heads × head_dim × max_seq_len × batch × 2 bytes` |
+| 激活与临时缓冲 | 与 hidden_dim、seq_len 相关，按实际分配统计 |
 
-```cpp
-config.enable_flash_attention = true;
-```
+实测显存分解将在基准测试阶段用 `cudaMemGetInfo` 差值法补充。
 
-### 4. CUDA Graphs
+## 通用测量建议
 
-减少内核启动开销：
-
-```cpp
-config.enable_cuda_graphs = true;
-```
-
-## 内存优化
-
-### 内存分布
-
-| 组件 | 内存 (LLaMA-7B) |
-|------|-----------------|
-| 模型权重 (INT8) | ~3.5 GB |
-| KV 缓存 (2048 上下文) | ~1.0 GB |
-| 激活值 | ~0.5 GB |
-| **总计** | ~5.0 GB |
-
-### 减少内存使用
-
-1. **减少上下文长度**:
-   ```cpp
-   config.max_seq_len = 1024;  // KV 缓存减半
-   ```
-
-2. **启用 KV 缓存卸载**:
-   ```cpp
-   config.enable_swapping = true;
-   ```
-
-3. **使用较小的批处理大小**:
-   ```cpp
-   config.max_batch_size = 1;
-   ```
-
-## 性能指南
-
-### GPU 选择
-
-| GPU | 推荐用途 |
-|-----|----------|
-| RTX 3060 (12GB) | 小型模型 (7B) |
-| RTX 4090 (24GB) | 中型模型 (13B-30B) |
-| A100 (40GB) | 大型模型 (65B+) |
-| H100 (80GB) | 最大型模型 |
-
-### 软件配置
-
-1. **使用 CUDA 12+** 以获得最佳性能
-2. **启用 P-State 0** 以获得最高时钟频率：
-   ```bash
-   sudo nvidia-smi -i 0 -pl 300  # 设置功率限制
-   ```
-3. **禁用 ECC** 以获得稍多内存：
-   ```bash
-   sudo nvidia-smi -e 0
-   ```
-
-## 故障排除性能问题
-
-### Token 生成速率低
-
-1. 检查 GPU 利用率：`nvidia-smi dmon`
-2. 验证 CUDA 版本兼容性
-3. 确保模型已加载到 GPU
-4. 检查是否存在 CPU 瓶颈
-
-### 内存错误
-
-1. 减少上下文长度
-2. 减少批处理大小
-3. 启用 KV 缓存交换
-
-## 下一步
-
-- [故障排除指南](/guide/troubleshooting) - 常见问题
-- [API 参考](/api/) - 完整的 API 文档
+1. 用 `nvidia-smi dmon` 观察 GPU 利用率与显存带宽
+2. 用 Nsight Systems 看时间线空洞，用 Nsight Compute 看 kernel 级瓶颈（见 [分析](./profiling)）
+3. 测量时固定时钟与功率限制，避免 boost 抖动影响对比

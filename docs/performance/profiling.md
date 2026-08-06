@@ -8,10 +8,10 @@
 
 ```bash
 # 基本分析
-nsys profile -o profile ./build/bin/tinyllm-bench --model model.bin
+nsys profile -o profile ./build/tiny_llm_demo model.bin
 
 # 包含 CUDA 追踪
-nsys profile -t cuda,nvtx,osrt,cudnn,cublas -o profile ./build/bin/tinyllm-bench
+nsys profile -t cuda,nvtx,osrt,cudnn,cublas -o profile ./build/tiny_llm_demo
 
 # 查看结果
 nsys-ui profile.qdrep
@@ -34,10 +34,10 @@ nsys-ui profile.qdrep
 
 ```bash
 # 分析所有内核
-ncu --set full -o kernel_profile ./build/bin/tinyllm-bench
+ncu --set full -o kernel_profile ./build/tiny_llm_demo
 
 # 分析特定内核
-ncu -k w8a16_matmul -o matmul_profile ./build/bin/tinyllm-bench
+ncu -k w8a16_matmul -o matmul_profile ./build/tiny_llm_demo
 
 # 查看结果
 ncu-ui kernel_profile.ncu-rep
@@ -62,7 +62,7 @@ ncu-ui kernel_profile.ncu-rep
 # 启用 CUDA 分析
 export CUDA_PROFILE=1
 export CUDA_PROFILE_CONFIG=profile_config.txt
-./build/bin/tinyllm-bench
+./build/tiny_llm_demo
 
 # 分析日志位置
 ls cuda_profile_*.log
@@ -87,10 +87,10 @@ cudaProfilerStop();
 
 ```bash
 # 检查内存错误
-cuda-memcheck ./build/bin/tinyllm-bench
+cuda-memcheck ./build/tiny_llm_demo
 
 # Compute sanitizer（更新版本）
-compute-sanitizer ./build/bin/tinyllm-bench
+compute-sanitizer ./build/tiny_llm_demo
 ```
 
 ### 内存使用追踪

@@ -229,10 +229,10 @@ std::cout << "GPU 内存: " << (total - free) / 1024 / 1024
 
 ```bash
 # 检查泄漏
-cuda-memcheck --tool memcheck ./build/bin/tinyllm-bench
+cuda-memcheck --tool memcheck ./build/tiny_llm_demo
 
 # 或使用 compute sanitizer
-compute-sanitizer --tool memcheck ./build/bin/tinyllm-bench
+compute-sanitizer --tool memcheck ./build/tiny_llm_demo
 ```
 
 ---

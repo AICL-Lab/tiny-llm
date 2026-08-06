@@ -1,79 +1,36 @@
 # 性能
 
-Tiny-LLM 的性能概览和基准测试。
+> **诚实声明**：截至当前版本，Tiny-LLM **尚未完成真实模型的端到端基准测试**。
+> 本页面只描述已验证的内容与基准测试计划；任何未在本仓库脚本中可复现的性能数字都不会出现在这里。
 
-## 核心结果
+## 当前已验证的内容
 
-| 指标 | 数值 | vs FP16 |
-|------|------|---------|
-| **内存** | 7.8 GB | **↓50%** |
-| **解码** | 85 tok/s | **↑9%** |
-| **精度** | 9.12 ppl | Δ 0.4% |
+| 项目 | 验证方式 | 状态 |
+|------|----------|------|
+| W8A16 矩阵乘数值正确性 | GTest + 与 FP16 参考实现差分对比 | ✅ |
+| Attention / RMSNorm / RoPE kernel | GTest 单元测试 | ✅ |
+| KV Cache 分配与回收 | 单元测试 + 不变量检查 | ✅ |
+| GGUF 解析（F16/F32/Q4_0/Q8_0 反量化） | 合成数据测试 | ✅ |
+| 真实模型端到端生成 | — | ❌ 缺少 tokenizer，未验证 |
+| 吞吐 / 延迟 / 显存基准 | — | ❌ 基准脚本待实现 |
 
-*基于 LLaMA-7B, RTX 4090, INT8 权重的基准测试*
+## 为什么还没有性能数字
 
----
+1. **缺少 tokenizer**：当前 generate API 以 token id 为输入输出，无法从文本提示端到端运行真实模型。
+2. **缺少基准脚本**：没有可复现的 benchmark 驱动（预热、迭代、统计口径都未固化）。
+3. **验证方法论要求**：本仓库遵循 [LEARNING_PATH](https://github.com/AICL-Lab/cuda-kernel-academy/blob/master/LEARNING_PATH.md) 的原则——没有真实硬件测量，不填写推测的吞吐或加速比。
 
-## 内存效率
+## 基准测试计划
 
-W8A16 量化提供显著的内存节省：
+见 [ROADMAP](../../ROADMAP.md) 第 2 阶段。目标产出：
 
-| 组件 | FP16 | INT8 (W8A16) | 节省 |
-|------|------|--------------|------|
-| 模型权重 | 13.5 GB | 7.0 GB | **48%** |
-| KV 缓存 (2K) | 1.0 GB | 1.0 GB | — |
-| 激活值 | 0.5 GB | 0.5 GB | — |
-| **总计** | 15.0 GB | 8.5 GB | **43%** |
-
----
-
-## 吞吐量
-
-### 解码阶段（Token 生成）
-
-```mermaid
-xychart-beta
-    title "解码吞吐量 (tokens/sec)"
-    x-axis ["RTX 3060", "RTX 4090", "A100 40GB", "H100"]
-    y-axis "Tokens/sec" 0-->150
-    bar [35, 85, 95, 140]
-```
-
-### 预填充阶段（提示处理）
-
-```mermaid
-xychart-beta
-    title "预填充吞吐量 (tokens/sec)"
-    x-axis ["RTX 3060", "RTX 4090", "A100 40GB", "H100"]
-    y-axis "Tokens/sec" 0-->1200
-    bar [280, 850, 950, 1150]
-```
-
----
-
-## 内核性能
-
-优化的 CUDA 内核实现高利用率：
-
-| 内核 | Tensor Core | 内存带宽 | 占用率 |
-|------|-------------|----------|--------|
-| w8a16_matmul | 92% | 580 GB/s | 87% |
-| attn_decode | 78% | 420 GB/s | 95% |
-| attn_prefill | 85% | 480 GB/s | 82% |
-| rmsnorm | — | 380 GB/s | 100% |
-
----
+- 真实模型（Qwen2-0.5B / TinyLlama-1.1B GGUF）端到端生成
+- 对比基线：llama.cpp（相同硬件、相同量化格式）
+- 指标：TTFT（首 token 延迟）、TPOT（每 token 延迟）、decode 吞吐（tok/s）、峰值显存
+- 复现方式：单一脚本 + 固定硬件/软件版本记录
 
 ## 章节
 
-- [基准测试](./benchmarks) - 详细的基准测试方法
-- [优化](./optimization) - 性能调优指南
-- [分析](./profiling) - Nsight 分析教程
-
-## 架构影响
-
-性能由架构决策驱动：
-
-- [W8A16 量化](/architecture/quantization) - 内存减少
-- [CUDA 内核](/architecture/cuda-kernels) - 计算优化
-- [KV 缓存](/architecture/kv-cache) - 高效解码
+- [基准测试](./benchmarks) - 基准测试方法与计划
+- [优化](./optimization) - 已实现的优化与路线图
+- [分析](./profiling) - Nsight 分析方法

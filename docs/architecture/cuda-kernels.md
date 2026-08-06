@@ -334,25 +334,11 @@ __global__ void rope_kernel(
 
 ---
 
-## Performance Benchmarks
+## 性能基准
 
-### Kernel Throughput
-
-```mermaid
-xychart-beta
-    title "Kernel Throughput on A100 (GB/s or TFLOPS)"
-    x-axis ["w8a16_matmul", "attn_decode", "attn_prefill", "rmsnorm", "rope"]
-    y-axis "Performance" 0-->100
-    bar [82, 780, 125, 1350, 890]
-```
-
-### Memory Bandwidth Utilization
-
-| Kernel | Theoretical BW | Achieved BW | Efficiency |
-|--------|---------------|-------------|------------|
-| w8a16_matmul | 2039 GB/s | 1650 GB/s | 81% |
-| attention_decode | 2039 GB/s | 1780 GB/s | 87% |
-| rmsnorm | 2039 GB/s | 1350 GB/s | 66% |
+> 本页不引用实测性能数字。kernel 的数值正确性由 `tests/test_kernels.cu` 与
+> `tests/test_w8a16_matmul.cu` 的差分测试保证；吞吐与带宽数据需要在真实硬件上
+> 用基准脚本产出，计划见仓库根目录 [ROADMAP](../../ROADMAP.md)。
 
 ---
 
