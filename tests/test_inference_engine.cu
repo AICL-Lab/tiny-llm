@@ -51,11 +51,12 @@ class InferenceEngineTest : public ::testing::Test {
 };
 
 // Unit test: Greedy sampling returns argmax
-TEST_F(InferenceEngineTest, LoadRejectsRuntimeGGUFPath) {
+TEST_F(InferenceEngineTest, GGUFLoadFailsOnMissingFile) {
+    // GGUF 运行时加载已实现；不存在的文件应返回解析错误
     ModelConfig config;
-    auto        result = InferenceEngine::load("model.gguf", config);
+    auto        result = InferenceEngine::load("missing-model.gguf", config);
     EXPECT_TRUE(result.isErr());
-    EXPECT_NE(result.error().find("GGUF runtime loading is not supported yet"), std::string::npos);
+    EXPECT_NE(result.error().find("Failed to parse GGUF"), std::string::npos);
 }
 
 TEST_F(InferenceEngineTest, GreedySamplingReturnsArgmax) {

@@ -298,12 +298,14 @@ TEST_F(BinLoaderTest, FileNotFound) {
                 result.error().find("Failed") != std::string::npos);
 }
 
-TEST_F(BinLoaderTest, RuntimeLoadRejectsGGUFPath) {
+TEST_F(BinLoaderTest, GGUFLoadFailsOnMissingFile) {
+    // GGUF 运行时加载已实现（ModelLoader::loadGGUF）；
+    // 不存在的文件应返回解析错误而非旧的"不支持"拒绝
     ModelConfig config;
-    auto        result = InferenceEngine::load("model.gguf", config);
+    auto        result = InferenceEngine::load("missing-model.gguf", config);
 
     EXPECT_TRUE(result.isErr());
-    EXPECT_NE(result.error().find("GGUF runtime loading is not supported yet"), std::string::npos);
+    EXPECT_NE(result.error().find("Failed to parse GGUF"), std::string::npos);
 }
 
 TEST_F(BinLoaderTest, TruncatedHeader) {
