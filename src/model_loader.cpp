@@ -120,9 +120,169 @@ Result<ModelWeights> ModelLoader::loadGGUF(const std::string &path, ModelConfig 
         return Result<ModelWeights>::err("GGUF runtime tensors missing: " + missing);
     }
 
-    return Result<ModelWeights>::err(
-        "GGUF runtime tensor conversion is not implemented; use GGUF parsing/metadata surfaces "
-        "only or convert to the supported binary runtime format first.");
+    // 所有必要 tensor 已验证存在，开始读取、转换并上传 GPU
+    ModelWeights weights;
+    bool         success = false;
+    auto         cleanup_on_error = [&]() {
+        if (!success) {
+            freeWeights(weights);
+        }
+    };
+
+    const int hidden   = config.hidden_dim;
+    const int kv_dim   = config.num_kv_heads * config.head_dim;
+    const int inter    = config.intermediate_dim;
+    const int group_sz = 128;
+
+    // 读取 tensor 原始数据并反量化为 FP16
+    auto load_f16 = [&](const GGUFTensorInfo *tensor) -> Result<std::vector<half>> {
+        auto data_result = parser.readTensorData(*tensor);
+        if (data_result.isErr()) {
+            return Result<std::vector<half>>::err(data_result.error());
+        }
+        const auto &raw  = data_result.value();
+        size_t      num  = tensor->numElements();
+
+        switch (tensor->type) {
+            case GGMLType::F16:
+                return Result<std::vector<half>>::ok(std::vector<half>(
+                    reinterpret_cast<const half *>(raw.data()),
+                    reinterpret_cast<const half *>(raw.data()) + num));
+            case GGMLType::F32:
+                return convertF32ToF16(reinterpret_cast<const float *>(raw.data()), num);
+            case GGMLType::Q4_0:
+                return dequantizeQ4_0(raw.data(), (num + 31) / 32);
+            case GGMLType::Q8_0:
+                return dequantizeQ8_0(raw.data(), (num + 31) / 32);
+            default:
+                return Result<std::vector<half>>::err("Unsupported GGML type for tensor " +
+                                                      tensor->name +
+                                                      ": only F16/F32/Q4_0/Q8_0 are supported");
+        }
+    };
+
+    // 转置: GGUF 行主序 [out, in] -> tiny-llm 行主序 [in, out]
+    auto transpose_f16 = [](std::vector<half> &data, int out_f, int in_f) {
+        std::vector<half> dst(static_cast<size_t>(in_f) * out_f);
+        for (int o = 0; o < out_f; ++o)
+            for (int i = 0; i < in_f; ++i)
+                dst[static_cast<size_t>(i) * out_f + o] =
+                    data[static_cast<size_t>(o) * in_f + i];
+        data = std::move(dst);
+    };
+
+    // 反量化 -> 转置 -> 重量化 W8A16 -> 上传 GPU
+    auto load_quantized = [&](const GGUFTensorInfo *tensor) -> Result<QuantizedWeight> {
+        if (!tensor) return Result<QuantizedWeight>::err("Tensor not found");
+
+        int in_f  = static_cast<int>(tensor->dimensions[0]);
+        int out_f = static_cast<int>(tensor->dimensions[1]);
+
+        auto f16_result = load_f16(tensor);
+        if (f16_result.isErr()) return Result<QuantizedWeight>::err(f16_result.error());
+        auto f16_data = f16_result.value();
+
+        transpose_f16(f16_data, out_f, in_f);
+
+        auto q = quantizeF16ToW8A16(f16_data.data(), in_f, out_f, group_sz);
+        if (q.isErr()) return Result<QuantizedWeight>::err(q.error());
+        auto [int8_data, scales] = q.value();
+
+        QuantizedWeight qw;
+        qw.rows       = in_f;
+        qw.cols       = out_f;
+        qw.group_size = group_sz;
+
+        CUDA_CHECK(cudaMalloc(&qw.data, int8_data.size()));
+        CUDA_CHECK(cudaMalloc(&qw.scales, scales.size() * sizeof(half)));
+        CUDA_CHECK(cudaMemcpy(qw.data, int8_data.data(), int8_data.size(),
+                              cudaMemcpyHostToDevice));
+        CUDA_CHECK(cudaMemcpy(qw.scales, scales.data(), scales.size() * sizeof(half),
+                              cudaMemcpyHostToDevice));
+        return Result<QuantizedWeight>::ok(qw);
+    };
+
+    // 反量化 -> 直接上传 FP16 到 GPU
+    auto load_fp16 = [&](const GGUFTensorInfo *tensor) -> Result<half *> {
+        if (!tensor) return Result<half *>::err("Tensor not found");
+        auto f16_result = load_f16(tensor);
+        if (f16_result.isErr()) return Result<half *>::err(f16_result.error());
+        const auto &f16_data = f16_result.value();
+        half *d_ptr = nullptr;
+        CUDA_CHECK(cudaMalloc(&d_ptr, f16_data.size() * sizeof(half)));
+        CUDA_CHECK(cudaMemcpy(d_ptr, f16_data.data(), f16_data.size() * sizeof(half),
+                              cudaMemcpyHostToDevice));
+        return Result<half *>::ok(d_ptr);
+    };
+
+    // --- Token embedding (FP16) ---
+    auto *emb = find_any_tensor({"token_embd.weight", "tok_embeddings.weight"});
+    auto emb_r = load_fp16(emb);
+    if (emb_r.isErr()) {
+        cleanup_on_error();
+        return Result<ModelWeights>::err("token embedding: " + emb_r.error());
+    }
+    weights.token_embedding = emb_r.value();
+
+    // --- 每层权重 ---
+    weights.layers.resize(config.num_layers);
+    for (int layer = 0; layer < config.num_layers; ++layer) {
+        auto &lw = weights.layers[layer];
+        const std::string pfx_blk   = "blk." + std::to_string(layer) + ".";
+        const std::string pfx_llama = "layers." + std::to_string(layer) + ".";
+
+        auto find_l = [&](std::initializer_list<const char *> suffixes) -> const GGUFTensorInfo * {
+            for (const char *s : suffixes) {
+                if (auto *t = find_tensor(pfx_blk + s)) return t;
+                if (auto *t = find_tensor(pfx_llama + s)) return t;
+            }
+            return nullptr;
+        };
+
+        auto load_qw = [&](QuantizedWeight &target, std::initializer_list<const char *> names)
+            -> Result<void> {
+            auto *t = find_l(names);
+            auto r = load_quantized(t);
+            if (r.isErr()) {
+                std::string n;
+                for (const char *nm : names) { if (!n.empty()) n += "|"; n += nm; }
+                return Result<void>::err("Layer " + std::to_string(layer) + " " + n + ": " + r.error());
+            }
+            target = r.value();
+            return Result<void>::ok();
+        };
+
+        if (auto r = load_qw(lw.wq, {"attn_q.weight"}); r.isErr()) { cleanup_on_error(); return Result<ModelWeights>::err(r.error()); }
+        if (auto r = load_qw(lw.wk, {"attn_k.weight"}); r.isErr()) { cleanup_on_error(); return Result<ModelWeights>::err(r.error()); }
+        if (auto r = load_qw(lw.wv, {"attn_v.weight"}); r.isErr()) { cleanup_on_error(); return Result<ModelWeights>::err(r.error()); }
+        if (auto r = load_qw(lw.wo, {"attn_output.weight", "attn_out.weight"}); r.isErr()) { cleanup_on_error(); return Result<ModelWeights>::err(r.error()); }
+        if (auto r = load_qw(lw.w1, {"ffn_gate.weight"}); r.isErr()) { cleanup_on_error(); return Result<ModelWeights>::err(r.error()); }
+        if (auto r = load_qw(lw.w2, {"ffn_down.weight"}); r.isErr()) { cleanup_on_error(); return Result<ModelWeights>::err(r.error()); }
+        if (auto r = load_qw(lw.w3, {"ffn_up.weight"}); r.isErr()) { cleanup_on_error(); return Result<ModelWeights>::err(r.error()); }
+
+        // RMSNorm 权重 (FP16)
+        auto att_r = load_fp16(find_l({"attn_norm.weight"}));
+        if (att_r.isErr()) { cleanup_on_error(); return Result<ModelWeights>::err("Layer " + std::to_string(layer) + " attn_norm: " + att_r.error()); }
+        lw.rms_att_weight = att_r.value();
+
+        auto ffn_r = load_fp16(find_l({"ffn_norm.weight"}));
+        if (ffn_r.isErr()) { cleanup_on_error(); return Result<ModelWeights>::err("Layer " + std::to_string(layer) + " ffn_norm: " + ffn_r.error()); }
+        lw.rms_ffn_weight = ffn_r.value();
+    }
+
+    // --- Final norm (FP16) ---
+    auto fn_r = load_fp16(find_any_tensor({"output_norm.weight", "norm.weight"}));
+    if (fn_r.isErr()) { cleanup_on_error(); return Result<ModelWeights>::err("final norm: " + fn_r.error()); }
+    weights.final_norm_weight = fn_r.value();
+
+    // --- LM head (量化) ---
+    auto lm_r = load_quantized(find_any_tensor({"output.weight", "lm_head.weight"}));
+    if (lm_r.isErr()) { cleanup_on_error(); return Result<ModelWeights>::err("LM head: " + lm_r.error()); }
+    weights.lm_head = lm_r.value();
+
+    success = true;
+    return Result<ModelWeights>::ok(std::move(weights));
+
 }
 
 Result<ModelWeights> ModelLoader::loadBin(const std::string &path, const ModelConfig &config) {

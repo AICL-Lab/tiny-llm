@@ -27,9 +27,17 @@ Result<std::unique_ptr<InferenceEngine>> InferenceEngine::load(const std::string
     }
 
     if (model_path.size() >= 5 && model_path.substr(model_path.size() - 5) == ".gguf") {
-        return Result<std::unique_ptr<InferenceEngine>>::err(
-            "GGUF runtime loading is not supported yet; use the test binary format loaded via "
-            "loadBin().");
+        // GGUF 运行时加载：从文件提取配置并转换权重到 W8A16
+        ModelConfig gguf_config = config;
+        auto        result      = ModelLoader::loadGGUF(model_path, gguf_config);
+        if (result.isErr()) {
+            TLLM_ERROR("Failed to load GGUF model: {}", result.error());
+            return Result<std::unique_ptr<InferenceEngine>>::err(result.error());
+        }
+        auto engine = std::make_unique<InferenceEngine>(gguf_config, std::move(result.value()));
+        TLLM_INFO("GGUF model loaded: hidden_dim={}, num_layers={}, vocab_size={}",
+                  gguf_config.hidden_dim, gguf_config.num_layers, gguf_config.vocab_size);
+        return Result<std::unique_ptr<InferenceEngine>>::ok(std::move(engine));
     }
 
     // Load model weights

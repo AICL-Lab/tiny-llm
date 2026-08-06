@@ -28,11 +28,11 @@ Tiny-LLM 将仓库表面保持得尽量小：CUDA/C++17 内核、W8A16 量化、
 - **基于 `Result<T>` 的可失败 API**：宿主侧错误传播更直接
 - **GoogleTest + RapidCheck 测试覆盖**：覆盖核心运行时路径
 
-## 模型加载边界
+## 模型加载
 
-- `InferenceEngine::load()` 当前接受仓库支持的**二进制运行时格式**。
-- `GGUFParser` 用于 **GGUF 解析、元数据提取和 tensor 检查**。
-- 直接用 GGUF 进行运行时加载 **不属于** 当前推理路径。
+- `InferenceEngine::load()` 支持 **GGUF** 和**二进制运行时格式**两种加载路径。
+- GGUF 路径：`GGUFParser` 解析文件、提取模型配置，读取 tensor 数据并反量化（支持 F16/F32/Q4_0/Q8_0），重量化为 W8A16 后上传 GPU。
+- 二进制路径：`loadBin()` 直接读取预量化的 W8A16 权重，主要用于测试。
 
 ## 从源码构建
 
