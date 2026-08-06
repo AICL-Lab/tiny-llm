@@ -42,6 +42,35 @@ Result<std::vector<half>> dequantizeQ4_0(const uint8_t *data, size_t num_blocks)
 Result<std::vector<half>> dequantizeQ8_0(const uint8_t *data, size_t num_blocks);
 
 /**
+ * @brief Dequantize Q5_0 blocks to F16
+ * Q5_0 format: 32 values per 22-byte block (d fp16 + 32 high bits + 32 x 4-bit low quants)
+ * @param data Raw Q5_0 data
+ * @param num_blocks Number of blocks
+ * @return Result containing vector of F16 values or error
+ */
+Result<std::vector<half>> dequantizeQ5_0(const uint8_t *data, size_t num_blocks);
+
+/**
+ * @brief Dequantize Q4_K blocks to F16
+ * Q4_K format: 256 values per 144-byte super-block
+ * (d/dmin fp16 + 12 bytes packed 6-bit scales/4-bit mins + 4-bit quants)
+ * @param data Raw Q4_K data
+ * @param num_blocks Number of super-blocks
+ * @return Result containing vector of F16 values or error
+ */
+Result<std::vector<half>> dequantizeQ4_K(const uint8_t *data, size_t num_blocks);
+
+/**
+ * @brief Dequantize Q6_K blocks to F16
+ * Q6_K format: 256 values per 210-byte super-block
+ * (6-bit quants split into low/high parts + 16 int8 scales + d fp16)
+ * @param data Raw Q6_K data
+ * @param num_blocks Number of super-blocks
+ * @return Result containing vector of F16 values or error
+ */
+Result<std::vector<half>> dequantizeQ6_K(const uint8_t *data, size_t num_blocks);
+
+/**
  * @brief Quantize F16 values to W8A16 format (int8 with per-group scales)
  * @param f16_data F16 input data
  * @param rows Number of rows

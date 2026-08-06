@@ -154,10 +154,16 @@ Result<ModelWeights> ModelLoader::loadGGUF(const std::string &path, ModelConfig 
                 return dequantizeQ4_0(raw.data(), (num + 31) / 32);
             case GGMLType::Q8_0:
                 return dequantizeQ8_0(raw.data(), (num + 31) / 32);
+            case GGMLType::Q5_0:
+                return dequantizeQ5_0(raw.data(), (num + 31) / 32);
+            case GGMLType::Q4_K:
+                return dequantizeQ4_K(raw.data(), (num + 255) / 256);
+            case GGMLType::Q6_K:
+                return dequantizeQ6_K(raw.data(), (num + 255) / 256);
             default:
-                return Result<std::vector<half>>::err("Unsupported GGML type for tensor " +
-                                                      tensor->name +
-                                                      ": only F16/F32/Q4_0/Q8_0 are supported");
+                return Result<std::vector<half>>::err(
+                    "Unsupported GGML type for tensor " + tensor->name +
+                    ": supported types are F16/F32/Q4_0/Q5_0/Q8_0/Q4_K/Q6_K");
         }
     };
 

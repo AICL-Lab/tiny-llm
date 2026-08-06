@@ -446,32 +446,44 @@ Result<ModelConfig> GGUFParser::extractModelConfig() const {
         return false;
     };
 
-    // Extract LLaMA-style metadata
-    // Standard GGUF metadata keys
-    get_int("llama.embedding_length", config.hidden_dim);
-    get_int("llama.block_count", config.num_layers);
-    get_int("llama.attention.head_count", config.num_heads);
-    get_int("llama.attention.head_count_kv", config.num_kv_heads);
-    get_int("llama.context_length", config.max_seq_len);
+    // GGUF 标准：配置键以 general.architecture 声明的架构名为前缀
+    // （qwen2.embedding_length / llama.block_count / phi3.* ...）。
+    // 依次尝试 {arch}.* -> llama.*（历史兼容）-> general.*（非标准兜底）。
+    std::string arch = "llama";
+    if (auto it = metadata_.kv.find("general.architecture"); it != metadata_.kv.end()) {
+        if (const auto *arch_str = std::get_if<std::string>(&it->second)) {
+            arch = *arch_str;
+        }
+    }
 
-    // Try alternative keys (some models use different naming)
-    get_int("general.embedding_length", config.hidden_dim);
-    get_int("general.block_count", config.num_layers);
-    get_int("general.head_count", config.num_heads);
-    get_int("general.head_count_kv", config.num_kv_heads);
-    get_int("general.context_length", config.max_seq_len);
+    auto get_arch_int = [&](const std::string &name, int &out) {
+        return get_int(arch + "." + name, out) || get_int("llama." + name, out) ||
+               get_int("general." + name, out);
+    };
+    auto get_arch_float = [&](const std::string &name, float &out) {
+        return get_float(arch + "." + name, out) || get_float("llama." + name, out);
+    };
 
-    // Tokenizer metadata
-    get_int("tokenizer.ggml.model.vocab_size", config.vocab_size);
+    get_arch_int("embedding_length", config.hidden_dim);
+    get_arch_int("block_count", config.num_layers);
+    get_arch_int("attention.head_count", config.num_heads);
+    get_arch_int("attention.head_count_kv", config.num_kv_heads);
+    get_arch_int("context_length", config.max_seq_len);
+    get_arch_int("feed_forward_length", config.intermediate_dim);
+    get_arch_float("attention.layer_norm_rms_epsilon", config.rms_norm_eps);
+    get_arch_float("rope.freq_base", config.rope_theta);
+
+    // 词表大小：GGUF 中不存在独立的 vocab_size 键，
+    // 从 tokenizer.ggml.tokens 数组长度派生
+    if (auto it = metadata_.kv.find("tokenizer.ggml.tokens"); it != metadata_.kv.end()) {
+        if (const auto *tokens = std::get_if<std::vector<std::string>>(&it->second)) {
+            config.vocab_size = static_cast<int>(tokens->size());
+        }
+    }
+
+    // Tokenizer 特殊 token
     get_int("tokenizer.ggml.eos_token_id", config.eos_token_id);
     get_int("tokenizer.ggml.bos_token_id", config.bos_token_id);
-
-    // RoPE and normalization
-    get_float("llama.attention.layer_norm_rms_epsilon", config.rms_norm_eps);
-    get_float("llama.rope.freq_base", config.rope_theta);
-
-    // FFN dimension
-    get_int("llama.feed_forward_length", config.intermediate_dim);
 
     // Calculate derived values
     if (config.num_heads > 0) {
@@ -524,7 +536,8 @@ Result<std::vector<uint8_t>> GGUFParser::readTensorData(const GGUFTensorInfo &te
 
     size_t size = tensor.calculateSize();
     if (!tensor.dimensions.empty() && size == 0) {
-        return Result<std::vector<uint8_t>>::err("Tensor size overflow for: " + tensor.name);
+        return Result<std::vector<uint8_t>>::err("Tensor size overflow or unsupported type for: " +
+                                                 tensor.name);
     }
     std::vector<uint8_t> data(size);
     file.read(reinterpret_cast<char *>(data.data()), size);
@@ -597,10 +610,26 @@ size_t GGUFTensorInfo::calculateSize() const {
     case GGMLType::Q4_1:
         // Q4_1: 32 values per block, each block has 16 int8 + 2 half (scale + min)
         return blockScaledSize(32, 16 + 4);
+    case GGMLType::Q5_0:
+        // Q5_0: 32 values per block = 2B scale + 4B high bits + 16B low quants
+        return blockScaledSize(32, 22);
+    case GGMLType::Q5_1:
+        // Q5_1: 32 values per block = 2B scale + 2B min + 4B high bits + 16B low quants
+        return blockScaledSize(32, 24);
+    case GGMLType::Q2_K:
+        return blockScaledSize(256, 84);
+    case GGMLType::Q3_K:
+        return blockScaledSize(256, 110);
+    case GGMLType::Q4_K:
+        return blockScaledSize(256, 144);
+    case GGMLType::Q5_K:
+        return blockScaledSize(256, 176);
+    case GGMLType::Q6_K:
+        return blockScaledSize(256, 210);
     default:
-        // Default to 2 bytes per element (FP16)
-        TLLM_WARN("Unknown tensor type {}, assuming FP16 size", static_cast<uint32_t>(type));
-        return scaledSize(2);
+        // 未知/未支持的类型：显式失败，绝不按 FP16 估算造成静默错位读取
+        TLLM_ERROR("Unsupported GGML tensor type {}", static_cast<uint32_t>(type));
+        return 0;
     }
 }
 
