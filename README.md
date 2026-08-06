@@ -10,7 +10,7 @@
 ![C++](https://img.shields.io/badge/C%2B%2B-17-00599C?logo=c%2B%2B&logoColor=white)
 ![CMake](https://img.shields.io/badge/CMake-3.18+-064F8C?logo=cmake&logoColor=white)
 
-[文档](https://aicl-lab.github.io/tiny-llm/) • [架构说明](https://aicl-lab.github.io/tiny-llm/architecture/) • [API](https://aicl-lab.github.io/tiny-llm/api/) • [更新日志](CHANGELOG.md)
+[文档](https://aicl-lab.github.io/tiny-llm/) • [架构说明](https://aicl-lab.github.io/tiny-llm/architecture/) • [API](https://aicl-lab.github.io/tiny-llm/api/) • [路线图](ROADMAP.md) • [更新日志](CHANGELOG.md)
 
 ---
 
@@ -20,19 +20,34 @@ Tiny-LLM 将仓库表面保持得尽量小：CUDA/C++17 内核、W8A16 量化、
 
 在五仓学习路径中，本仓库只负责模型权重到 token 生成的运行时主线；CUDA/Triton kernel 学习和 Serving 调度保持在各自主仓。整体顺序见 [`cuda-kernel-academy/LEARNING_PATH.md`](https://github.com/AICL-Lab/cuda-kernel-academy/blob/master/LEARNING_PATH.md)。
 
+## 项目状态（诚实声明）
+
+| 能力 | 状态 |
+|------|------|
+| W8A16 量化 kernel 与运行时路径 | ✅ 已实现，有差分测试 |
+| KV Cache 管理、采样（temperature/top-k/top-p） | ✅ 已实现 |
+| GGUF 解析（F16/F32/Q4_0/Q8_0 反量化） | ✅ 已实现，合成数据测试通过 |
+| tokenizer | ❌ 未实现（generate API 以 token id 为输入输出） |
+| 真实模型端到端验证 | ❌ 未完成 |
+| 端到端性能基准 | ❌ 未完成，暂无可复现的性能数字 |
+
+当前开发重点见 [ROADMAP](ROADMAP.md)。性能相关的文档只描述方法与计划，不引用未实测的数字。
+
 ## 已实现能力
 
 - **W8A16 推理路径**：INT8 权重 + FP16 激活
 - **显式 KV Cache 管理**：面向自回归解码
 - **CUDA 原生 Kernel**：共享内存与 warp 级优化模式
 - **基于 `Result<T>` 的可失败 API**：宿主侧错误传播更直接
-- **GoogleTest + RapidCheck 测试覆盖**：覆盖核心运行时路径
+- **GoogleTest 测试覆盖**：kernel 数值差分、KV Cache 不变量、模型加载等核心路径
 
 ## 模型加载
 
 - `InferenceEngine::load()` 支持 **GGUF** 和**二进制运行时格式**两种加载路径。
 - GGUF 路径：`GGUFParser` 解析文件、提取模型配置，读取 tensor 数据并反量化（支持 F16/F32/Q4_0/Q8_0），重量化为 W8A16 后上传 GPU。
 - 二进制路径：`loadBin()` 直接读取预量化的 W8A16 权重，主要用于测试。
+
+> 注意：GGUF 加载路径已实现并通过合成数据测试，但**尚未用真实模型文件验证**；CLI（`tiny_llm_demo`）目前只报告 CUDA 就绪状态与格式说明，端到端生成请使用库 API。
 
 ## 从源码构建
 
