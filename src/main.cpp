@@ -1,5 +1,7 @@
 #include "tiny_llm/cuda_utils.h"
+#include "tiny_llm/gguf_parser.h"
 #include <cuda_runtime.h>
+#include <iomanip>
 #include <iostream>
 #include <string>
 
@@ -23,6 +25,9 @@ void printHelp(const char *program_name) {
     std::cout << "  -h, --help     Show this help message and exit" << std::endl;
     std::cout << "  -v, --version  Show version information and exit" << std::endl;
     std::cout << "  --info         Show detailed CUDA device information" << std::endl;
+    std::cout << "  --inspect      Parse a GGUF file and print config/tensor summary"
+              << std::endl;
+    std::cout << "                 (CPU-only, no GPU required)" << std::endl;
     std::cout << std::endl;
     std::cout << "Arguments:" << std::endl;
     std::cout << "  MODEL_PATH     Path to model file (.gguf or binary format)" << std::endl;
@@ -32,8 +37,7 @@ void printHelp(const char *program_name) {
     std::cout << "  " << program_name << " --info            # Show detailed device info"
               << std::endl;
     std::cout << "  " << program_name
-              << " model.gguf        # Inspect GGUF support notes (runtime load unsupported)"
-              << std::endl;
+              << " --inspect model.gguf # CPU-only GGUF config/tensor summary" << std::endl;
 }
 
 void printDetailedDeviceInfo() {
@@ -98,6 +102,91 @@ void printDetailedDeviceInfo() {
     }
 }
 
+const char *ggmlTypeName(tiny_llm::GGMLType type) {
+    switch (type) {
+    case tiny_llm::GGMLType::F32: return "F32";
+    case tiny_llm::GGMLType::F16: return "F16";
+    case tiny_llm::GGMLType::Q4_0: return "Q4_0";
+    case tiny_llm::GGMLType::Q4_1: return "Q4_1";
+    case tiny_llm::GGMLType::Q5_0: return "Q5_0";
+    case tiny_llm::GGMLType::Q5_1: return "Q5_1";
+    case tiny_llm::GGMLType::Q8_0: return "Q8_0";
+    case tiny_llm::GGMLType::Q8_1: return "Q8_1";
+    case tiny_llm::GGMLType::Q2_K: return "Q2_K";
+    case tiny_llm::GGMLType::Q3_K: return "Q3_K";
+    case tiny_llm::GGMLType::Q4_K: return "Q4_K";
+    case tiny_llm::GGMLType::Q5_K: return "Q5_K";
+    case tiny_llm::GGMLType::Q6_K: return "Q6_K";
+    case tiny_llm::GGMLType::Q8_K: return "Q8_K";
+    case tiny_llm::GGMLType::I8: return "I8";
+    case tiny_llm::GGMLType::I16: return "I16";
+    case tiny_llm::GGMLType::I32: return "I32";
+    case tiny_llm::GGMLType::I64: return "I64";
+    case tiny_llm::GGMLType::F64: return "F64";
+    default: return "UNKNOWN";
+    }
+}
+
+int inspectGGUF(const std::string &path) {
+    tiny_llm::GGUFParser parser(path);
+    auto                 parse_result = parser.parse();
+    if (parse_result.isErr()) {
+        std::cerr << "GGUF parse failed: " << parse_result.error() << std::endl;
+        return 1;
+    }
+
+    const auto &header = parser.getHeader();
+    std::cout << "=== GGUF File: " << path << " ===" << std::endl;
+    std::cout << "Version: " << header.version << "  Tensors: " << header.tensor_count
+              << "  Metadata KV: " << header.metadata_kv_count << std::endl;
+
+    const auto &metadata = parser.getMetadata();
+    if (auto arch = metadata.get<std::string>("general.architecture"); !arch.isErr()) {
+        std::cout << "Architecture: " << arch.value() << std::endl;
+    }
+    if (auto name = metadata.get<std::string>("general.name"); !name.isErr()) {
+        std::cout << "Name: " << name.value() << std::endl;
+    }
+
+    auto config_result = parser.extractModelConfig();
+    if (config_result.isErr()) {
+        std::cerr << "Config extraction failed: " << config_result.error() << std::endl;
+        return 1;
+    }
+    const auto &config = config_result.value();
+    std::cout << "\n--- Model Config ---" << std::endl;
+    std::cout << "hidden_dim:       " << config.hidden_dim << std::endl;
+    std::cout << "num_layers:       " << config.num_layers << std::endl;
+    std::cout << "num_heads:        " << config.num_heads << std::endl;
+    std::cout << "num_kv_heads:     " << config.num_kv_heads << std::endl;
+    std::cout << "head_dim:         " << config.head_dim << std::endl;
+    std::cout << "intermediate_dim: " << config.intermediate_dim << std::endl;
+    std::cout << "vocab_size:       " << config.vocab_size << std::endl;
+    std::cout << "max_seq_len:      " << config.max_seq_len << std::endl;
+    std::cout << "rope_theta:       " << config.rope_theta << std::endl;
+    std::cout << "rms_norm_eps:     " << config.rms_norm_eps << std::endl;
+
+    std::cout << "\n--- Tensors ---" << std::endl;
+    std::cout << std::left << std::setw(36) << "name" << std::setw(8) << "type" << std::setw(20)
+              << "dims" << "bytes" << std::endl;
+    uint64_t total_bytes = 0;
+    for (const auto &tensor : parser.getTensors()) {
+        std::ostringstream dims;
+        for (size_t i = 0; i < tensor.dimensions.size(); ++i) {
+            if (i > 0) dims << "x";
+            dims << tensor.dimensions[i];
+        }
+        const size_t bytes = tensor.calculateSize();
+        total_bytes += bytes;
+        std::cout << std::left << std::setw(36) << tensor.name << std::setw(8)
+                  << ggmlTypeName(tensor.type) << std::setw(20) << dims.str() << bytes
+                  << std::endl;
+    }
+    std::cout << "\nTotal tensor data: " << total_bytes / (1024.0 * 1024.0) << " MB"
+              << std::endl;
+    return 0;
+}
+
 } // namespace
 
 int main(int argc, char **argv) {
@@ -105,6 +194,7 @@ int main(int argc, char **argv) {
     bool        show_help = false;
     bool        show_version = false;
     bool        show_info = false;
+    bool        show_inspect = false;
     std::string model_path;
 
     for (int i = 1; i < argc; ++i) {
@@ -115,6 +205,8 @@ int main(int argc, char **argv) {
             show_version = true;
         } else if (arg == "--info") {
             show_info = true;
+        } else if (arg == "--inspect") {
+            show_inspect = true;
         } else if (arg[0] != '-') {
             model_path = arg;
         } else {
@@ -134,6 +226,15 @@ int main(int argc, char **argv) {
     if (show_version) {
         printVersion();
         return 0;
+    }
+
+    // --inspect 为 CPU-only 路径，不需要 GPU
+    if (show_inspect) {
+        if (model_path.empty()) {
+            std::cerr << "--inspect requires a GGUF file path" << std::endl;
+            return 1;
+        }
+        return inspectGGUF(model_path);
     }
 
     // Basic CUDA check
@@ -178,11 +279,11 @@ int main(int argc, char **argv) {
     // Handle model path argument
     if (!model_path.empty()) {
         if (model_path.size() >= 5 && model_path.substr(model_path.size() - 5) == ".gguf") {
-            std::cout << "\nRuntime note: GGUF parsing/validation is available, but runtime GGUF "
-                         "loading is intentionally unsupported."
+            std::cout << "\nRuntime note: GGUF parsing and weight loading are implemented via "
+                         "the library API (ModelLoader::loadGGUF)."
                       << std::endl;
-            std::cout << "Use the test binary format consumed by ModelLoader::loadBin() for "
-                         "end-to-end loading."
+            std::cout << "This demo binary does not run generation yet (tokenizer pending, see "
+                         "ROADMAP.md). Use --inspect for a CPU-only GGUF summary."
                       << std::endl;
         } else {
             std::cout << "\nRuntime note: the demo binary currently reports CUDA readiness only."
