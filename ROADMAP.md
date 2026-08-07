@@ -17,7 +17,9 @@
 - [x] `--inspect` CPU-only 检查模式（无需 GPU 即可验证任意 GGUF 文件）
 - [x] 修复加载路径暴露的真实 bug（架构前缀硬编码、vocab_size 来源错误、
       未知量化类型静默假设 FP16），均有回归测试
-- [ ] 实现 tokenizer（Qwen2.5 为 gpt2 风格 BPE，GGUF 内嵌 tokens+merges，从 GGUF 读取）
+- [x] 实现 tokenizer（Qwen2.5 为 gpt2 风格 BPE，GGUF 内嵌 tokens+merges，从 GGUF 读取）
+      ——手写 Qwen2 预分词正则 + GPT-2 字节编码 + BPE，与 HuggingFace tokenizers
+      库 30 例 417 token 逐 id 差分对齐，decode 无损往返
 - [ ] GPU 环境验证权重上传与端到端生成（需有卡机器：`tiny_llm_demo model.gguf --prompt "..."`）
 - [ ] 与 llama.cpp 同模型同输入对比输出一致性（token 级 diff）
 

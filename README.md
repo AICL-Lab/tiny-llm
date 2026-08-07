@@ -28,8 +28,8 @@ Tiny-LLM 将仓库表面保持得尽量小：CUDA/C++17 内核、W8A16 量化、
 | KV Cache 管理、采样（temperature/top-k/top-p） | ✅ 已实现 |
 | GGUF 解析与反量化（F16/F32/Q4_0/Q5_0/Q8_0/Q4_K/Q6_K） | ✅ 已实现，真实模型验证通过（见下） |
 | 架构感知配置提取（qwen2/llama/...） | ✅ 已实现，真实模型验证通过 |
-| tokenizer | ❌ 未实现（generate API 以 token id 为输入输出） |
-| 真实模型端到端生成 | ⏳ 权重加载路径已验证；tokenizer 与 GPU 生成待完成 |
+| tokenizer | ✅ 已实现，与 HuggingFace tokenizers 差分测试逐 id 对齐（30 例 417 token） |
+| 真实模型端到端生成 | ⏳ 权重加载与 tokenizer 已验证；GPU 端到端生成待完成（需有卡机器） |
 | 端到端性能基准 | ❌ 未完成，暂无可复现的性能数字 |
 
 当前开发重点见 [ROADMAP](ROADMAP.md)。性能相关的文档只描述方法与计划，不引用未实测的数字。
@@ -53,7 +53,7 @@ Tiny-LLM 将仓库表面保持得尽量小：CUDA/C++17 内核、W8A16 量化、
 > 首块反量化均与 Python `gguf` 参考实现一致（见 `tests/test_quantization.cpp`，
 > 设置环境变量 `TLLM_GGUF_TEST_MODEL` 可复现）。
 > CLI 提供 CPU-only 的 `tiny_llm_demo --inspect model.gguf` 查看配置与 tensor 摘要；
-> 端到端文本生成待 tokenizer 完成（见 [ROADMAP](ROADMAP.md)）。
+> tokenizer 已实现并通过差分验证；端到端文本生成待 GPU 环境（见 [ROADMAP](ROADMAP.md)）。
 
 ## 从源码构建
 

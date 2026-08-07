@@ -6,6 +6,13 @@ All notable tracked releases of Tiny-LLM are recorded here.
 
 ### Added
 
+- gpt2 风格字节级 BPE tokenizer：从 GGUF 读取 tokens/merges/token_type，
+  手写 Qwen2 预分词正则（Unicode 感知）+ GPT-2 字节编码 + BPE 合并，
+  支持 CONTROL/USER_DEFINED 特殊 token 精确隔离与字节级无损 decode
+- `loadTokenizerData`：从 GGUF 元数据提取 TokenizerData
+- 测试：tokenizer 差分测试（对照 HuggingFace tokenizers 库，30 例 417 token
+  逐 id 对齐 + decode 无损往返），门控于 TLLM_GGUF_TEST_MODEL
+
 - Q5_0 / Q4_K / Q6_K GGUF 反量化（Q4_K_M 文件的实际量化类型）
 - 架构感知的 GGUF 配置提取：按 general.architecture 前缀读取（qwen2/llama/...），
   vocab_size 从 tokenizer.ggml.tokens 数组长度派生
@@ -19,6 +26,9 @@ All notable tracked releases of Tiny-LLM are recorded here.
 - 移除断言旧行为（"GGUF 运行时加载不支持"）的过时测试，改为验证真实的加载错误路径
 
 ### Verified
+
+- tokenizer：C++ encode 与 HuggingFace tokenizers 权威实现逐 id 一致
+  （151936 词表，含 CJK/emoji/缩写/空白/特殊 token 等 30 例）
 
 - Qwen2.5-0.5B-Instruct Q4_K_M（GGUF v3，291 tensors，469MB）：
   配置提取与 Q5_0/Q4_K/Q6_K 首块反量化同 Python gguf 参考实现一致
