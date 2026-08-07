@@ -113,6 +113,7 @@ if(BUILD_TESTS)
     )
     target_include_directories(tiny_llm_tests PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}/kernels
+        ${CMAKE_CURRENT_SOURCE_DIR}/tests
     )
     target_compile_options(tiny_llm_tests PRIVATE
         $<$<COMPILE_LANGUAGE:CUDA>:--expt-relaxed-constexpr>
