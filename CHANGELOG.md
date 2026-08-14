@@ -32,8 +32,17 @@ All notable tracked releases of Tiny-LLM are recorded here.
 - calculateSize 不再对未知量化类型按 FP16 估算（会导致静默错位读取），改为显式失败
 - 移除断言旧行为（"GGUF 运行时加载不支持"）的过时测试，改为验证真实的加载错误路径
 
+### Added
+
+- C ABI 执行后端（`include/tiny_llm/ffi.h` + `src/ffi.cpp`）：`tinyllm_load` /
+  `tinyllm_step` / `tinyllm_allocate_sequence` / `tinyllm_free_sequence` / `tinyllm_free`，
+  契约与 paged-infer `src/tiny_llm_ffi.rs` 逐字段对齐（策略 2：连续 KV，位置引擎内部跟踪）。
+  真实模型端到端验证：prefill/decode 步进生成与 demo CLI 输出一致。
+
 ### Tests
 
+- C ABI 端到端测试（TLLM_GGUF_TEST_MODEL 门控）：load/allocate/step/free 全流程 +
+  非法参数错误处理
 - W8A16 大矩阵差分测试（M*N >= 4096 走 tiled 分支，与 reference 对齐）
 - Attention GQA decode 与 CPU 参考逐元素对比（此前仅验证"不 crash/非零"）
 - 真实模型权重量化往返测试（反量化 -> 转置 -> W8A16 量化 -> 重建误差受控）

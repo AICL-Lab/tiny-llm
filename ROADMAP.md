@@ -55,7 +55,10 @@
 - [ ] GQA/MQA 模型真实验证（num_kv_heads < num_heads）
 - [ ] 长上下文 KV Cache 显存实测曲线
 - [ ] 失败路径审计：加载损坏文件、显存不足、超长输入的行为与测试
-- [ ] （可选）与 [paged-infer](https://github.com/AICL-Lab/paged-infer) 的调度层对接原型
+- [x] 导出 C ABI（`ffi.h`/`ffi.cpp`：`tinyllm_load` / `tinyllm_step` / `tinyllm_allocate_sequence`
+      / `tinyllm_free_sequence` / `tinyllm_free`），供 paged-infer 调度层接入（里程碑 2 前置）
+- [ ] 与 [paged-infer](https://github.com/AICL-Lab/paged-infer) 的调度层对接（Rust 侧启用
+      `tiny-llm` feature + build.rs 链接 + `GPUExecutorTrait` 适配器，见其 ROADMAP 里程碑 3/4）
 
 ## 面试讲述要点（完成后自查）
 
