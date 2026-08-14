@@ -232,15 +232,25 @@ int tinyllm_allocate_sequence(TinyLlmHandle *handle, int seq_id, int num_tokens)
     if (handle == nullptr || num_tokens <= 0) return TLLM_ERR;
     auto *h = reinterpret_cast<TinyLlmHandleImpl *>(handle);
     try {
-        auto alloc = h->kv_cache->allocateSequence(num_tokens);
-        if (alloc.isErr()) return TLLM_ERR;
-        int kv_seq_id = alloc.value();
-        if (kv_seq_id != seq_id) return TLLM_ERR; // 契约：内部 seq_id 与调用方一致
+        auto alloc = h->kv_cache->allocateSequence(seq_id, num_tokens);
+        if (alloc.isErr()) {
+            if (std::getenv("TLLM_FFI_DEBUG")) {
+                fprintf(stderr, "  [ffi] allocate_sequence(%d,%d) fail: %s\n", seq_id,
+                        num_tokens, alloc.error().c_str());
+            }
+            return TLLM_ERR;
+        }
+        if (std::getenv("TLLM_FFI_DEBUG")) {
+            fprintf(stderr, "  [ffi] allocate_sequence(%d, %d) ok\n", seq_id, num_tokens);
+        }
         SeqState st;
         st.allocated = true;
         h->sequences[seq_id] = st;
         return TLLM_OK;
-    } catch (...) {
+    } catch (const std::exception &e) {
+        if (std::getenv("TLLM_FFI_DEBUG")) {
+            fprintf(stderr, "  [ffi] allocate_sequence(%d) threw: %s\n", seq_id, e.what());
+        }
         return TLLM_ERR;
     }
 }
@@ -257,11 +267,11 @@ int tinyllm_free_sequence(TinyLlmHandle *handle, int seq_id) {
     }
 }
 
-int tinyllm_step(TinyLlmHandle *handle, const int *input_tokens, const int *positions,
-                 const int *seq_lens, const int *block_tables,
+int tinyllm_step(TinyLlmHandle *handle, const int *seq_ids, const int *input_tokens,
+                 const int *positions, const int *seq_lens, const int *block_tables,
                  const unsigned char *is_prefill, int num_sequences, int *next_tokens,
                  float *logprobs, int logprobs_k) {
-    if (handle == nullptr || input_tokens == nullptr || seq_lens == nullptr ||
+    if (handle == nullptr || seq_ids == nullptr || input_tokens == nullptr || seq_lens == nullptr ||
         is_prefill == nullptr || next_tokens == nullptr || num_sequences <= 0) {
         return TLLM_ERR;
     }
@@ -272,7 +282,7 @@ int tinyllm_step(TinyLlmHandle *handle, const int *input_tokens, const int *posi
     for (int s = 0; s < num_sequences; ++s) {
         const int len = seq_lens[s];
         if (len <= 0) return TLLM_ERR;
-        const int seq_id = s;
+        const int seq_id = seq_ids[s];
         auto it = h->sequences.find(seq_id);
         if (it == h->sequences.end() || !it->second.allocated) return TLLM_ERR;
         auto &st = it->second;

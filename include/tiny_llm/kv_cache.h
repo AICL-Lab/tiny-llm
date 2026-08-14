@@ -41,6 +41,9 @@ class KVCacheManager {
     // Returns sequence ID on success, error on failure
     Result<int> allocateSequence(int max_len);
 
+    // 显式指定 seq_id 分配（C ABI 用：调用方管理序列 id）
+    Result<int> allocateSequence(int seq_id, int max_len);
+
     // Release cache for completed sequence
     // Returns error if sequence not found
     Result<void> releaseSequence(int seq_id);

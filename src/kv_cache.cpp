@@ -89,6 +89,10 @@ int KVCacheManager::findFreeSlot() const {
 }
 
 Result<int> KVCacheManager::allocateSequence(int max_len) {
+    return allocateSequence(next_seq_id_, max_len);
+}
+
+Result<int> KVCacheManager::allocateSequence(int seq_id, int max_len) {
     // Validate max_len
     if (max_len <= 0 || max_len > config_.max_seq_len) {
         return Result<int>::err("Invalid max_len: " + std::to_string(max_len) + " (must be 1-" +
@@ -106,14 +110,16 @@ Result<int> KVCacheManager::allocateSequence(int max_len) {
                                 std::to_string(getTotalMemory()) + " bytes");
     }
 
-    // Allocate slot
-    int seq_id = next_seq_id_++;
+    // Allocate slot（显式 seq_id 供 C ABI 与调用方 id 对齐）
     slots_[slot_idx].seq_id = seq_id;
     slots_[slot_idx].current_len = 0;
     slots_[slot_idx].max_len = max_len;
     slots_[slot_idx].active = true;
 
     seq_to_slot_[seq_id] = slot_idx;
+    if (seq_id >= next_seq_id_) {
+        next_seq_id_ = seq_id + 1;
+    }
 
     return Result<int>::ok(seq_id);
 }
