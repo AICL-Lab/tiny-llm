@@ -22,8 +22,22 @@ All notable tracked releases of Tiny-LLM are recorded here.
 
 ### Fixed
 
+- **Qwen2 attention bias 缺失（GPU 端到端乱码根因）**：加载并应用 attn_q/k/v.bias，
+  补齐 Qwen2 系 q/k/v 投影的 bias 项；修复后输出与 llama.cpp 前 14 token 完全一致
+- **共享层工作区（OOM 修复）**：中间激活缓冲改为所有层复用（LayerWorkspace），
+  修复 24 层每层独立分配导致的显存爆炸（0.5B 模型在 6GB 卡无法加载）
+- **attention O 投影非就地（未初始化内存/不确定输出）**：注意力输出改用独立 attn_buf，
+  修复就地 matmul 输入被覆盖导致的数据竞争与不确定生成
+- **lm_head 支持 FP16**：output 层不量化，保持 logits 精度（W8A16 作为后备）
 - calculateSize 不再对未知量化类型按 FP16 估算（会导致静默错位读取），改为显式失败
 - 移除断言旧行为（"GGUF 运行时加载不支持"）的过时测试，改为验证真实的加载错误路径
+
+### Tests
+
+- W8A16 大矩阵差分测试（M*N >= 4096 走 tiled 分支，与 reference 对齐）
+- Attention GQA decode 与 CPU 参考逐元素对比（此前仅验证"不 crash/非零"）
+- 真实模型权重量化往返测试（反量化 -> 转置 -> W8A16 量化 -> 重建误差受控）
+- demo CLI 支持 `--prompt` / `--max-tokens` / `--show-tokens` / `--use-reference`（GPU 端到端生成入口）
 
 ### Verified
 

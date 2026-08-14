@@ -1,5 +1,6 @@
 #include "tiny_llm/transformer.h"
 #include "attention.cuh"
+#include "rope.cuh"
 #include "elementwise.cuh"
 #include "rmsnorm.cuh"
 #include "tiny_llm/cuda_utils.h"
@@ -7,189 +8,178 @@
 #include "tiny_llm/validator.h"
 #include "w8a16_matmul.cuh"
 #include <cmath>
+#include <cstdlib>
 
 namespace tiny_llm {
 
-TransformerLayer::TransformerLayer(int layer_idx, const TransformerWeights &weights,
-                                   const ModelConfig &config)
-    : layer_idx_(layer_idx), weights_(weights), config_(config) {
-    // Allocate buffers for max batch size
-    max_batch_tokens_ = config_.max_seq_len; // Support full sequence in prefill
-    allocateBuffers();
+void LayerWorkspace::allocate(const ModelConfig &config) {
+    if (allocated) return;
+
+    int    max_tokens = config.max_seq_len; // Support full sequence in prefill
+    size_t hidden_size = static_cast<size_t>(max_tokens) * config.hidden_dim;
+    size_t qkv_size = static_cast<size_t>(max_tokens) * config.num_heads * config.head_dim;
+    size_t kv_size = static_cast<size_t>(max_tokens) * config.num_kv_heads * config.head_dim;
+    size_t ffn_size = static_cast<size_t>(max_tokens) * config.intermediate_dim;
+
+    CUDA_CHECK(cudaMalloc(&norm_output, hidden_size * sizeof(half)));
+    CUDA_CHECK(cudaMalloc(&q_buf, qkv_size * sizeof(half)));
+    CUDA_CHECK(cudaMalloc(&k_buf, kv_size * sizeof(half)));
+    CUDA_CHECK(cudaMalloc(&v_buf, kv_size * sizeof(half)));
+    CUDA_CHECK(cudaMalloc(&attn_output, hidden_size * sizeof(half)));
+    CUDA_CHECK(cudaMalloc(&attn_buf, hidden_size * sizeof(half)));
+    CUDA_CHECK(cudaMalloc(&ffn_gate, ffn_size * sizeof(half)));
+    CUDA_CHECK(cudaMalloc(&ffn_up, ffn_size * sizeof(half)));
+    CUDA_CHECK(cudaMalloc(&ffn_output, hidden_size * sizeof(half)));
+
+    if (std::getenv("TLLM_DEBUG_ZERO")) {
+        cudaMemset(norm_output, 0, hidden_size * sizeof(half));
+        cudaMemset(q_buf, 0, qkv_size * sizeof(half));
+        cudaMemset(k_buf, 0, kv_size * sizeof(half));
+        cudaMemset(v_buf, 0, kv_size * sizeof(half));
+        cudaMemset(attn_output, 0, hidden_size * sizeof(half));
+        cudaMemset(attn_buf, 0, hidden_size * sizeof(half));
+        cudaMemset(ffn_gate, 0, ffn_size * sizeof(half));
+        cudaMemset(ffn_up, 0, ffn_size * sizeof(half));
+        cudaMemset(ffn_output, 0, hidden_size * sizeof(half));
+    }
+
+    max_batch_tokens = max_tokens;
+    allocated = true;
 }
 
-TransformerLayer::~TransformerLayer() { freeBuffers(); }
+void LayerWorkspace::free() {
+    if (!allocated) return;
+
+    auto safe_free = [](half *&ptr) {
+        if (ptr) {
+            cudaError_t err = cudaFree(ptr);
+            if (err != cudaSuccess) {
+                fprintf(stderr, "CUDA error in LayerWorkspace::free: %s\n",
+                        cudaGetErrorString(err));
+            }
+            ptr = nullptr;
+        }
+    };
+    safe_free(norm_output);
+    safe_free(q_buf);
+    safe_free(k_buf);
+    safe_free(v_buf);
+    safe_free(attn_output);
+    safe_free(attn_buf);
+    safe_free(ffn_gate);
+    safe_free(ffn_up);
+    safe_free(ffn_output);
+
+    max_batch_tokens = 0;
+    allocated = false;
+}
+
+TransformerLayer::TransformerLayer(int layer_idx, const TransformerWeights &weights,
+                                   const ModelConfig &config, LayerWorkspace *workspace)
+    : layer_idx_(layer_idx), weights_(weights), config_(config), ws_(workspace) {}
+
+TransformerLayer::~TransformerLayer() {} // workspace 由引擎统一管理
 
 TransformerLayer::TransformerLayer(TransformerLayer &&other) noexcept
     : layer_idx_(other.layer_idx_), weights_(other.weights_), config_(other.config_),
-      norm_output_(other.norm_output_), q_buf_(other.q_buf_), k_buf_(other.k_buf_),
-      v_buf_(other.v_buf_), attn_output_(other.attn_output_), ffn_gate_(other.ffn_gate_),
-      ffn_up_(other.ffn_up_), ffn_output_(other.ffn_output_),
-      max_batch_tokens_(other.max_batch_tokens_), buffers_allocated_(other.buffers_allocated_) {
-    // Null out other's pointers
-    other.norm_output_ = nullptr;
-    other.q_buf_ = nullptr;
-    other.k_buf_ = nullptr;
-    other.v_buf_ = nullptr;
-    other.attn_output_ = nullptr;
-    other.ffn_gate_ = nullptr;
-    other.ffn_up_ = nullptr;
-    other.ffn_output_ = nullptr;
-    other.buffers_allocated_ = false;
+      ws_(other.ws_) {
+    other.ws_ = nullptr;
 }
 
 TransformerLayer &TransformerLayer::operator=(TransformerLayer &&other) noexcept {
     if (this != &other) {
-        freeBuffers();
-
         layer_idx_ = other.layer_idx_;
-        norm_output_ = other.norm_output_;
-        q_buf_ = other.q_buf_;
-        k_buf_ = other.k_buf_;
-        v_buf_ = other.v_buf_;
-        attn_output_ = other.attn_output_;
-        ffn_gate_ = other.ffn_gate_;
-        ffn_up_ = other.ffn_up_;
-        ffn_output_ = other.ffn_output_;
-        max_batch_tokens_ = other.max_batch_tokens_;
-        buffers_allocated_ = other.buffers_allocated_;
-
-        other.norm_output_ = nullptr;
-        other.q_buf_ = nullptr;
-        other.k_buf_ = nullptr;
-        other.v_buf_ = nullptr;
-        other.attn_output_ = nullptr;
-        other.ffn_gate_ = nullptr;
-        other.ffn_up_ = nullptr;
-        other.ffn_output_ = nullptr;
-        other.buffers_allocated_ = false;
+        ws_ = other.ws_;
+        other.ws_ = nullptr;
     }
     return *this;
 }
 
-void TransformerLayer::allocateBuffers() {
-    if (buffers_allocated_) return;
-
-    size_t hidden_size = max_batch_tokens_ * config_.hidden_dim;
-    size_t qkv_size = max_batch_tokens_ * config_.num_heads * config_.head_dim;
-    size_t kv_size = max_batch_tokens_ * config_.num_kv_heads * config_.head_dim;
-    size_t ffn_size = max_batch_tokens_ * config_.intermediate_dim;
-
-    CUDA_CHECK(cudaMalloc(&norm_output_, hidden_size * sizeof(half)));
-    CUDA_CHECK(cudaMalloc(&q_buf_, qkv_size * sizeof(half)));
-    CUDA_CHECK(cudaMalloc(&k_buf_, kv_size * sizeof(half)));
-    CUDA_CHECK(cudaMalloc(&v_buf_, kv_size * sizeof(half)));
-    CUDA_CHECK(cudaMalloc(&attn_output_, hidden_size * sizeof(half)));
-    CUDA_CHECK(cudaMalloc(&ffn_gate_, ffn_size * sizeof(half)));
-    CUDA_CHECK(cudaMalloc(&ffn_up_, ffn_size * sizeof(half)));
-    CUDA_CHECK(cudaMalloc(&ffn_output_, hidden_size * sizeof(half)));
-
-    buffers_allocated_ = true;
-}
-
-void TransformerLayer::freeBuffers() {
-    if (!buffers_allocated_) return;
-
-    // Use safe checks in destructor (no exceptions)
-    auto safe_free = [](half *ptr) {
-        if (ptr) {
-            cudaError_t err = cudaFree(ptr);
-            if (err != cudaSuccess) {
-                fprintf(stderr, "CUDA error in freeBuffers: %s\n", cudaGetErrorString(err));
-            }
-        }
-    };
-
-    safe_free(norm_output_);
-    safe_free(q_buf_);
-    safe_free(k_buf_);
-    safe_free(v_buf_);
-    safe_free(attn_output_);
-    safe_free(ffn_gate_);
-    safe_free(ffn_up_);
-    safe_free(ffn_output_);
-
-    norm_output_ = nullptr;
-    q_buf_ = nullptr;
-    k_buf_ = nullptr;
-    v_buf_ = nullptr;
-    attn_output_ = nullptr;
-    ffn_gate_ = nullptr;
-    ffn_up_ = nullptr;
-    ffn_output_ = nullptr;
-    buffers_allocated_ = false;
-}
-
-void TransformerLayer::forward(half *hidden_states, KVCacheManager &kv_cache, int seq_id,
-                               int position, cudaStream_t stream) {
+Result<void> TransformerLayer::forward(half *hidden_states, KVCacheManager &kv_cache,
+                                         int seq_id, int position, const float *rope_cos,
+                                         const float *rope_sin, cudaStream_t stream) {
     // Input validation
     auto ptr_result = Validator::validateNotNull(hidden_states, "hidden_states");
     if (ptr_result.isErr()) {
         TLLM_ERROR("forward: {}", ptr_result.error());
-        return;
+        return ptr_result;
     }
 
     if (position < 0 || position >= config_.max_seq_len) {
         TLLM_ERROR("forward: invalid position {} for layer {}, max_seq_len={}", position,
                    layer_idx_, config_.max_seq_len);
-        return;
+        return Result<void>::err("forward: invalid position " + std::to_string(position) +
+                                 " for layer " + std::to_string(layer_idx_));
     }
 
     if (!kv_cache.hasSequence(seq_id)) {
         TLLM_ERROR("forward: invalid seq_id {} for layer {}", seq_id, layer_idx_);
-        return;
+        return Result<void>::err("forward: invalid seq_id " + std::to_string(seq_id) +
+                                 " for layer " + std::to_string(layer_idx_));
     }
 
     // Single token decode
-    runLayer(hidden_states, kv_cache, seq_id, position, 1, stream);
+    return runLayer(hidden_states, kv_cache, seq_id, position, 1, rope_cos, rope_sin, stream);
 }
 
-void TransformerLayer::forwardPrefill(half *hidden_states, KVCacheManager &kv_cache, int seq_id,
-                                      int seq_len, cudaStream_t stream) {
+Result<void> TransformerLayer::forwardPrefill(half *hidden_states, KVCacheManager &kv_cache,
+                                               int seq_id, int seq_len, const float *rope_cos,
+                                               const float *rope_sin, cudaStream_t stream) {
     // Input validation
     auto ptr_result = Validator::validateNotNull(hidden_states, "hidden_states");
     if (ptr_result.isErr()) {
         TLLM_ERROR("forwardPrefill: {}", ptr_result.error());
-        return;
+        return ptr_result;
     }
 
     if (seq_len <= 0) {
         TLLM_ERROR("forwardPrefill: invalid seq_len {}", seq_len);
-        return;
+        return Result<void>::err("forwardPrefill: invalid seq_len " + std::to_string(seq_len));
     }
 
     if (seq_len > config_.max_seq_len) {
         TLLM_ERROR("forwardPrefill: seq_len {} exceeds max_seq_len {}", seq_len,
                    config_.max_seq_len);
-        return;
+        return Result<void>::err("forwardPrefill: seq_len " + std::to_string(seq_len) +
+                                 " exceeds max_seq_len " + std::to_string(config_.max_seq_len));
     }
 
     if (!kv_cache.hasSequence(seq_id)) {
         TLLM_ERROR("forwardPrefill: invalid seq_id {}", seq_id);
-        return;
+        return Result<void>::err("forwardPrefill: invalid seq_id " + std::to_string(seq_id));
     }
 
     // Multiple tokens prefill
-    runLayer(hidden_states, kv_cache, seq_id, 0, seq_len, stream);
+    return runLayer(hidden_states, kv_cache, seq_id, 0, seq_len, rope_cos, rope_sin, stream);
 }
 
-void TransformerLayer::runLayer(half *hidden_states, KVCacheManager &kv_cache, int seq_id,
-                                int position, int num_tokens, cudaStream_t stream) {
+Result<void> TransformerLayer::runLayer(half *hidden_states, KVCacheManager &kv_cache,
+                                          int seq_id, int position, int num_tokens,
+                                          const float *rope_cos, const float *rope_sin,
+                                          cudaStream_t stream) {
     const int hidden_dim = config_.hidden_dim;
 
     // Attention sublayer with residual: x = x + attention(rms_norm(x))
-    rmsNorm(hidden_states, weights_.rms_att_weight, norm_output_, num_tokens, stream);
-    attention(norm_output_, attn_output_, kv_cache, seq_id, position, num_tokens, stream);
-    kernels::add_inplace(hidden_states, attn_output_, num_tokens * hidden_dim, stream);
+    rmsNorm(hidden_states, weights_.rms_att_weight, ws_->norm_output, num_tokens, stream);
+    auto attn_result = attention(ws_->norm_output, ws_->attn_output, kv_cache, seq_id, position,
+                                  num_tokens, rope_cos, rope_sin, stream);
+    if (attn_result.isErr()) {
+        return attn_result;
+    }
+    kernels::add_inplace(hidden_states, ws_->attn_output, num_tokens * hidden_dim, stream);
 
     // FFN sublayer with residual: x = x + ffn(rms_norm(x))
-    rmsNorm(hidden_states, weights_.rms_ffn_weight, norm_output_, num_tokens, stream);
-    feedForward(norm_output_, ffn_output_, num_tokens, stream);
-    kernels::add_inplace(hidden_states, ffn_output_, num_tokens * hidden_dim, stream);
+    rmsNorm(hidden_states, weights_.rms_ffn_weight, ws_->norm_output, num_tokens, stream);
+    feedForward(ws_->norm_output, ws_->ffn_output, num_tokens, stream);
+    kernels::add_inplace(hidden_states, ws_->ffn_output, num_tokens * hidden_dim, stream);
+
+    return Result<void>::ok();
 }
 
-void TransformerLayer::attention(const half *x, half *output, KVCacheManager &kv_cache, int seq_id,
-                                 int position, int num_tokens, cudaStream_t stream) {
+Result<void> TransformerLayer::attention(const half *x, half *output, KVCacheManager &kv_cache,
+                                           int seq_id, int position, int num_tokens,
+                                           const float *rope_cos, const float *rope_sin,
+                                           cudaStream_t stream) {
     int hidden_dim = config_.hidden_dim;
     int num_heads = config_.num_heads;
     int num_kv_heads = config_.num_kv_heads;
@@ -197,24 +187,50 @@ void TransformerLayer::attention(const half *x, half *output, KVCacheManager &kv
     int group_size = weights_.wq.group_size;
 
     // Q projection: [num_tokens, hidden_dim] @ [hidden_dim, num_heads * head_dim]
-    kernels::w8a16_matmul(x, weights_.wq.data, weights_.wq.scales, q_buf_, num_tokens,
+    kernels::w8a16_matmul(x, weights_.wq.data, weights_.wq.scales, ws_->q_buf, num_tokens,
                           num_heads * head_dim, hidden_dim, group_size, stream);
 
     // K projection: [num_tokens, hidden_dim] @ [hidden_dim, num_kv_heads *
     // head_dim]
-    kernels::w8a16_matmul(x, weights_.wk.data, weights_.wk.scales, k_buf_, num_tokens,
+    kernels::w8a16_matmul(x, weights_.wk.data, weights_.wk.scales, ws_->k_buf, num_tokens,
                           num_kv_heads * head_dim, hidden_dim, group_size, stream);
 
     // V projection: [num_tokens, hidden_dim] @ [hidden_dim, num_kv_heads *
     // head_dim]
-    kernels::w8a16_matmul(x, weights_.wv.data, weights_.wv.scales, v_buf_, num_tokens,
+    kernels::w8a16_matmul(x, weights_.wv.data, weights_.wv.scales, ws_->v_buf, num_tokens,
                           num_kv_heads * head_dim, hidden_dim, group_size, stream);
+
+    // Qwen2 系 attention bias：q = x@Wq^T + bq（bias 在 RoPE 之前加）
+    if (weights_.wq_bias) {
+        kernels::add_bias_inplace(ws_->q_buf, weights_.wq_bias, num_tokens, num_heads * head_dim,
+                                  stream);
+    }
+    if (weights_.wk_bias) {
+        kernels::add_bias_inplace(ws_->k_buf, weights_.wk_bias, num_tokens,
+                                  num_kv_heads * head_dim, stream);
+    }
+    if (weights_.wv_bias) {
+        kernels::add_bias_inplace(ws_->v_buf, weights_.wv_bias, num_tokens,
+                                  num_kv_heads * head_dim, stream);
+    }
+
+    // TLLM-003: Apply RoPE to Q and K after projection, before KV append.
+    // Q: [num_tokens, Hq, D], K: [num_tokens, Hkv, D]
+    // Uses absolute position: for prefill, start_position=position (typically 0);
+    // for decode, start_position=position (the current token's position).
+    kernels::apply_rope_inplace(ws_->q_buf, ws_->k_buf, rope_cos, rope_sin, num_tokens, position,
+                                num_heads, num_kv_heads, head_dim, stream);
 
     // Get KV cache pointers
     auto [k_cache, v_cache] = kv_cache.getCache(seq_id, layer_idx_);
 
     // Append new K, V to cache
-    kv_cache.appendKV(seq_id, layer_idx_, k_buf_, v_buf_, num_tokens, stream);
+    auto append_result = kv_cache.appendKV(seq_id, layer_idx_, ws_->k_buf, ws_->v_buf, num_tokens, stream);
+    if (append_result.isErr()) {
+        TLLM_ERROR("attention: appendKV failed for layer {}: {}", layer_idx_,
+                   append_result.error());
+        return append_result;
+    }
 
     // Compute attention
     float scale = 1.0f / std::sqrt(static_cast<float>(head_dim));
@@ -224,18 +240,19 @@ void TransformerLayer::attention(const half *x, half *output, KVCacheManager &kv
         // Decode: appendKV() writes the current token into cache but does not make it
         // visible via getSeqLen() until the caller advances once after all layers.
         int attended_seq_len = current_seq_len + 1;
-        kernels::attention_decode(q_buf_, k_cache, v_cache, attn_output_, scale, 1, num_heads,
-                                  attended_seq_len, head_dim, stream);
+        kernels::attention_decode(ws_->q_buf, k_cache, v_cache, ws_->attn_buf, scale, num_heads,
+                                  num_kv_heads, attended_seq_len, head_dim, stream);
     } else {
         // Prefill: full attention with causal mask over the current token batch.
-        kernels::attention_prefill(q_buf_, k_buf_, v_buf_, attn_output_, scale, 1, num_heads,
-                                   num_tokens, head_dim, stream);
+        kernels::attention_prefill(ws_->q_buf, ws_->k_buf, ws_->v_buf, ws_->attn_buf, scale,
+                                   num_heads, num_kv_heads, num_tokens, head_dim, stream);
     }
 
-    // Output projection: [num_tokens, num_heads * head_dim] @ [num_heads *
-    // head_dim, hidden_dim]
-    kernels::w8a16_matmul(attn_output_, weights_.wo.data, weights_.wo.scales, output, num_tokens,
+    // Output projection: 注意力输出在 attn_buf（独立缓冲，避免就地 matmul 覆盖输入）
+    kernels::w8a16_matmul(ws_->attn_buf, weights_.wo.data, weights_.wo.scales, output, num_tokens,
                           hidden_dim, num_heads * head_dim, group_size, stream);
+
+    return Result<void>::ok();
 }
 
 void TransformerLayer::feedForward(const half *x, half *output, int num_tokens,
@@ -250,19 +267,19 @@ void TransformerLayer::feedForward(const half *x, half *output, int num_tokens,
     // output = (gate * up) @ w2
 
     // Gate projection: [num_tokens, hidden_dim] @ [hidden_dim, intermediate_dim]
-    kernels::w8a16_matmul(x, weights_.w1.data, weights_.w1.scales, ffn_gate_, num_tokens,
+    kernels::w8a16_matmul(x, weights_.w1.data, weights_.w1.scales, ws_->ffn_gate, num_tokens,
                           intermediate_dim, hidden_dim, group_size, stream);
 
     // Up projection: [num_tokens, hidden_dim] @ [hidden_dim, intermediate_dim]
-    kernels::w8a16_matmul(x, weights_.w3.data, weights_.w3.scales, ffn_up_, num_tokens,
+    kernels::w8a16_matmul(x, weights_.w3.data, weights_.w3.scales, ws_->ffn_up, num_tokens,
                           intermediate_dim, hidden_dim, group_size, stream);
 
     // SiLU activation and element-wise multiply
-    kernels::silu_mul_inplace(ffn_gate_, ffn_up_, num_tokens * intermediate_dim, stream);
+    kernels::silu_mul_inplace(ws_->ffn_gate, ws_->ffn_up, num_tokens * intermediate_dim, stream);
 
     // Down projection: [num_tokens, intermediate_dim] @ [intermediate_dim,
     // hidden_dim]
-    kernels::w8a16_matmul(ffn_gate_, weights_.w2.data, weights_.w2.scales, output, num_tokens,
+    kernels::w8a16_matmul(ws_->ffn_gate, weights_.w2.data, weights_.w2.scales, output, num_tokens,
                           hidden_dim, intermediate_dim, group_size, stream);
 }
 

@@ -7,7 +7,7 @@ namespace tiny_llm {
 
 Result<std::unique_ptr<KVCacheManager>> KVCacheManager::create(const KVCacheConfig &config) {
     // Validate configuration to prevent overflow
-    if (config.num_layers <= 0 || config.num_heads <= 0 || config.head_dim <= 0 ||
+    if (config.num_layers <= 0 || config.num_kv_heads <= 0 || config.head_dim <= 0 ||
         config.max_seq_len <= 0 || config.max_batch_size <= 0) {
         return Result<std::unique_ptr<KVCacheManager>>::err(
             "KVCacheManager: invalid configuration parameters");
@@ -18,7 +18,7 @@ Result<std::unique_ptr<KVCacheManager>> KVCacheManager::create(const KVCacheConf
 
     // Calculate per-slot memory size with overflow check
     size_t kv_per_layer =
-        static_cast<size_t>(config.num_heads) * config.max_seq_len * config.head_dim;
+        static_cast<size_t>(config.num_kv_heads) * config.max_seq_len * config.head_dim;
 
     size_t kv_total = kv_per_layer * static_cast<size_t>(config.num_layers) * 2;
 
@@ -70,7 +70,7 @@ size_t KVCacheManager::calculateOffset(int slot_idx, int layer_idx, bool is_valu
     // Memory layout per slot:
     // [Layer 0 K][Layer 0 V][Layer 1 K][Layer 1 V]...
     size_t kv_per_layer =
-        static_cast<size_t>(config_.num_heads) * config_.max_seq_len * config_.head_dim;
+        static_cast<size_t>(config_.num_kv_heads) * config_.max_seq_len * config_.head_dim;
 
     size_t slot_offset = slot_idx * slot_size_ / sizeof(half);
     size_t layer_offset = layer_idx * kv_per_layer * 2;
@@ -223,9 +223,9 @@ Result<void> KVCacheManager::appendKV(int seq_id, int layer_idx, const half *new
         return Result<void>::err("appendKV: failed to get cache pointers");
     }
 
-    size_t pos_offset = static_cast<size_t>(write_pos) * config_.num_heads * config_.head_dim;
+    size_t pos_offset = static_cast<size_t>(write_pos) * config_.num_kv_heads * config_.head_dim;
     size_t copy_size =
-        static_cast<size_t>(num_tokens) * config_.num_heads * config_.head_dim * sizeof(half);
+        static_cast<size_t>(num_tokens) * config_.num_kv_heads * config_.head_dim * sizeof(half);
 
     CUDA_CHECK(
         cudaMemcpyAsync(k_cache + pos_offset, new_k, copy_size, cudaMemcpyDeviceToDevice, stream));

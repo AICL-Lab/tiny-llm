@@ -3,6 +3,7 @@
 #include "tiny_llm/kv_cache.h"
 #include "tiny_llm/result.h"
 #include "tiny_llm/transformer.h"
+#include "rope.cuh"  // TLLM-003
 #include "tiny_llm/types.h"
 #include <cuda_fp16.h>
 #include <cuda_runtime.h>
@@ -57,10 +58,10 @@ class InferenceEngine {
 
   private:
     // Prefill phase: process all prompt tokens
-    void prefill(const std::vector<int> &tokens, int seq_id);
+    Result<void> prefill(const std::vector<int> &tokens, int seq_id);
 
     // Decode phase: generate one token
-    int decodeStep(int seq_id, int position, int token_id, const GenerationConfig &config);
+    Result<int> decodeStep(int seq_id, int position, int token_id, const GenerationConfig &config);
 
     // Sample from a single hidden state
     int sampleFromHidden(half *hidden_state, const GenerationConfig &config);
@@ -82,9 +83,16 @@ class InferenceEngine {
     std::vector<std::unique_ptr<TransformerLayer>> layers_;
     std::unique_ptr<KVCacheManager>                kv_cache_;
 
+    // 共享中间激活工作区（所有层复用，RAII 自动释放）
+    LayerWorkspace workspace_;
+
     // Buffers
     half *hidden_states_ = nullptr;
     half *logits_ = nullptr;
+
+    // TLLM-003: RoPE cos/sin half cache (FP32)
+    float *rope_cos_ = nullptr;
+    float *rope_sin_ = nullptr;
 
     // CUDA stream
     cudaStream_t stream_ = 0;

@@ -9,6 +9,9 @@ namespace kernels {
 // In-place elementwise add: data[i] += add[i]
 void add_inplace(half *data, const half *add, int num_elements, cudaStream_t stream = 0);
 
+// 广播加 bias：data[r*cols + c] += bias[c]（每行加同一 bias 向量）
+void add_bias_inplace(half *data, const half *bias, int rows, int cols, cudaStream_t stream = 0);
+
 // In-place SiLU + multiply: gate[i] = silu(gate[i]) * up[i]
 void silu_mul_inplace(half *gate, const half *up, int num_elements, cudaStream_t stream = 0);
 

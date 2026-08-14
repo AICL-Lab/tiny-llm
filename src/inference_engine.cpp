@@ -1,6 +1,7 @@
 #include "tiny_llm/inference_engine.h"
 #include "elementwise.cuh"
 #include "rmsnorm.cuh"
+#include "rope.cuh"
 #include "tiny_llm/cuda_utils.h"
 #include "tiny_llm/logger.h"
 #include "tiny_llm/model_loader.h"
@@ -9,6 +10,7 @@
 #include <algorithm>
 #include <chrono>
 #include <cmath>
+#include <cstdlib>
 #include <numeric>
 #include <random>
 
@@ -64,7 +66,7 @@ InferenceEngine::InferenceEngine(const ModelConfig &config, ModelWeights &&weigh
     // Initialize KV cache
     KVCacheConfig kv_config;
     kv_config.num_layers = config_.num_layers;
-    kv_config.num_heads = config_.num_kv_heads;
+    kv_config.num_kv_heads = config_.num_kv_heads;
     kv_config.head_dim = config_.head_dim;
     kv_config.max_seq_len = config_.max_seq_len;
     kv_config.max_batch_size = 1;
@@ -76,9 +78,13 @@ InferenceEngine::InferenceEngine(const ModelConfig &config, ModelWeights &&weigh
     kv_cache_ = std::move(kv_cache_result.value());
 
     // Create transformer layers
+    // 共享中间激活工作区：所有层复用，避免按层数线性放大显存
+    workspace_.allocate(config_);
+
     layers_.reserve(config_.num_layers);
     for (int i = 0; i < config_.num_layers; ++i) {
-        layers_.push_back(std::make_unique<TransformerLayer>(i, weights_.layers[i], config_));
+        layers_.push_back(
+            std::make_unique<TransformerLayer>(i, weights_.layers[i], config_, &workspace_));
     }
 
     // Allocate buffers
@@ -87,6 +93,19 @@ InferenceEngine::InferenceEngine(const ModelConfig &config, ModelWeights &&weigh
 
     CUDA_CHECK(cudaMalloc(&hidden_states_, hidden_size));
     CUDA_CHECK(cudaMalloc(&logits_, logits_size));
+    if (std::getenv("TLLM_DEBUG_ZERO")) {
+        CUDA_CHECK(cudaMemset(hidden_states_, 0, hidden_size));
+        CUDA_CHECK(cudaMemset(logits_, 0, logits_size));
+    }
+
+    // TLLM-003: Allocate and precompute RoPE cos/sin half cache
+    int half_d = config_.head_dim / 2;
+    size_t rope_cache_size = static_cast<size_t>(config_.max_seq_len) * half_d * sizeof(float);
+    CUDA_CHECK(cudaMalloc(&rope_cos_, rope_cache_size));
+    CUDA_CHECK(cudaMalloc(&rope_sin_, rope_cache_size));
+    kernels::rope_precompute_cache(rope_cos_, rope_sin_, config_.max_seq_len, config_.head_dim,
+                                   config_.rope_theta, stream_);
+    CUDA_CHECK(cudaStreamSynchronize(stream_));
 }
 
 InferenceEngine::~InferenceEngine() {
@@ -107,6 +126,22 @@ InferenceEngine::~InferenceEngine() {
         }
         logits_ = nullptr;
     }
+    // TLLM-003: Free RoPE cache
+    if (rope_cos_) {
+        cudaError_t err = cudaFree(rope_cos_);
+        if (err != cudaSuccess) {
+            TLLM_ERROR("CUDA error freeing rope_cos: {}", cudaGetErrorString(err));
+        }
+        rope_cos_ = nullptr;
+    }
+    if (rope_sin_) {
+        cudaError_t err = cudaFree(rope_sin_);
+        if (err != cudaSuccess) {
+            TLLM_ERROR("CUDA error freeing rope_sin: {}", cudaGetErrorString(err));
+        }
+        rope_sin_ = nullptr;
+    }
+
     if (stream_) {
         cudaError_t err = cudaStreamDestroy(stream_);
         if (err != cudaSuccess) {
@@ -170,7 +205,12 @@ Result<std::vector<int>> InferenceEngine::generate(const std::vector<int> &promp
 
     // Prefill phase
     auto prefill_start = std::chrono::high_resolution_clock::now();
-    prefill(prompt_tokens, seq_id);
+    auto prefill_result = prefill(prompt_tokens, seq_id);
+    if (prefill_result.isErr()) {
+        TLLM_ERROR("generate: prefill failed: {}", prefill_result.error());
+        kv_cache_->releaseSequence(seq_id);
+        return Result<std::vector<int>>::err("Prefill failed: " + prefill_result.error());
+    }
     CUDA_CHECK(cudaStreamSynchronize(stream_));
     auto prefill_end = std::chrono::high_resolution_clock::now();
     stats_.prefill_time_ms =
@@ -212,7 +252,14 @@ Result<std::vector<int>> InferenceEngine::generate(const std::vector<int> &promp
     }
 
     while (generated < config.max_new_tokens && position < config_.max_seq_len) {
-        int next_token = decodeStep(seq_id, position, prev_token, config);
+        auto decode_result = decodeStep(seq_id, position, prev_token, config);
+        if (decode_result.isErr()) {
+            TLLM_ERROR("generate: decodeStep failed at position {}: {}", position,
+                       decode_result.error());
+            kv_cache_->releaseSequence(seq_id);
+            return Result<std::vector<int>>::err("Decode failed: " + decode_result.error());
+        }
+        int next_token = decode_result.value();
         output_tokens.push_back(next_token);
         ++generated;
 
@@ -246,11 +293,11 @@ Result<std::vector<int>> InferenceEngine::generate(const std::vector<int> &promp
     return Result<std::vector<int>>::ok(output_tokens);
 }
 
-void InferenceEngine::prefill(const std::vector<int> &tokens, int seq_id) {
+Result<void> InferenceEngine::prefill(const std::vector<int> &tokens, int seq_id) {
     int num_tokens = static_cast<int>(tokens.size());
     if (num_tokens <= 0) {
         TLLM_WARN("prefill: empty token sequence");
-        return;
+        return Result<void>::err("prefill: empty token sequence");
     }
 
     TLLM_TRACE("prefill: seq_id={}, num_tokens={}", seq_id, num_tokens);
@@ -261,7 +308,8 @@ void InferenceEngine::prefill(const std::vector<int> &tokens, int seq_id) {
         if (tokens[i] < 0 || tokens[i] >= config_.vocab_size) {
             TLLM_ERROR("prefill: invalid token_id {} at position {}, vocab_size={}", tokens[i], i,
                        config_.vocab_size);
-            return;
+            return Result<void>::err("prefill: invalid token_id " + std::to_string(tokens[i]) +
+                                     " at position " + std::to_string(i));
         }
     }
 
@@ -274,17 +322,26 @@ void InferenceEngine::prefill(const std::vector<int> &tokens, int seq_id) {
 
     // Forward through all layers
     for (auto &layer : layers_) {
-        layer->forwardPrefill(hidden_states_, *kv_cache_, seq_id, num_tokens, stream_);
+        auto layer_result = layer->forwardPrefill(hidden_states_, *kv_cache_, seq_id, num_tokens,
+                                                   rope_cos_, rope_sin_, stream_);
+        if (layer_result.isErr()) {
+            TLLM_ERROR("prefill: layer {} failed: {}", layer->getLayerIdx(),
+                       layer_result.error());
+            return layer_result;
+        }
     }
 
     auto advance_result = kv_cache_->advanceSeqLen(seq_id, num_tokens);
     if (advance_result.isErr()) {
         TLLM_ERROR("prefill: {}", advance_result.error());
+        return advance_result;
     }
+
+    return Result<void>::ok();
 }
 
-int InferenceEngine::decodeStep(int seq_id, int position, int token_id,
-                                const GenerationConfig &config) {
+Result<int> InferenceEngine::decodeStep(int seq_id, int position, int token_id,
+                                          const GenerationConfig &config) {
     DeviceBuffer<int> d_token(1);
     d_token.copyFromHost(&token_id, 1, stream_);
 
@@ -293,12 +350,22 @@ int InferenceEngine::decodeStep(int seq_id, int position, int token_id,
 
     // Forward through all layers for single token
     for (auto &layer : layers_) {
-        layer->forward(token_state, *kv_cache_, seq_id, position, stream_);
+        auto layer_result = layer->forward(token_state, *kv_cache_, seq_id, position, rope_cos_,
+                                            rope_sin_, stream_);
+        if (layer_result.isErr()) {
+            TLLM_ERROR("decodeStep: layer {} failed: {}", layer->getLayerIdx(),
+                       layer_result.error());
+            return Result<int>::err(layer_result.error());
+        }
     }
 
-    kv_cache_->advanceSeqLen(seq_id, 1);
+    auto advance_result = kv_cache_->advanceSeqLen(seq_id, 1);
+    if (advance_result.isErr()) {
+        TLLM_ERROR("decodeStep: {}", advance_result.error());
+        return Result<int>::err(advance_result.error());
+    }
 
-    return sampleFromHidden(token_state, config);
+    return Result<int>::ok(sampleFromHidden(token_state, config));
 }
 
 int InferenceEngine::sampleFromHidden(half *hidden_state, const GenerationConfig &config) {
@@ -321,7 +388,12 @@ void InferenceEngine::embedTokens(const int *tokens, int num_tokens, half *outpu
 
 void InferenceEngine::computeLogits(const half *hidden_states, int num_tokens, half *logits) {
     // LM head projection: hidden_states @ lm_head.T
-    if (weights_.lm_head.isValid()) {
+    // 优先 FP16 lm_head（output 层不量化，保持 logits 精度与 llama.cpp 对齐）；
+    // W8A16 版本作为后备。
+    if (weights_.lm_head_fp16) {
+        kernels::fp16_matmul_reference(hidden_states, weights_.lm_head_fp16, logits, num_tokens,
+                                       config_.vocab_size, config_.hidden_dim, stream_);
+    } else if (weights_.lm_head.isValid()) {
         kernels::w8a16_matmul(hidden_states, weights_.lm_head.data, weights_.lm_head.scales, logits,
                               num_tokens, config_.vocab_size, config_.hidden_dim,
                               weights_.lm_head.group_size, stream_);

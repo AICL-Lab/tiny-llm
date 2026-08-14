@@ -94,39 +94,36 @@ class TransformerTest : public ::testing::Test {
 
 // Unit test: Basic attention decode vs prefill equivalence
 TEST_F(TransformerTest, AttentionDecodeVsPrefillSingleToken) {
-    // Test that decode attention produces same result as prefill for single token
-    int   batch_size = 1;
-    int   num_heads = 4;
+    // Token-major layout test
+    int   num_q_heads = 4;
+    int   num_kv_heads = 4; // MHA
     int   seq_len = 8;
     int   head_dim = 32;
     float scale = 1.0f / std::sqrt(static_cast<float>(head_dim));
 
-    // Generate random Q, K, V
-    auto query = randomFP16(batch_size * num_heads * head_dim, 1.0f, 100);
-    auto k_cache = randomFP16(batch_size * num_heads * seq_len * head_dim, 1.0f, 101);
-    auto v_cache = randomFP16(batch_size * num_heads * seq_len * head_dim, 1.0f, 102);
+    // Generate random Q, K, V in token-major layout
+    auto query = randomFP16(num_q_heads * head_dim, 1.0f, 100);
+    auto k_cache = randomFP16(seq_len * num_kv_heads * head_dim, 1.0f, 101);
+    auto v_cache = randomFP16(seq_len * num_kv_heads * head_dim, 1.0f, 102);
 
-    // Allocate device memory
-    DeviceBuffer<half> d_query(batch_size * num_heads * head_dim);
-    DeviceBuffer<half> d_k_cache(batch_size * num_heads * seq_len * head_dim);
-    DeviceBuffer<half> d_v_cache(batch_size * num_heads * seq_len * head_dim);
-    DeviceBuffer<half> d_output_decode(batch_size * num_heads * head_dim);
+    DeviceBuffer<half> d_query(num_q_heads * head_dim);
+    DeviceBuffer<half> d_k_cache(seq_len * num_kv_heads * head_dim);
+    DeviceBuffer<half> d_v_cache(seq_len * num_kv_heads * head_dim);
+    DeviceBuffer<half> d_output_decode(num_q_heads * head_dim);
 
     d_query.copyFromHost(query.data(), query.size());
     d_k_cache.copyFromHost(k_cache.data(), k_cache.size());
     d_v_cache.copyFromHost(v_cache.data(), v_cache.size());
 
-    // Run decode attention
     attention_decode(d_query.data(), d_k_cache.data(), d_v_cache.data(), d_output_decode.data(),
-                     scale, batch_size, num_heads, seq_len, head_dim);
+                     scale, num_q_heads, num_kv_heads, seq_len, head_dim);
 
     cudaDeviceSynchronize();
 
-    std::vector<half> output_decode(batch_size * num_heads * head_dim);
+    std::vector<half> output_decode(num_q_heads * head_dim);
     d_output_decode.copyToHost(output_decode.data(), output_decode.size());
     cudaDeviceSynchronize();
 
-    // Verify output is not all zeros
     bool has_nonzero = false;
     for (const auto &v : output_decode) {
         if (__half2float(v) != 0.0f) {
@@ -141,7 +138,7 @@ TEST_F(TransformerTest, AttentionDecodeVsPrefillSingleToken) {
 TEST_F(TransformerTest, KVCacheAppendRetrieve) {
     KVCacheConfig config;
     config.num_layers = 2;
-    config.num_heads = 4;
+    config.num_kv_heads = 4;
     config.head_dim = 32;
     config.max_seq_len = 64;
     config.max_batch_size = 2;
@@ -157,8 +154,8 @@ TEST_F(TransformerTest, KVCacheAppendRetrieve) {
 
     // Generate random K, V
     int  num_tokens = 4;
-    auto k_data = randomFP16(num_tokens * config.num_heads * config.head_dim, 1.0f, 200);
-    auto v_data = randomFP16(num_tokens * config.num_heads * config.head_dim, 1.0f, 201);
+    auto k_data = randomFP16(num_tokens * config.num_kv_heads * config.head_dim, 1.0f, 200);
+    auto v_data = randomFP16(num_tokens * config.num_kv_heads * config.head_dim, 1.0f, 201);
 
     DeviceBuffer<half> d_k(k_data.size());
     DeviceBuffer<half> d_v(v_data.size());
@@ -312,7 +309,7 @@ RC_GTEST_FIXTURE_PROP(TransformerPropertyTest, KVCachePreservesData,
 
     KVCacheConfig config;
     config.num_layers = num_layers;
-    config.num_heads = num_heads;
+    config.num_kv_heads = num_heads;
     config.head_dim = head_dim;
     config.max_seq_len = max_seq_len;
     config.max_batch_size = 2;
@@ -392,7 +389,7 @@ RC_GTEST_FIXTURE_PROP(TransformerPropertyTest, SequentialAppendEquivalence,
 
     KVCacheConfig config;
     config.num_layers = 1;
-    config.num_heads = num_heads;
+    config.num_kv_heads = num_heads;
     config.head_dim = head_dim;
     config.max_seq_len = max_seq_len;
     config.max_batch_size = 2;

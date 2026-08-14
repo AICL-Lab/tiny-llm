@@ -1,5 +1,9 @@
 #include "tiny_llm/cuda_utils.h"
 #include "tiny_llm/gguf_parser.h"
+#include "tiny_llm/inference_engine.h"
+#include "tiny_llm/tokenizer.h"
+#include "w8a16_matmul.cuh"  // 诊断：g_force_reference
+#include <exception>
 #include <cuda_runtime.h>
 #include <iomanip>
 #include <iostream>
@@ -26,6 +30,10 @@ void printHelp(const char *program_name) {
     std::cout << "  -v, --version  Show version information and exit" << std::endl;
     std::cout << "  --info         Show detailed CUDA device information" << std::endl;
     std::cout << "  --inspect      Parse a GGUF file and print config/tensor summary"
+              << std::endl;
+    std::cout << "  --prompt TEXT  Prompt for GPU end-to-end generation (requires GGUF)"
+              << std::endl;
+    std::cout << "  --max-tokens N Maximum tokens to generate (default: 64)"
               << std::endl;
     std::cout << "                 (CPU-only, no GPU required)" << std::endl;
     std::cout << std::endl;
@@ -187,6 +195,93 @@ int inspectGGUF(const std::string &path) {
     return 0;
 }
 
+// GPU 端到端生成：加载 GGUF 模型，编码 prompt，生成并解码输出。
+int runGeneration(const std::string &model_path, const std::string &prompt, int max_tokens,
+                     bool show_tokens) {
+    try {
+        tiny_llm::GGUFParser parser(model_path);
+        auto parse_result = parser.parse();
+        if (parse_result.isErr()) {
+            std::cerr << "GGUF parse failed: " << parse_result.error() << std::endl;
+            return 1;
+        }
+
+        auto config_result = parser.extractModelConfig();
+        if (config_result.isErr()) {
+            std::cerr << "Config extraction failed: " << config_result.error() << std::endl;
+            return 1;
+        }
+        const auto &config = config_result.value();
+
+        auto td_result = tiny_llm::loadTokenizerData(parser.getMetadata());
+        if (td_result.isErr()) {
+            std::cerr << "Tokenizer data extraction failed: " << td_result.error() << std::endl;
+            return 1;
+        }
+        auto tokenizer_result = tiny_llm::Tokenizer::build(td_result.value());
+        if (tokenizer_result.isErr()) {
+            std::cerr << "Tokenizer build failed: " << tokenizer_result.error() << std::endl;
+            return 1;
+        }
+        auto tokenizer = std::move(tokenizer_result.value());
+
+        auto engine_result = tiny_llm::InferenceEngine::load(model_path, config);
+        if (engine_result.isErr()) {
+            std::cerr << "Model load failed: " << engine_result.error() << std::endl;
+            return 1;
+        }
+        auto engine = std::move(engine_result.value());
+
+        std::vector<int> prompt_tokens = tokenizer.encode(prompt);
+        std::cout << "Prompt: \"" << prompt << "\" -> " << prompt_tokens.size() << " tokens"
+                  << std::endl;
+        if (show_tokens) {
+            std::cout << "Prompt tokens: ";
+            for (int t : prompt_tokens) std::cout << t << " ";
+            std::cout << std::endl;
+        }
+
+        tiny_llm::GenerationConfig gen_config;
+        gen_config.max_new_tokens = max_tokens;
+        gen_config.do_sample = false; // greedy，便于与 llama.cpp 做确定性对齐
+
+        auto gen_result = engine->generate(prompt_tokens, gen_config);
+        if (gen_result.isErr()) {
+            std::cerr << "Generation failed: " << gen_result.error() << std::endl;
+            return 1;
+        }
+        const auto &gen_tokens = gen_result.value();
+
+        std::string text = tokenizer.decode(gen_tokens);
+        std::cout << "\n--- Generated text ---" << std::endl;
+        std::cout << text << std::endl;
+
+        if (show_tokens) {
+            std::cout << "\n--- Token ids ---" << std::endl;
+            for (size_t i = 0; i < gen_tokens.size(); ++i) {
+                std::cout << i << ":" << gen_tokens[i] << " ";
+            }
+            std::cout << std::endl;
+        }
+
+        const auto &stats = engine->getStats();
+        std::cout << "\n--- Stats ---" << std::endl;
+        std::cout << "Prompt tokens:    " << stats.prompt_tokens << std::endl;
+        std::cout << "Generated tokens: " << stats.tokens_generated << std::endl;
+        std::cout << "Prefill time:     " << stats.prefill_time_ms << " ms" << std::endl;
+        std::cout << "Decode time:      " << stats.decode_time_ms << " ms" << std::endl;
+        if (stats.decode_time_ms > 0.0f) {
+            std::cout << "Decode throughput: "
+                      << stats.tokens_generated / (stats.decode_time_ms / 1000.0f) << " tok/s"
+                      << std::endl;
+        }
+        return 0;
+    } catch (const std::exception &e) {
+        std::cerr << "Error: " << e.what() << std::endl;
+        return 1;
+    }
+}
+
 } // namespace
 
 int main(int argc, char **argv) {
@@ -196,6 +291,10 @@ int main(int argc, char **argv) {
     bool        show_info = false;
     bool        show_inspect = false;
     std::string model_path;
+    std::string prompt;
+    int         max_tokens = 64;
+    bool        show_tokens = false;
+    bool        use_reference = false;
 
     for (int i = 1; i < argc; ++i) {
         std::string arg = argv[i];
@@ -207,6 +306,22 @@ int main(int argc, char **argv) {
             show_info = true;
         } else if (arg == "--inspect") {
             show_inspect = true;
+        } else if (arg == "--prompt") {
+            if (i + 1 >= argc) {
+                std::cerr << "--prompt requires a value" << std::endl;
+                return 1;
+            }
+            prompt = argv[++i];
+        } else if (arg == "--max-tokens") {
+            if (i + 1 >= argc) {
+                std::cerr << "--max-tokens requires a value" << std::endl;
+                return 1;
+            }
+            max_tokens = std::stoi(argv[++i]);
+        } else if (arg == "--show-tokens") {
+            show_tokens = true;
+        } else if (arg == "--use-reference") {
+            use_reference = true;
         } else if (arg[0] != '-') {
             model_path = arg;
         } else {
@@ -279,11 +394,15 @@ int main(int argc, char **argv) {
     // Handle model path argument
     if (!model_path.empty()) {
         if (model_path.size() >= 5 && model_path.substr(model_path.size() - 5) == ".gguf") {
-            std::cout << "\nRuntime note: GGUF parsing and weight loading are implemented via "
-                         "the library API (ModelLoader::loadGGUF)."
-                      << std::endl;
-            std::cout << "This demo binary does not run generation yet (tokenizer pending, see "
-                         "ROADMAP.md). Use --inspect for a CPU-only GGUF summary."
+            if (!prompt.empty()) {
+                if (use_reference) {
+                    tiny_llm::kernels::g_force_reference = true;
+                    std::cout << "[diagnostic] forcing reference w8a16 kernel" << std::endl;
+                }
+                return runGeneration(model_path, prompt, max_tokens, show_tokens);
+            }
+            std::cout << "\nRuntime note: pass --prompt \"...\" to run GPU end-to-end "
+                         "generation, or --inspect for a CPU-only GGUF summary."
                       << std::endl;
         } else {
             std::cout << "\nRuntime note: the demo binary currently reports CUDA readiness only."

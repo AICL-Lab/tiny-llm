@@ -211,3 +211,72 @@ TEST_F(GGUFRealModelTest, FirstBlocksMatchPythonReference) {
         for (int i = 0; i < 4; ++i) expectNearF16(v[128 + i], exp128[i], "blk.23 Q4_K [128:132]");
     }
 }
+
+// 完整权重管线往返：GGUF 反量化 -> 转置(列主[in,out] -> 行主[K,N]) -> W8A16 量化
+// -> 反量化重建。验证 loadGGUF 的权重转换不会破坏权重值（真实模型门控）。
+TEST_F(GGUFRealModelTest, WeightW8A16RoundTripPreservesValues) {
+    const auto &cfg = parser_->extractModelConfig().value();
+    if (!(cfg.hidden_dim == 896 && cfg.num_layers == 24)) {
+        GTEST_SKIP() << "reference values are for Qwen2.5-0.5B-Instruct Q4_K_M";
+    }
+
+    const auto *tensor = parser_->getTensorByName("blk.0.attn_q.weight");
+    ASSERT_NE(tensor, nullptr);
+    ASSERT_EQ(static_cast<uint32_t>(tensor->type), static_cast<uint32_t>(GGMLType::Q5_0));
+
+    int in_f  = static_cast<int>(tensor->dimensions[0]); // K
+    int out_f = static_cast<int>(tensor->dimensions[1]); // N
+    ASSERT_EQ(in_f, 896);
+    ASSERT_EQ(out_f, 896);
+    const int group_size = 128;
+
+    auto raw = parser_->readTensorData(*tensor);
+    ASSERT_FALSE(raw.isErr()) << raw.error();
+
+    size_t num_blocks = (tensor->numElements() + 31) / 32;
+    auto   f16 = dequantizeQ5_0(raw.value().data(), num_blocks);
+    ASSERT_FALSE(f16.isErr());
+    ASSERT_EQ(f16.value().size(), static_cast<size_t>(in_f) * out_f);
+
+    // 复现 model_loader 的转置：列主 [out, in] -> 行主 [in, out]
+    std::vector<half> dst(static_cast<size_t>(in_f) * out_f);
+    for (int o = 0; o < out_f; ++o) {
+        for (int i = 0; i < in_f; ++i) {
+            dst[static_cast<size_t>(i) * out_f + o] = f16.value()[static_cast<size_t>(o) * in_f + i];
+        }
+    }
+
+    auto q = quantizeF16ToW8A16(dst.data(), in_f, out_f, group_size);
+    ASSERT_FALSE(q.isErr());
+    const auto &int8_data = q.value().first;
+    const auto &scales    = q.value().second;
+
+    // 反量化重建：val = q * scale。量化误差应受限于该组步长 scale/2。
+    double max_abs_err = 0.0;
+    double worst_ratio = 0.0; // 绝对误差 / scale，应 <= 0.5 + 少许
+    size_t max_err_idx = 0;
+    size_t bad_count   = 0;
+    for (int k = 0; k < in_f; ++k) {
+        for (int n = 0; n < out_f; ++n) {
+            size_t idx      = static_cast<size_t>(k) * out_f + n;
+            int    group    = k / group_size;
+            float  scale    = __half2float(scales[static_cast<size_t>(group) * out_f + n]);
+            float  rebuilt  = static_cast<float>(int8_data[idx]) * scale;
+            float  orig     = __half2float(dst[idx]);
+            float  abs_err  = std::abs(rebuilt - orig);
+            float  ratio    = abs_err / (scale + 1e-30f);
+            if (abs_err > max_abs_err) {
+                max_abs_err = abs_err;
+                max_err_idx = idx;
+            }
+            if (ratio > worst_ratio) worst_ratio = ratio;
+            if (ratio > 0.75) ++bad_count;
+        }
+    }
+    EXPECT_LT(worst_ratio, 0.75)
+        << "worst abs_err/scale ratio " << worst_ratio << " at idx " << max_err_idx
+        << " (k=" << max_err_idx / out_f << ", n=" << max_err_idx % out_f << ")";
+    // 量化应覆盖绝大多数元素；允许少数极小值被量化到相邻档位
+    EXPECT_LT(static_cast<double>(bad_count) / (static_cast<double>(in_f) * out_f), 1e-4)
+        << "bad_count=" << bad_count;
+}

@@ -78,6 +78,7 @@ target_compile_options(tiny_llm PRIVATE
 
 # ── 主程序 ───────────────────────────────────────────────────────
 add_executable(tiny_llm_demo src/main.cpp)
+target_include_directories(tiny_llm_demo PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/kernels)
 target_link_libraries(tiny_llm_demo PRIVATE tiny_llm)
 
 # ── 测试 ─────────────────────────────────────────────────────────

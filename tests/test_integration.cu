@@ -2,6 +2,7 @@
 #include "tiny_llm/cuda_utils.h"
 #include "tiny_llm/inference_engine.h"
 #include "tiny_llm/model_loader.h"
+#include "rope.cuh"  // kernels::rope_precompute_cache
 #include <cmath>
 #include <cuda_fp16.h>
 #include <cuda_runtime.h>
@@ -43,8 +44,8 @@ class IntegrationTest : public ::testing::Test {
         config.vocab_size = 256;
         config.hidden_dim = 64;
         config.num_layers = 2;
-        config.num_heads = 4;
         config.num_kv_heads = 4;
+        config.num_heads = 4; // hidden_dim/head_dim = 64/16 = 4
         config.head_dim = 16;
         config.intermediate_dim = 128;
         config.max_seq_len = 64;
@@ -173,7 +174,7 @@ TEST_F(IntegrationTest, KernelConfigAutoTune) {
 TEST_F(IntegrationTest, KVCacheMultipleSequences) {
     KVCacheConfig config;
     config.num_layers = 2;
-    config.num_heads = 4;
+    config.num_kv_heads = 4;
     config.head_dim = 16;
     config.max_seq_len = 32;
     config.max_batch_size = 4;
@@ -228,7 +229,7 @@ TEST_F(IntegrationTest, TransformerLayerDimensions) {
     // Create KV cache
     KVCacheConfig kv_config;
     kv_config.num_layers = 1;
-    kv_config.num_heads = config.num_kv_heads;
+    kv_config.num_kv_heads = config.num_kv_heads;
     kv_config.head_dim = config.head_dim;
     kv_config.max_seq_len = config.max_seq_len;
     kv_config.max_batch_size = 1;
@@ -240,14 +241,26 @@ TEST_F(IntegrationTest, TransformerLayerDimensions) {
     ASSERT_TRUE(alloc_result.isOk());
     int seq_id = alloc_result.value();
 
-    // Create transformer layer
-    TransformerLayer layer(0, weights, config);
+    // RoPE 缓存：forward 的 apply_rope 需要有效的 cos/sin 表（不可传 nullptr）
+    int    half_d = config.head_dim / 2;
+    float *rope_cos = nullptr;
+    float *rope_sin = nullptr;
+    CUDA_CHECK(cudaMalloc(&rope_cos, config.max_seq_len * half_d * sizeof(float)));
+    CUDA_CHECK(cudaMalloc(&rope_sin, config.max_seq_len * half_d * sizeof(float)));
+    kernels::rope_precompute_cache(rope_cos, rope_sin, config.max_seq_len, config.head_dim,
+                                   config.rope_theta);
+
+    // 共享工作区 + 层（workspace RAII 自动释放）
+    LayerWorkspace workspace;
+    workspace.allocate(config);
+    TransformerLayer layer(0, weights, config, &workspace);
 
     // Create input hidden states
     half *hidden_states = randomDeviceFP16(hidden, 1.0f, 200);
 
     // Forward pass should not crash
-    layer.forward(hidden_states, *kv_cache, seq_id, 0);
+    auto fwd_result = layer.forward(hidden_states, *kv_cache, seq_id, 0, rope_cos, rope_sin);
+    ASSERT_TRUE(fwd_result.isOk()) << fwd_result.error();
     cudaDeviceSynchronize();
 
     // TransformerLayer appends KV, but the caller owns seq_len advancement.
@@ -266,6 +279,8 @@ TEST_F(IntegrationTest, TransformerLayerDimensions) {
     freeWeight(weights.w3);
     cudaFree(weights.rms_att_weight);
     cudaFree(weights.rms_ffn_weight);
+    cudaFree(rope_cos);
+    cudaFree(rope_sin);
 }
 
 // Test: Greedy sampling determinism

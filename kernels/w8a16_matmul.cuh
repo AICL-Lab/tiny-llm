@@ -7,6 +7,9 @@
 namespace tiny_llm {
 namespace kernels {
 
+// 诊断开关：强制 reference kernel（区分 tiled kernel 与权重/上层逻辑问题）
+extern bool g_force_reference;
+
 // Kernel configuration constants
 constexpr int WARP_SIZE = 32;
 constexpr int TILE_K = 32; // Reduction tile size

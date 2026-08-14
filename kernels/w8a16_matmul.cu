@@ -4,6 +4,9 @@
 namespace tiny_llm {
 namespace kernels {
 
+// 诊断开关：强制走 reference kernel（用于区分 tiled kernel 与权重/上层逻辑问题）
+bool g_force_reference = false;
+
 // Dequantization kernel
 __global__ void dequantize_kernel(const int8_t *__restrict__ weight_int8,
                                   const half *__restrict__ scales, half *__restrict__ weight_fp16,
@@ -222,7 +225,7 @@ void w8a16_matmul(const half *input, const int8_t *weight, const half *scales, h
         return;
     }
 
-    if (M * N < 4096) {
+    if (g_force_reference || M * N < 4096) {
         w8a16_matmul_reference(input, weight, scales, output, M, N, K, group_size, stream);
         return;
     }

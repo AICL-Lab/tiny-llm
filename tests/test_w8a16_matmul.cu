@@ -342,3 +342,46 @@ RC_GTEST_FIXTURE_PROP(W8A16PropertyTest, DifferentGroupSizes,
     RC_ASSERT(rel_error < 0.01f);
 }
 #endif
+
+// 大矩阵（M*N >= 4096）走 tiled kernel 分支；小矩阵测试只覆盖 reference。
+// 真实模型（1×896×896、group 128）必须与 reference 差分对齐。
+TEST_F(W8A16MatMulTest, LargeMatrixTiledMatchesReference) {
+    int M = 1, N = 896, K = 896;
+    int group_size = 128;
+    int num_groups = (K + group_size - 1) / group_size;
+
+    auto input  = randomFP16(M, K);
+    auto weight = randomINT8(K, N);
+    auto scales = randomScales(num_groups, N);
+
+    DeviceBuffer<half>   d_input(M * K);
+    DeviceBuffer<int8_t> d_weight(K * N);
+    DeviceBuffer<half>   d_scales(num_groups * N);
+    DeviceBuffer<half>   d_output(M * N);
+    DeviceBuffer<half>   d_output_ref(M * N);
+
+    d_input.copyFromHost(input.data(), M * K);
+    d_weight.copyFromHost(weight.data(), K * N);
+    d_scales.copyFromHost(scales.data(), num_groups * N);
+
+    // tiled 分支（M*N = 896 >= 4096）
+    w8a16_matmul(d_input.data(), d_weight.data(), d_scales.data(), d_output.data(), M, N, K,
+                 group_size);
+    // reference 分支
+    w8a16_matmul_reference(d_input.data(), d_weight.data(), d_scales.data(), d_output_ref.data(),
+                           M, N, K, group_size);
+    cudaDeviceSynchronize();
+
+    std::vector<half> out(M * N);
+    std::vector<half> out_ref(M * N);
+    d_output.copyToHost(out.data(), M * N);
+    d_output_ref.copyToHost(out_ref.data(), M * N);
+    cudaDeviceSynchronize();
+
+    for (int i = 0; i < M * N; ++i) {
+        float a = __half2float(out[i]);
+        float b = __half2float(out_ref[i]);
+        EXPECT_NEAR(a, b, std::max(1e-2f, std::abs(b) * 1e-2f))
+            << "mismatch at " << i << ": tiled=" << a << " ref=" << b;
+    }
+}

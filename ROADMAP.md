@@ -20,8 +20,11 @@
 - [x] 实现 tokenizer（Qwen2.5 为 gpt2 风格 BPE，GGUF 内嵌 tokens+merges，从 GGUF 读取）
       ——手写 Qwen2 预分词正则 + GPT-2 字节编码 + BPE，与 HuggingFace tokenizers
       库 30 例 417 token 逐 id 差分对齐，decode 无损往返
-- [ ] GPU 环境验证权重上传与端到端生成（需有卡机器：`tiny_llm_demo model.gguf --prompt "..."`）
-- [ ] 与 llama.cpp 同模型同输入对比输出一致性（token 级 diff）
+- [x] GPU 环境验证权重上传与端到端生成（RTX 3060 实测：
+      `tiny_llm_demo model.gguf --prompt "..."`，prefill ~170ms、decode ~10 tok/s，输出合理文本）
+- [x] 与 llama.cpp 同模型同输入对比输出一致性（token 级 diff）：
+      前 14 个 token 与 llama-server（同 prompt、greedy）完全一致；后续分歧源于
+      W8A16 与 Q4_K_M 量化方案的精度差异（argmax 边界翻转），非架构错误
 
 **完成证据**：一条命令从 GGUF 到文本输出，且与 llama.cpp 输出对齐。
 

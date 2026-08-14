@@ -434,20 +434,21 @@ class AttentionTest : public ::testing::Test {
 
 // Unit tests for Attention
 TEST_F(AttentionTest, BasicDecodeAttention) {
-    int   batch_size = 1;
-    int   num_heads = 2;
+    // Token-major layout: Q [1,Hq,D], K_cache [S,Hkv,D], V_cache [S,Hkv,D]
+    int   num_q_heads = 2;
+    int   num_kv_heads = 2; // MHA: Hq == Hkv
     int   seq_len = 8;
     int   head_dim = 32;
     float scale = 1.0f / std::sqrt(static_cast<float>(head_dim));
 
-    auto query = randomFP16(batch_size * num_heads * head_dim);
-    auto k_cache = randomFP16(batch_size * num_heads * seq_len * head_dim);
-    auto v_cache = randomFP16(batch_size * num_heads * seq_len * head_dim);
+    auto query = randomFP16(num_q_heads * head_dim);
+    auto k_cache = randomFP16(seq_len * num_kv_heads * head_dim);
+    auto v_cache = randomFP16(seq_len * num_kv_heads * head_dim);
 
-    DeviceBuffer<half> d_query(batch_size * num_heads * head_dim);
-    DeviceBuffer<half> d_k_cache(batch_size * num_heads * seq_len * head_dim);
-    DeviceBuffer<half> d_v_cache(batch_size * num_heads * seq_len * head_dim);
-    DeviceBuffer<half> d_output(batch_size * num_heads * head_dim);
+    DeviceBuffer<half> d_query(num_q_heads * head_dim);
+    DeviceBuffer<half> d_k_cache(seq_len * num_kv_heads * head_dim);
+    DeviceBuffer<half> d_v_cache(seq_len * num_kv_heads * head_dim);
+    DeviceBuffer<half> d_output(num_q_heads * head_dim);
 
     d_query.copyFromHost(query.data(), query.size());
     d_k_cache.copyFromHost(k_cache.data(), k_cache.size());
@@ -455,15 +456,55 @@ TEST_F(AttentionTest, BasicDecodeAttention) {
 
     EXPECT_NO_THROW({
         attention_decode(d_query.data(), d_k_cache.data(), d_v_cache.data(), d_output.data(), scale,
-                         batch_size, num_heads, seq_len, head_dim);
+                         num_q_heads, num_kv_heads, seq_len, head_dim);
         cudaDeviceSynchronize();
     });
 
-    std::vector<half> output(batch_size * num_heads * head_dim);
+    std::vector<half> output(num_q_heads * head_dim);
     d_output.copyToHost(output.data(), output.size());
     cudaDeviceSynchronize();
 
-    // Verify output is not all zeros
+    bool has_nonzero = false;
+    for (const auto &v : output) {
+        if (__half2float(v) != 0.0f) {
+            has_nonzero = true;
+            break;
+        }
+    }
+    EXPECT_TRUE(has_nonzero);
+}
+
+// GQA decode: Hq=4, Hkv=2, group_size=2
+TEST_F(AttentionTest, GQADecodeAttention) {
+    int   num_q_heads = 4;
+    int   num_kv_heads = 2;
+    int   seq_len = 8;
+    int   head_dim = 32;
+    float scale = 1.0f / std::sqrt(static_cast<float>(head_dim));
+
+    auto query = randomFP16(num_q_heads * head_dim, 1.0f, 200);
+    auto k_cache = randomFP16(seq_len * num_kv_heads * head_dim, 1.0f, 201);
+    auto v_cache = randomFP16(seq_len * num_kv_heads * head_dim, 1.0f, 202);
+
+    DeviceBuffer<half> d_query(num_q_heads * head_dim);
+    DeviceBuffer<half> d_k_cache(seq_len * num_kv_heads * head_dim);
+    DeviceBuffer<half> d_v_cache(seq_len * num_kv_heads * head_dim);
+    DeviceBuffer<half> d_output(num_q_heads * head_dim);
+
+    d_query.copyFromHost(query.data(), query.size());
+    d_k_cache.copyFromHost(k_cache.data(), k_cache.size());
+    d_v_cache.copyFromHost(v_cache.data(), v_cache.size());
+
+    EXPECT_NO_THROW({
+        attention_decode(d_query.data(), d_k_cache.data(), d_v_cache.data(), d_output.data(), scale,
+                         num_q_heads, num_kv_heads, seq_len, head_dim);
+        cudaDeviceSynchronize();
+    });
+
+    std::vector<half> output(num_q_heads * head_dim);
+    d_output.copyToHost(output.data(), output.size());
+    cudaDeviceSynchronize();
+
     bool has_nonzero = false;
     for (const auto &v : output) {
         if (__half2float(v) != 0.0f) {
@@ -475,20 +516,21 @@ TEST_F(AttentionTest, BasicDecodeAttention) {
 }
 
 TEST_F(AttentionTest, BasicPrefillAttention) {
-    int   batch_size = 1;
-    int   num_heads = 2;
+    // Token-major layout: Q [S,Hq,D], K [S,Hkv,D], V [S,Hkv,D]
+    int   num_q_heads = 2;
+    int   num_kv_heads = 2;
     int   seq_len = 8;
     int   head_dim = 32;
     float scale = 1.0f / std::sqrt(static_cast<float>(head_dim));
 
-    auto query = randomFP16(batch_size * num_heads * seq_len * head_dim);
-    auto key = randomFP16(batch_size * num_heads * seq_len * head_dim);
-    auto value = randomFP16(batch_size * num_heads * seq_len * head_dim);
+    auto query = randomFP16(seq_len * num_q_heads * head_dim);
+    auto key = randomFP16(seq_len * num_kv_heads * head_dim);
+    auto value = randomFP16(seq_len * num_kv_heads * head_dim);
 
-    DeviceBuffer<half> d_query(batch_size * num_heads * seq_len * head_dim);
-    DeviceBuffer<half> d_key(batch_size * num_heads * seq_len * head_dim);
-    DeviceBuffer<half> d_value(batch_size * num_heads * seq_len * head_dim);
-    DeviceBuffer<half> d_output(batch_size * num_heads * seq_len * head_dim);
+    DeviceBuffer<half> d_query(seq_len * num_q_heads * head_dim);
+    DeviceBuffer<half> d_key(seq_len * num_kv_heads * head_dim);
+    DeviceBuffer<half> d_value(seq_len * num_kv_heads * head_dim);
+    DeviceBuffer<half> d_output(seq_len * num_q_heads * head_dim);
 
     d_query.copyFromHost(query.data(), query.size());
     d_key.copyFromHost(key.data(), key.size());
@@ -496,7 +538,35 @@ TEST_F(AttentionTest, BasicPrefillAttention) {
 
     EXPECT_NO_THROW({
         attention_prefill(d_query.data(), d_key.data(), d_value.data(), d_output.data(), scale,
-                          batch_size, num_heads, seq_len, head_dim);
+                          num_q_heads, num_kv_heads, seq_len, head_dim);
+        cudaDeviceSynchronize();
+    });
+}
+
+// GQA prefill: Hq=4, Hkv=2
+TEST_F(AttentionTest, GQAPrefillAttention) {
+    int   num_q_heads = 4;
+    int   num_kv_heads = 2;
+    int   seq_len = 8;
+    int   head_dim = 32;
+    float scale = 1.0f / std::sqrt(static_cast<float>(head_dim));
+
+    auto query = randomFP16(seq_len * num_q_heads * head_dim, 1.0f, 300);
+    auto key = randomFP16(seq_len * num_kv_heads * head_dim, 1.0f, 301);
+    auto value = randomFP16(seq_len * num_kv_heads * head_dim, 1.0f, 302);
+
+    DeviceBuffer<half> d_query(seq_len * num_q_heads * head_dim);
+    DeviceBuffer<half> d_key(seq_len * num_kv_heads * head_dim);
+    DeviceBuffer<half> d_value(seq_len * num_kv_heads * head_dim);
+    DeviceBuffer<half> d_output(seq_len * num_q_heads * head_dim);
+
+    d_query.copyFromHost(query.data(), query.size());
+    d_key.copyFromHost(key.data(), key.size());
+    d_value.copyFromHost(value.data(), value.size());
+
+    EXPECT_NO_THROW({
+        attention_prefill(d_query.data(), d_key.data(), d_value.data(), d_output.data(), scale,
+                          num_q_heads, num_kv_heads, seq_len, head_dim);
         cudaDeviceSynchronize();
     });
 }
@@ -744,3 +814,64 @@ RC_GTEST_FIXTURE_PROP(AttentionPropertyTest, SoftmaxPreservesOrder,
     }
 }
 #endif
+
+// ============================================================================
+// Attention 数值验证（与 CPU 参考实现逐元素对比）
+// 现有 AttentionTest 只验证"不 crash / 非零"，从未验证数值正确性。
+// ============================================================================
+TEST_F(AttentionTest, GQADecodeMatchesCpuReference) {
+    const int num_q_heads = 4;
+    const int num_kv_heads = 2;
+    const int seq_len = 8;
+    const int head_dim = 32;
+    const float scale = 1.0f / std::sqrt(static_cast<float>(head_dim));
+    const int group_size = num_q_heads / num_kv_heads;
+
+    auto query = randomFP16(num_q_heads * head_dim, 1.0f, 500);
+    auto k_cache = randomFP16(seq_len * num_kv_heads * head_dim, 1.0f, 501);
+    auto v_cache = randomFP16(seq_len * num_kv_heads * head_dim, 1.0f, 502);
+
+    DeviceBuffer<half> d_query(num_q_heads * head_dim);
+    DeviceBuffer<half> d_k_cache(seq_len * num_kv_heads * head_dim);
+    DeviceBuffer<half> d_v_cache(seq_len * num_kv_heads * head_dim);
+    DeviceBuffer<half> d_output(num_q_heads * head_dim);
+    d_query.copyFromHost(query.data(), query.size());
+    d_k_cache.copyFromHost(k_cache.data(), k_cache.size());
+    d_v_cache.copyFromHost(v_cache.data(), v_cache.size());
+
+    attention_decode(d_query.data(), d_k_cache.data(), d_v_cache.data(), d_output.data(), scale,
+                     num_q_heads, num_kv_heads, seq_len, head_dim);
+    cudaDeviceSynchronize();
+
+    std::vector<half> output(num_q_heads * head_dim);
+    d_output.copyToHost(output.data(), output.size());
+    cudaDeviceSynchronize();
+
+    // CPU reference
+    for (int h = 0; h < num_q_heads; ++h) {
+        int kh = h / group_size;
+        // scores
+        std::vector<float> scores(seq_len);
+        float smax = -1e30f;
+        for (int s = 0; s < seq_len; ++s) {
+            float acc = 0.0f;
+            for (int d = 0; d < head_dim; ++d) {
+                acc += __half2float(query[h * head_dim + d]) *
+                       __half2float(k_cache[(s * num_kv_heads + kh) * head_dim + d]);
+            }
+            scores[s] = acc * scale;
+            smax = std::max(smax, scores[s]);
+        }
+        float sum_exp = 0.0f;
+        for (int s = 0; s < seq_len; ++s) sum_exp += std::exp(scores[s] - smax);
+        for (int d = 0; d < head_dim; ++d) {
+            float out_val = 0.0f;
+            for (int s = 0; s < seq_len; ++s) {
+                float w = std::exp(scores[s] - smax) / sum_exp;
+                out_val += w * __half2float(v_cache[(s * num_kv_heads + kh) * head_dim + d]);
+            }
+            EXPECT_NEAR(__half2float(output[h * head_dim + d]), out_val, 5e-2f)
+                << "head " << h << " dim " << d;
+        }
+    }
+}

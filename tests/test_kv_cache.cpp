@@ -24,7 +24,7 @@ class KVCacheTest : public ::testing::Test {
                                int max_seq_len = 128, int max_batch_size = 4) {
         KVCacheConfig config;
         config.num_layers = num_layers;
-        config.num_heads = num_heads;
+        config.num_kv_heads = num_heads;
         config.head_dim = head_dim;
         config.max_seq_len = max_seq_len;
         config.max_batch_size = max_batch_size;
@@ -203,7 +203,7 @@ TEST_F(KVCacheTest, AppendDoesNotAdvanceVisibleSequenceLength) {
     int seq_id = result.value();
 
     int    num_tokens = 3;
-    size_t elements = static_cast<size_t>(num_tokens) * config.num_heads * config.head_dim;
+    size_t elements = static_cast<size_t>(num_tokens) * config.num_kv_heads * config.head_dim;
     std::vector<half> host_k(elements, __float2half(1.0f));
     std::vector<half> host_v(elements, __float2half(2.0f));
     half             *device_k = nullptr;

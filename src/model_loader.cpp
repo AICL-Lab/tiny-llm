@@ -258,6 +258,18 @@ Result<ModelWeights> ModelLoader::loadGGUF(const std::string &path, ModelConfig 
             return Result<void>::ok();
         };
 
+        // Qwen2 系 attention 带 bias（Llama 系无此 tensor，缺失时保持 nullptr）
+        auto load_bias = [&](const char *name) -> half * {
+            auto *t = find_l({name});
+            if (!t) return nullptr;
+            auto r = load_fp16(t);
+            if (r.isErr()) {
+                TLLM_WARN("layer {} bias {} load failed: {}", layer, name, r.error());
+                return nullptr;
+            }
+            return r.value();
+        };
+
         if (auto r = load_qw(lw.wq, {"attn_q.weight"}); r.isErr()) { cleanup_on_error(); return Result<ModelWeights>::err(r.error()); }
         if (auto r = load_qw(lw.wk, {"attn_k.weight"}); r.isErr()) { cleanup_on_error(); return Result<ModelWeights>::err(r.error()); }
         if (auto r = load_qw(lw.wv, {"attn_v.weight"}); r.isErr()) { cleanup_on_error(); return Result<ModelWeights>::err(r.error()); }
@@ -265,6 +277,11 @@ Result<ModelWeights> ModelLoader::loadGGUF(const std::string &path, ModelConfig 
         if (auto r = load_qw(lw.w1, {"ffn_gate.weight"}); r.isErr()) { cleanup_on_error(); return Result<ModelWeights>::err(r.error()); }
         if (auto r = load_qw(lw.w2, {"ffn_down.weight"}); r.isErr()) { cleanup_on_error(); return Result<ModelWeights>::err(r.error()); }
         if (auto r = load_qw(lw.w3, {"ffn_up.weight"}); r.isErr()) { cleanup_on_error(); return Result<ModelWeights>::err(r.error()); }
+
+        // Attention bias（Qwen2 系）
+        lw.wq_bias = load_bias("attn_q.bias");
+        lw.wk_bias = load_bias("attn_k.bias");
+        lw.wv_bias = load_bias("attn_v.bias");
 
         // RMSNorm 权重 (FP16)
         auto att_r = load_fp16(find_l({"attn_norm.weight"}));
@@ -281,10 +298,24 @@ Result<ModelWeights> ModelLoader::loadGGUF(const std::string &path, ModelConfig 
     if (fn_r.isErr()) { cleanup_on_error(); return Result<ModelWeights>::err("final norm: " + fn_r.error()); }
     weights.final_norm_weight = fn_r.value();
 
-    // --- LM head (量化) ---
-    auto lm_r = load_quantized(find_any_tensor({"output.weight", "lm_head.weight"}));
+    // --- LM head ---
+    // 量化版本（W8A16）作为后备；同时加载 FP16 版本用于 logits 精度（output 层不量化）
+    auto lm_t = find_any_tensor({"output.weight", "lm_head.weight"});
+    auto lm_r = load_quantized(lm_t);
     if (lm_r.isErr()) { cleanup_on_error(); return Result<ModelWeights>::err("LM head: " + lm_r.error()); }
     weights.lm_head = lm_r.value();
+
+    // FP16 lm_head：load_fp16 输出列主 [in, out]，需转置为行主 [K, N]（与量化路径一致）
+    auto lm_f16_raw = load_f16(lm_t);
+    if (lm_f16_raw.isErr()) { cleanup_on_error(); return Result<ModelWeights>::err("LM head fp16: " + lm_f16_raw.error()); }
+    auto lm_f16_vec = lm_f16_raw.value();
+    transpose_f16(lm_f16_vec, static_cast<int>(lm_t->dimensions[1]),
+                  static_cast<int>(lm_t->dimensions[0]));
+    half *lm_fp16_d = nullptr;
+    CUDA_CHECK(cudaMalloc(&lm_fp16_d, lm_f16_vec.size() * sizeof(half)));
+    CUDA_CHECK(cudaMemcpy(lm_fp16_d, lm_f16_vec.data(), lm_f16_vec.size() * sizeof(half),
+                          cudaMemcpyHostToDevice));
+    weights.lm_head_fp16 = lm_fp16_d;
 
     success = true;
     return Result<ModelWeights>::ok(std::move(weights));
@@ -552,12 +583,23 @@ void ModelLoader::freeWeights(ModelWeights &weights) {
             cudaFree(layer.rms_ffn_weight);
             layer.rms_ffn_weight = nullptr;
         }
+        auto free_bias = [](half *&b) {
+            if (b) { cudaFree(b); b = nullptr; }
+        };
+        free_bias(layer.wq_bias);
+        free_bias(layer.wk_bias);
+        free_bias(layer.wv_bias);
     }
     weights.layers.clear();
 
     if (weights.final_norm_weight) {
         cudaFree(weights.final_norm_weight);
         weights.final_norm_weight = nullptr;
+    }
+
+    if (weights.lm_head_fp16) {
+        cudaFree(weights.lm_head_fp16);
+        weights.lm_head_fp16 = nullptr;
     }
 
     if (weights.lm_head.data) {

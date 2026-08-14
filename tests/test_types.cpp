@@ -129,7 +129,7 @@ TEST_F(ModelConfigTest, DefaultValues) {
     EXPECT_EQ(config.vocab_size, 32000);
     EXPECT_EQ(config.hidden_dim, 4096);
     EXPECT_EQ(config.num_layers, 32);
-    EXPECT_EQ(config.num_heads, 32);
+    EXPECT_EQ(config.num_kv_heads, 32);
     EXPECT_EQ(config.head_dim, 128);
     EXPECT_GT(config.rms_norm_eps, 0.0f);
 }
@@ -151,7 +151,7 @@ class KVCacheConfigTest : public ::testing::Test {};
 TEST_F(KVCacheConfigTest, DefaultValues) {
     KVCacheConfig config;
     EXPECT_EQ(config.num_layers, 32);
-    EXPECT_EQ(config.num_heads, 32);
+    EXPECT_EQ(config.num_kv_heads, 32);
     EXPECT_EQ(config.head_dim, 128);
     EXPECT_EQ(config.max_seq_len, 2048);
 }

@@ -74,6 +74,11 @@ struct TransformerWeights {
     // Normalization weights (FP16)
     half *rms_att_weight = nullptr; // [hidden_dim]
     half *rms_ffn_weight = nullptr; // [hidden_dim]
+
+    // Attention biases（Qwen2 系有；Llama 系为 nullptr）
+    half *wq_bias = nullptr; // [num_heads * head_dim]
+    half *wk_bias = nullptr; // [num_kv_heads * head_dim]
+    half *wv_bias = nullptr; // [num_kv_heads * head_dim]
 };
 
 // Complete model weights
@@ -86,7 +91,8 @@ struct ModelWeights {
 
     // Output
     half           *final_norm_weight = nullptr; // [hidden_dim]
-    QuantizedWeight lm_head;                     // [hidden_dim, vocab_size]
+    QuantizedWeight lm_head;                     // [hidden_dim, vocab_size]（W8A16）
+    half           *lm_head_fp16 = nullptr;      // [hidden_dim, vocab_size]（可选，logits 精度优先）
 };
 
 // Forward declaration
@@ -119,9 +125,11 @@ struct GenerationStats {
 };
 
 // KV Cache configuration
+// num_kv_heads is the number of KV heads (not query heads).
+// This is the head count used for cache allocation and addressing.
 struct KVCacheConfig {
     int num_layers = 32;
-    int num_heads = 32;
+    int num_kv_heads = 32;
     int head_dim = 128;
     int max_seq_len = 2048;
     int max_batch_size = 1;
