@@ -75,7 +75,9 @@ export default withMermaid(
             items: [
               { text: '概述', link: '/performance/' },
               { text: '基准测试', link: '/performance/benchmarks' },
-              { text: '分析指南', link: '/performance/profiling' },
+              { text: '对比方法论', link: '/performance/benchmark-methodology' },
+              { text: '分析指南', link: '/performance/profiling-guide' },
+              { text: '分析概览', link: '/performance/profiling' },
               { text: '优化', link: '/performance/optimization' },
             ],
           },
