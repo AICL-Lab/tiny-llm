@@ -54,8 +54,9 @@ endif()
 
 # ── 主库 ─────────────────────────────────────────────────────────
 file(GLOB_RECURSE SOURCES "src/*.cpp" "kernels/*.cu")
-# Exclude main.cpp from library
+# Exclude main.cpp / benchmark.cpp from library (they are standalone executables)
 list(FILTER SOURCES EXCLUDE REGEX "src/main\\.cpp$")
+list(FILTER SOURCES EXCLUDE REGEX "src/benchmark\\.cpp$")
 
 add_library(tiny_llm STATIC ${SOURCES})
 add_library(tiny_llm::tiny_llm ALIAS tiny_llm)
@@ -80,6 +81,11 @@ target_compile_options(tiny_llm PRIVATE
 add_executable(tiny_llm_demo src/main.cpp)
 target_include_directories(tiny_llm_demo PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/kernels)
 target_link_libraries(tiny_llm_demo PRIVATE tiny_llm)
+
+# ── benchmark ────────────────────────────────────────────────────
+add_executable(tiny_llm_bench src/benchmark.cpp)
+target_include_directories(tiny_llm_bench PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/kernels)
+target_link_libraries(tiny_llm_bench PRIVATE tiny_llm)
 
 # ── 测试 ─────────────────────────────────────────────────────────
 option(BUILD_TESTS "Build tests" ON)
