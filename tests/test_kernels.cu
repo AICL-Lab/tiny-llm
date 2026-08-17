@@ -1,4 +1,5 @@
 #include "rmsnorm.cuh"
+#include "rope.cuh"
 #include "tiny_llm/cuda_utils.h"
 #include <cmath>
 #include <cuda_fp16.h>
@@ -1260,6 +1261,112 @@ TEST_F(AttentionTest, MQA16To1DecodeMatchesCpuReference) {
             }
             EXPECT_NEAR(__half2float(output[h * head_dim + d]), out_val, 8e-2f)
                 << "head " << h << " dim " << d;
+        }
+    }
+}
+
+// ============================================================================
+// 任务 A3：RoPE 进入计算路径 —— apply_rope_inplace 与 CPU 参考（half-split
+// rotate_half 语义）逐元素比较，容差 1e-3f。
+//
+// 语义（与 rope.cuh 文档一致）：
+//   x1 = x[d] (d in [0, D/2)), x2 = x[d + D/2]
+//   out[d]        = x1*cos(pos,d) - x2*sin(pos,d)
+//   out[d + D/2]  = x1*sin(pos,d) + x2*cos(pos,d)
+//   angle(pos,d)  = pos * theta^(-2d/D)
+// ============================================================================
+TEST(RoPETest, ApplyInplaceMatchesReference) {
+    if (!hasCudaDevice()) GTEST_SKIP() << "No CUDA device available";
+    cudaSetDevice(0);
+
+    const int num_q_heads = 4;
+    const int num_kv_heads = 2;
+    const int num_tokens = 3; // 覆盖多个位置（start_position + s）
+    const int head_dim = 64;
+    const int half_d = head_dim / 2;
+    const int start_position = 5;
+    const float theta = 10000.0f;
+    const int max_seq_len = 32;
+
+    // 预计算 cos/sin 表 [max_seq_len, D/2]
+    std::vector<float> cos_cache(static_cast<size_t>(max_seq_len) * half_d);
+    std::vector<float> sin_cache(static_cast<size_t>(max_seq_len) * half_d);
+    for (int pos = 0; pos < max_seq_len; ++pos) {
+        for (int d = 0; d < half_d; ++d) {
+            float freq = 1.0f / std::pow(theta, (2.0f * d) / static_cast<float>(head_dim));
+            float angle = static_cast<float>(pos) * freq;
+            cos_cache[static_cast<size_t>(pos) * half_d + d] = std::cos(angle);
+            sin_cache[static_cast<size_t>(pos) * half_d + d] = std::sin(angle);
+        }
+    }
+
+    // 随机 Q/K（token-major），范围 [-0.5, 0.5] 使输出落在 fp16 高精度区
+    std::vector<half> q(static_cast<size_t>(num_tokens) * num_q_heads * head_dim);
+    std::vector<half> k(static_cast<size_t>(num_tokens) * num_kv_heads * head_dim);
+    {
+        std::mt19937                          gen(100);
+        std::uniform_real_distribution<float> dist(-0.5f, 0.5f);
+        for (auto &v : q) v = __float2half(dist(gen));
+        for (auto &v : k) v = __float2half(dist(gen));
+    }
+    const std::vector<half> q_ref = q;
+    const std::vector<half> k_ref = k;
+
+    DeviceBuffer<half>  d_q(num_tokens * num_q_heads * head_dim);
+    DeviceBuffer<half>  d_k(num_tokens * num_kv_heads * head_dim);
+    DeviceBuffer<float> d_cos(max_seq_len * half_d);
+    DeviceBuffer<float> d_sin(max_seq_len * half_d);
+    d_q.copyFromHost(q.data(), q.size());
+    d_k.copyFromHost(k.data(), k.size());
+    d_cos.copyFromHost(cos_cache.data(), cos_cache.size());
+    d_sin.copyFromHost(sin_cache.data(), sin_cache.size());
+
+    kernels::apply_rope_inplace(d_q.data(), d_k.data(), d_cos.data(), d_sin.data(), num_tokens,
+                                start_position, num_q_heads, num_kv_heads, head_dim);
+    cudaDeviceSynchronize();
+
+    std::vector<half> q_out(static_cast<size_t>(num_tokens) * num_q_heads * head_dim);
+    std::vector<half> k_out(static_cast<size_t>(num_tokens) * num_kv_heads * head_dim);
+    d_q.copyToHost(q_out.data(), q_out.size());
+    d_k.copyToHost(k_out.data(), k_out.size());
+    cudaDeviceSynchronize();
+
+    // CPU 参考：half-split 旋转，逐元素比较
+    for (int s = 0; s < num_tokens; ++s) {
+        const int pos = start_position + s;
+        for (int h = 0; h < num_q_heads; ++h) {
+            for (int d = 0; d < half_d; ++d) {
+                const float c = cos_cache[static_cast<size_t>(pos) * half_d + d];
+                const float sn = sin_cache[static_cast<size_t>(pos) * half_d + d];
+                const float x1 = __half2float(q_ref[(s * num_q_heads + h) * head_dim + d]);
+                const float x2 = __half2float(q_ref[(s * num_q_heads + h) * head_dim + d + half_d]);
+                const float exp_first = x1 * c - x2 * sn;
+                const float exp_second = x1 * sn + x2 * c;
+                const float got_first = __half2float(q_out[(s * num_q_heads + h) * head_dim + d]);
+                const float got_second =
+                    __half2float(q_out[(s * num_q_heads + h) * head_dim + d + half_d]);
+                EXPECT_NEAR(got_first, exp_first, 1e-3f)
+                    << "Q s=" << s << " h=" << h << " d=" << d;
+                EXPECT_NEAR(got_second, exp_second, 1e-3f)
+                    << "Q s=" << s << " h=" << h << " d=" << d;
+            }
+        }
+        for (int kh = 0; kh < num_kv_heads; ++kh) {
+            for (int d = 0; d < half_d; ++d) {
+                const float c = cos_cache[static_cast<size_t>(pos) * half_d + d];
+                const float sn = sin_cache[static_cast<size_t>(pos) * half_d + d];
+                const float x1 = __half2float(k_ref[(s * num_kv_heads + kh) * head_dim + d]);
+                const float x2 = __half2float(k_ref[(s * num_kv_heads + kh) * head_dim + d + half_d]);
+                const float exp_first = x1 * c - x2 * sn;
+                const float exp_second = x1 * sn + x2 * c;
+                const float got_first = __half2float(k_out[(s * num_kv_heads + kh) * head_dim + d]);
+                const float got_second =
+                    __half2float(k_out[(s * num_kv_heads + kh) * head_dim + d + half_d]);
+                EXPECT_NEAR(got_first, exp_first, 1e-3f)
+                    << "K s=" << s << " kh=" << kh << " d=" << d;
+                EXPECT_NEAR(got_second, exp_second, 1e-3f)
+                    << "K s=" << s << " kh=" << kh << " d=" << d;
+            }
         }
     }
 }
