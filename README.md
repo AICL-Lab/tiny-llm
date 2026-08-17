@@ -29,10 +29,25 @@ Tiny-LLM 将仓库表面保持得尽量小：CUDA/C++17 内核、W8A16 量化、
 | GGUF 解析与反量化（F16/F32/Q4_0/Q5_0/Q8_0/Q4_K/Q6_K） | ✅ 已实现，真实模型验证通过（见下） |
 | 架构感知配置提取（qwen2/llama/...） | ✅ 已实现，真实模型验证通过 |
 | tokenizer | ✅ 已实现，与 HuggingFace tokenizers 差分测试逐 id 对齐（30 例 417 token） |
-| 真实模型端到端生成 | ⏳ 权重加载与 tokenizer 已验证；GPU 端到端生成待完成（需有卡机器） |
-| 端到端性能基准 | ❌ 未完成，暂无可复现的性能数字 |
+| 真实模型端到端生成 | ✅ Qwen2.5-0.5B-Instruct（Q4_K_M）在 RTX 3060 上验证通过 |
+| 端到端性能基准 | ✅ 已实现 `tiny_llm_bench`（TTFT / TPOT / tok/s / 峰值显存），见下方基准快照 |
 
 当前开发重点见 [ROADMAP](ROADMAP.md)。性能相关的文档只描述方法与计划，不引用未实测的数字。
+
+### 基准快照（2026-08-17）
+
+| 指标 | 数值 |
+|------|------|
+| 硬件 | RTX 3060（12GB，Laptop），CUDA 12.0，驱动 591.44 |
+| 模型 | Qwen2.5-0.5B-Instruct，GGUF Q4_K_M（本仓库重量化为 W8A16 后推理） |
+| commit | `5981711` |
+| 复现命令 | `./build/tiny_llm_bench model.gguf --prompt "你好" --max-tokens 64 --warmup 3 --iters 10` |
+| TTFT (mean) | 23.0 ms |
+| TPOT (mean) | 21.9 ms/token |
+| decode 吞吐 | 45.6 tok/s |
+| 峰值显存增量 | 2490 MB |
+
+完整方法论与可复制命令见 [benchmark-methodology](docs/performance/benchmark-methodology.md)。
 
 ## 已实现能力
 
