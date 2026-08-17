@@ -1,4 +1,5 @@
 #include "tiny_llm/cuda_utils.h"
+#include "warp_utils.cuh"
 #include "w8a16_matmul.cuh"
 
 namespace tiny_llm {
@@ -219,13 +220,57 @@ __global__ void w8a16_matmul_tiled_kernel(const half *__restrict__ input,
     }
 }
 
+// Decode-optimized W8A16 matmul for M == 1.
+// The generic dispatch used the slow reference kernel for small M*N (which is
+// every single-token decode GEMM).  Here one warp owns one output column and
+// the 32 lanes reduce over K in parallel, which is substantially faster for
+// the [1, K] @ [K, N] shape that dominates autoregressive decode.
+__global__ void w8a16_matmul_m1_kernel(const half *__restrict__ input,
+                                       const int8_t *__restrict__ weight,
+                                       const half *__restrict__ scales,
+                                       half *__restrict__ output, int N, int K, int group_size) {
+    const int warps_per_block = blockDim.x / 32;
+    const int col = blockIdx.x * warps_per_block + (threadIdx.x / 32);
+    if (col >= N) return;
+
+    const int lane = threadIdx.x & 31;
+    float sum = 0.0f;
+
+    for (int k = lane; k < K; k += 32) {
+        float a = __half2float(input[k]);
+        float w = static_cast<float>(weight[k * N + col]);
+        float s = __half2float(scales[(k / group_size) * N + col]);
+        sum += a * w * s;
+    }
+
+    sum = warp_reduce_sum(sum);
+    if (lane == 0) {
+        output[col] = __float2half(sum);
+    }
+}
+
 void w8a16_matmul(const half *input, const int8_t *weight, const half *scales, half *output, int M,
                   int N, int K, int group_size, cudaStream_t stream) {
     if (M <= 0 || N <= 0 || K <= 0 || group_size <= 0) {
         return;
     }
 
-    if (g_force_reference || M * N < 4096) {
+    if (g_force_reference) {
+        w8a16_matmul_reference(input, weight, scales, output, M, N, K, group_size, stream);
+        return;
+    }
+
+    // Autoregressive decode fast path: [1, K] @ [K, N].
+    if (M == 1) {
+        constexpr int WARPS_PER_BLOCK = 4; // 128 threads
+        dim3 block(WARPS_PER_BLOCK * 32);
+        dim3 grid((N + WARPS_PER_BLOCK - 1) / WARPS_PER_BLOCK);
+        w8a16_matmul_m1_kernel<<<grid, block, 0, stream>>>(input, weight, scales, output, N, K,
+                                                           group_size);
+        return;
+    }
+
+    if (M * N < 4096) {
         w8a16_matmul_reference(input, weight, scales, output, M, N, K, group_size, stream);
         return;
     }

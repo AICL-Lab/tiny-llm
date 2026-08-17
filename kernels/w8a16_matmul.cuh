@@ -33,6 +33,11 @@ void w8a16_matmul_reference(const half *input, const int8_t *weight, const half 
                             half *output, int M, int N, int K, int group_size,
                             cudaStream_t stream = 0);
 
+// FP16 matmul dispatch: decode-optimized fast path for M == 1, otherwise the
+// simple reference kernel (baseline / accuracy comparison).
+void fp16_matmul(const half *input, const half *weight, half *output, int M, int N, int K,
+                 cudaStream_t stream = 0);
+
 // FP16 baseline for accuracy comparison
 void fp16_matmul_reference(const half *input, const half *weight, half *output, int M, int N, int K,
                            cudaStream_t stream = 0);

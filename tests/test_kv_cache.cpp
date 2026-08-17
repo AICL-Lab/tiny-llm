@@ -259,7 +259,7 @@ TEST_F(KVCacheTest, InvalidAppendInputsDoNotAdvanceSequenceLength) {
     EXPECT_EQ(cache->getSeqLen(seq_id), 0);
 }
 
-TEST_F(KVCacheTest, AdvanceSeqLenClampsToSequenceCapacity) {
+TEST_F(KVCacheTest, AdvanceSeqLenFailsOnOverflow) {
     auto config = createConfig(2, 4, 8, 32, 2);
     auto cache = createCache(config);
     ASSERT_NE(cache, nullptr);
@@ -268,8 +268,10 @@ TEST_F(KVCacheTest, AdvanceSeqLenClampsToSequenceCapacity) {
     ASSERT_TRUE(result.isOk());
     int seq_id = result.value();
 
-    cache->advanceSeqLen(seq_id, 100);
-    EXPECT_EQ(cache->getSeqLen(seq_id), 5);
+    // Overflow must fail loudly instead of silently clamping the sequence len.
+    auto advance_result = cache->advanceSeqLen(seq_id, 100);
+    ASSERT_TRUE(advance_result.isErr());
+    EXPECT_EQ(cache->getSeqLen(seq_id), 0);
 }
 
 TEST_F(KVCacheTest, AdvanceSeqLenIgnoresNonPositiveValues) {

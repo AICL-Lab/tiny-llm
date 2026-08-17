@@ -16,6 +16,42 @@
 
 namespace tiny_llm {
 
+namespace {
+
+// Thread-local RNG shared by all sampling helpers.  Previous code constructed
+// a fresh std::mt19937 (plus a std::discrete_distribution) for every token,
+// which allocates and initializes O(vocab_size) state per decode step.
+std::mt19937 &samplingRng(unsigned seed) {
+    static thread_local std::mt19937 gen(std::random_device{}());
+    if (seed != 0) {
+        gen.seed(seed);
+    }
+    return gen;
+}
+
+// Sample an index from an already-normalized probability vector using the
+// cumulative-distribution method (O(log n) after O(n) prefix sums).  This
+// avoids the expensive std::discrete_distribution constructor.
+template <typename Probs, typename Indices>
+int sampleFromCdf(Probs &probs, Indices &indices, int count, std::mt19937 &gen) {
+    std::vector<float> cdf(count);
+    float sum = 0.0f;
+    for (int i = 0; i < count; ++i) {
+        sum += probs[i];
+        cdf[i] = sum;
+    }
+    if (sum <= 0.0f) {
+        return indices[0];
+    }
+    std::uniform_real_distribution<float> dist(0.0f, sum);
+    float r = dist(gen);
+    auto it = std::lower_bound(cdf.begin(), cdf.begin() + count, r);
+    int idx = static_cast<int>(it - cdf.begin());
+    return indices[std::min(idx, count - 1)];
+}
+
+} // namespace
+
 Result<std::unique_ptr<InferenceEngine>> InferenceEngine::load(const std::string &model_path,
                                                                const ModelConfig &config) {
     TLLM_INFO("Loading model from: {}", model_path);
@@ -470,11 +506,11 @@ int InferenceEngine::sampleTemperature(const half *logits, int vocab_size, float
         probs[i] /= sum;
     }
 
-    // Sample from distribution
-    std::mt19937                    gen(seed ? seed : std::random_device{}());
-    std::discrete_distribution<int> dist(probs.begin(), probs.end());
-
-    return dist(gen);
+    // Sample from the distribution via CDF lookup.
+    std::mt19937                    &gen = samplingRng(seed);
+    std::vector<int>                indices(vocab_size);
+    for (int i = 0; i < vocab_size; ++i) indices[i] = i;
+    return sampleFromCdf(probs, indices, vocab_size, gen);
 }
 
 // Top-k sampling
@@ -509,11 +545,12 @@ int InferenceEngine::sampleTopK(const half *logits, int vocab_size, int k, float
         probs[i] /= sum;
     }
 
-    // Sample
-    std::mt19937                    gen(seed ? seed : std::random_device{}());
-    std::discrete_distribution<int> dist(probs.begin(), probs.end());
-
-    return logit_pairs[dist(gen)].second;
+    // Sample (CDF lookup; logit_pairs[sampled].second is the token id).
+    std::mt19937     &gen = samplingRng(seed);
+    std::vector<int>  indices(k);
+    for (int i = 0; i < k; ++i) indices[i] = i;
+    int pick = sampleFromCdf(probs, indices, k, gen);
+    return logit_pairs[pick].second;
 }
 
 // Top-p (nucleus) sampling
@@ -565,11 +602,12 @@ int InferenceEngine::sampleTopP(const half *logits, int vocab_size, float p, flo
         probs[i] /= top_p_sum;
     }
 
-    // Sample
-    std::mt19937                    gen(seed ? seed : std::random_device{}());
-    std::discrete_distribution<int> dist(probs.begin(), probs.begin() + cutoff);
-
-    return logit_pairs[dist(gen)].second;
+    // Sample (CDF lookup over the truncated top-p set).
+    std::mt19937     &gen = samplingRng(seed);
+    std::vector<int>  indices(cutoff);
+    for (int i = 0; i < cutoff; ++i) indices[i] = i;
+    int pick = sampleFromCdf(probs, indices, cutoff, gen);
+    return logit_pairs[pick].second;
 }
 
 } // namespace tiny_llm

@@ -116,6 +116,19 @@ Result<int> KVCacheManager::allocateSequence(int seq_id, int max_len) {
     slots_[slot_idx].max_len = max_len;
     slots_[slot_idx].active = true;
 
+    // Zero the whole slot so a re-used slot never exposes stale KV data from a
+    // previously released sequence (the slot size is derived from the pool's
+    // max_seq_len, not the per-allocation max_len).
+    size_t slot_offset_bytes = static_cast<size_t>(slot_idx) * slot_size_;
+    cudaError_t zero_err = cudaMemset(
+        reinterpret_cast<unsigned char *>(memory_pool_) + slot_offset_bytes, 0, slot_size_);
+    if (zero_err != cudaSuccess) {
+        slots_[slot_idx].active = false;
+        slots_[slot_idx].seq_id = -1;
+        return Result<int>::err(std::string("KVCacheManager: failed to zero slot: ") +
+                                cudaGetErrorString(zero_err));
+    }
+
     seq_to_slot_[seq_id] = slot_idx;
     if (seq_id >= next_seq_id_) {
         next_seq_id_ = seq_id + 1;
@@ -258,7 +271,19 @@ Result<void> KVCacheManager::advanceSeqLen(int seq_id, int num_tokens) {
 
     auto &slot = slots_[it->second];
     int   old_len = slot.current_len;
-    slot.current_len = std::min(slot.current_len + num_tokens, slot.max_len);
+
+    // Fail loudly instead of silently clamping: silent truncation would let
+    // the engine keep generating while the caller believes the cache advanced,
+    // producing irreproducible KV corruption at the sequence tail.
+    if (num_tokens > slot.max_len - old_len) {
+        TLLM_ERROR("advanceSeqLen: overflow. seq_id={}, current={}, advance={}, max={}", seq_id,
+                   old_len, num_tokens, slot.max_len);
+        return Result<void>::err("advanceSeqLen: overflow. Current: " + std::to_string(old_len) +
+                                 ", advance: " + std::to_string(num_tokens) +
+                                 ", max: " + std::to_string(slot.max_len));
+    }
+
+    slot.current_len = old_len + num_tokens;
 
     TLLM_TRACE("advanceSeqLen: seq_id={}, {} -> {}", seq_id, old_len, slot.current_len);
     return Result<void>::ok();
