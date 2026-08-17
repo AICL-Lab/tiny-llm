@@ -107,7 +107,36 @@ Result<ModelWeights> ModelLoader::loadGGUF(const std::string &path, ModelConfig 
     }
 
     require_tensor({"output_norm.weight", "norm.weight"});
-    require_tensor({"output.weight", "lm_head.weight"});
+    // 任务 A4：tied output embedding 兼容 —— GGUF 中无 output.weight/lm_head.weight
+    // 但存在 token_embd.weight 时，lm_head 复用 token_embd.weight（tied）。
+    // 只有当两者都不存在时才报 missing（token_embd 缺失本身已在上面单独报告）。
+    if (!find_any_tensor({"output.weight", "lm_head.weight"}) &&
+        !find_any_tensor({"token_embd.weight", "tok_embeddings.weight"})) {
+        missing_tensors.push_back("output.weight | lm_head.weight");
+    }
+
+    // 任务 A4：显式校验不支持的 bias 张量（不静默忽略）。
+    // 当前仅支持 Qwen2 系逐层 attention bias（blk.*/layers.* 的 attn_q/k/v.bias），
+    // 其余任何 *.bias（如 output.bias / token_embd.bias / ffn_*.bias）直接报错。
+    for (const auto &t : tensors) {
+        if (t.name.find(".bias") == std::string::npos) continue;
+        bool supported = false;
+        for (int layer = 0; layer < config.num_layers && !supported; ++layer) {
+            const std::string pfx_blk   = "blk." + std::to_string(layer) + ".";
+            const std::string pfx_llama = "layers." + std::to_string(layer) + ".";
+            for (const char *b : {"attn_q.bias", "attn_k.bias", "attn_v.bias"}) {
+                if (t.name == pfx_blk + b || t.name == pfx_llama + b) {
+                    supported = true;
+                    break;
+                }
+            }
+        }
+        if (!supported) {
+            return Result<ModelWeights>::err(
+                "Unsupported bias tensor (only blk.*/layers.* attn_q/k/v.bias are supported): " +
+                t.name);
+        }
+    }
 
     if (!missing_tensors.empty()) {
         std::string missing;
@@ -301,6 +330,13 @@ Result<ModelWeights> ModelLoader::loadGGUF(const std::string &path, ModelConfig 
     // --- LM head ---
     // 量化版本（W8A16）作为后备；同时加载 FP16 版本用于 logits 精度（output 层不量化）
     auto lm_t = find_any_tensor({"output.weight", "lm_head.weight"});
+    if (!lm_t) {
+        // 任务 A4：tied output embedding —— lm_head 复用 token_embd.weight。
+        // 值相同但布局不同：embedding 表为 [vocab, hidden]，lm_head 需转置为
+        // [hidden, vocab]，因此下面仍按独立副本加载（非指针别名），无双重释放问题。
+        lm_t = emb;
+        TLLM_INFO("Tied output embedding detected: lm_head uses token_embd.weight");
+    }
     auto lm_r = load_quantized(lm_t);
     if (lm_r.isErr()) { cleanup_on_error(); return Result<ModelWeights>::err("LM head: " + lm_r.error()); }
     weights.lm_head = lm_r.value();

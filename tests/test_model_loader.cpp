@@ -116,7 +116,208 @@ struct GGUFFileBuilder {
     }
 };
 
+// ============================================================================
+// 任务 A4：完整最小 GGUF 构造器 —— header + metadata + tensor info + F32 数据区，
+// 让 ModelLoader::loadGGUF 能真正成功加载（校验 bias / tied embedding 契约路径）。
+// ============================================================================
+struct GGUFTensorSpec {
+    std::string           name;
+    std::vector<uint64_t> dims; // GGUF 维度顺序 [dim0, dim1, ...]
+    std::vector<float>    data; // F32，row-major，元素数 = dims 乘积
+};
+
+class MinimalGGUFBuilder {
+  public:
+    int hidden = 8, layers = 1, heads = 1, kv_heads = 1, vocab = 4, context = 16,
+        intermediate = 8;
+
+    std::vector<GGUFTensorSpec> tensors;
+
+    // 生成完整 GGUF 文件字节（含对齐后的 F32 数据区）。
+    std::vector<uint8_t> build() const {
+        std::vector<uint8_t> metadata;
+        uint64_t             metadata_count = 0;
+        auto add_int = [&](const std::string &key, int32_t v) {
+            appendString(metadata, key);
+            appendValue(metadata, uint32_t(static_cast<uint32_t>(GGUFType::INT32)));
+            appendValue(metadata, v);
+            ++metadata_count;
+        };
+        add_int("llama.embedding_length", hidden);
+        add_int("llama.block_count", layers);
+        add_int("llama.attention.head_count", heads);
+        add_int("llama.attention.head_count_kv", kv_heads);
+        add_int("llama.context_length", context);
+        add_int("llama.feed_forward_length", intermediate);
+        // tokenizer.ggml.tokens（STRING 数组）→ extractModelConfig 派生 vocab_size
+        appendString(metadata, "tokenizer.ggml.tokens");
+        appendValue(metadata, uint32_t(static_cast<uint32_t>(GGUFType::ARRAY)));
+        appendValue(metadata, uint32_t(static_cast<uint32_t>(GGUFType::STRING)));
+        appendValue(metadata, uint64_t(vocab));
+        for (int i = 0; i < vocab; ++i) appendString(metadata, "t" + std::to_string(i));
+        ++metadata_count;
+
+        // tensor info 条目（offset 相对数据区起始，数据按声明顺序连续写入）
+        std::vector<uint8_t> entries;
+        uint64_t             data_off = 0;
+        for (const auto &t : tensors) {
+            appendString(entries, t.name);
+            appendValue(entries, uint32_t(t.dims.size()));
+            for (auto d : t.dims) appendValue(entries, uint64_t(d));
+            appendValue(entries, uint32_t(static_cast<uint32_t>(GGMLType::F32)));
+            appendValue(entries, uint64_t(data_off));
+            data_off += t.data.size() * sizeof(float);
+        }
+
+        // 组装：header + metadata + tensor info，32 字节对齐后接数据区
+        std::vector<uint8_t> bytes;
+        appendValue(bytes, GGUF_MAGIC);
+        appendValue(bytes, uint32_t(3));
+        appendValue(bytes, uint64_t(tensors.size()));
+        appendValue(bytes, metadata_count);
+        bytes.insert(bytes.end(), metadata.begin(), metadata.end());
+        bytes.insert(bytes.end(), entries.begin(), entries.end());
+
+        constexpr uint64_t kAlignment = 32;
+        size_t             aligned = (bytes.size() + kAlignment - 1) & ~(kAlignment - 1);
+        bytes.resize(aligned, 0);
+        for (const auto &t : tensors) {
+            appendBytes(bytes, t.data.data(), t.data.size() * sizeof(float));
+        }
+        return bytes;
+    }
+};
+
 } // namespace
+
+// ============================================================================
+// 任务 A4：模型权重契约 —— bias / tied output embedding 处理路径。
+// 构造完整最小 GGUF（真实 F32 数据）走 ModelLoader::loadGGUF 全路径。
+// ============================================================================
+class ModelLoaderContractTest : public ::testing::Test {
+  protected:
+    static bool hasCuda() {
+        int         count = 0;
+        cudaError_t err = cudaGetDeviceCount(&count);
+        return err == cudaSuccess && count > 0;
+    }
+
+    static std::vector<float> ramp(size_t n, float base) {
+        std::vector<float> v(n);
+        for (size_t i = 0; i < n; ++i) v[i] = base + static_cast<float>(i) * 0.01f;
+        return v;
+    }
+
+    // 写一个完整最小 GGUF。include_output=false 时省略 output.weight（tied 场景）；
+    // include_qwen_bias=true 时带 blk.0.attn_q/k/v.bias；extra 追加额外张量。
+    void writeMinimalGGUF(TempFile &file, bool include_output, bool include_qwen_bias,
+                          const std::vector<GGUFTensorSpec> &extra = {}) const {
+        MinimalGGUFBuilder b;
+        auto add_weight = [&](const char *name, uint64_t in, uint64_t out, float base) {
+            b.tensors.push_back({name, {in, out}, ramp(in * out, base)});
+        };
+        add_weight("token_embd.weight", 8, 4, 0.1f);
+        add_weight("blk.0.attn_q.weight", 8, 8, 0.2f);
+        add_weight("blk.0.attn_k.weight", 8, 8, 0.3f);
+        add_weight("blk.0.attn_v.weight", 8, 8, 0.4f);
+        add_weight("blk.0.attn_output.weight", 8, 8, 0.5f);
+        add_weight("blk.0.ffn_gate.weight", 8, 8, 0.6f);
+        add_weight("blk.0.ffn_down.weight", 8, 8, 0.7f);
+        add_weight("blk.0.ffn_up.weight", 8, 8, 0.8f);
+        b.tensors.push_back({"blk.0.attn_norm.weight", {8}, ramp(8, 1.0f)});
+        b.tensors.push_back({"blk.0.ffn_norm.weight", {8}, ramp(8, 1.1f)});
+        b.tensors.push_back({"output_norm.weight", {8}, ramp(8, 1.2f)});
+        if (include_output) add_weight("output.weight", 8, 4, 0.9f);
+        if (include_qwen_bias) {
+            b.tensors.push_back({"blk.0.attn_q.bias", {8}, ramp(8, 2.0f)});
+            b.tensors.push_back({"blk.0.attn_k.bias", {8}, ramp(8, 2.1f)});
+            b.tensors.push_back({"blk.0.attn_v.bias", {8}, ramp(8, 2.2f)});
+        }
+        for (const auto &t : extra) b.tensors.push_back(t);
+        file.writeBytes(b.build());
+    }
+};
+
+TEST_F(ModelLoaderContractTest, NonTiedOutputWeightLoads) {
+    if (!hasCuda()) GTEST_SKIP() << "No CUDA device available";
+    TempFile file(".gguf");
+    writeMinimalGGUF(file, /*include_output=*/true, /*include_qwen_bias=*/false);
+
+    ModelConfig          config;
+    auto                 result = ModelLoader::loadGGUF(file.path(), config);
+    ASSERT_TRUE(result.isOk()) << result.error();
+    auto &weights = result.value();
+    EXPECT_TRUE(weights.lm_head.isValid());
+    EXPECT_EQ(weights.lm_head.rows, config.hidden_dim);
+    EXPECT_EQ(weights.lm_head.cols, config.vocab_size);
+    EXPECT_NE(weights.lm_head_fp16, nullptr);
+    ModelLoader::freeWeights(weights);
+}
+
+TEST_F(ModelLoaderContractTest, TiedOutputEmbeddingFallsBackToTokenEmbedding) {
+    if (!hasCuda()) GTEST_SKIP() << "No CUDA device available";
+    TempFile file(".gguf");
+    // 无 output.weight / lm_head.weight → tied output embedding 路径
+    writeMinimalGGUF(file, /*include_output=*/false, /*include_qwen_bias=*/false);
+
+    ModelConfig          config;
+    auto                 result = ModelLoader::loadGGUF(file.path(), config);
+    ASSERT_TRUE(result.isOk()) << result.error();
+    auto &weights = result.value();
+    EXPECT_TRUE(weights.lm_head.isValid());
+    EXPECT_EQ(weights.lm_head.rows, config.hidden_dim);
+    EXPECT_EQ(weights.lm_head.cols, config.vocab_size);
+    ASSERT_NE(weights.lm_head_fp16, nullptr);
+
+    // 差分验证：lm_head_fp16 [hidden, vocab] = transpose(token_embd [vocab, hidden])
+    const int hidden = config.hidden_dim;
+    const int vocab = config.vocab_size;
+    std::vector<half> lm_host(static_cast<size_t>(hidden) * vocab);
+    cudaMemcpy(lm_host.data(), weights.lm_head_fp16, lm_host.size() * sizeof(half),
+               cudaMemcpyDeviceToHost);
+    cudaDeviceSynchronize();
+    const auto emb_host = ramp(static_cast<size_t>(hidden) * vocab, 0.1f);
+    for (int s = 0; s < hidden; ++s) {
+        for (int v = 0; v < vocab; ++v) {
+            // token_embd GGUF row-major [vocab, hidden]；lm_head 转置为 [hidden, vocab]
+            EXPECT_NEAR(__half2float(lm_host[static_cast<size_t>(s) * vocab + v]),
+                        emb_host[static_cast<size_t>(v) * hidden + s], 1e-3f)
+                << "hidden " << s << " vocab " << v;
+        }
+    }
+    ModelLoader::freeWeights(weights);
+}
+
+TEST_F(ModelLoaderContractTest, QwenAttentionBiasTensorsLoad) {
+    if (!hasCuda()) GTEST_SKIP() << "No CUDA device available";
+    TempFile file(".gguf");
+    writeMinimalGGUF(file, /*include_output=*/true, /*include_qwen_bias=*/true);
+
+    ModelConfig config;
+    auto        result = ModelLoader::loadGGUF(file.path(), config);
+    ASSERT_TRUE(result.isOk()) << result.error();
+    auto &weights = result.value();
+    ASSERT_EQ(weights.layers.size(), 1u);
+    EXPECT_NE(weights.layers[0].wq_bias, nullptr);
+    EXPECT_NE(weights.layers[0].wk_bias, nullptr);
+    EXPECT_NE(weights.layers[0].wv_bias, nullptr);
+    ModelLoader::freeWeights(weights);
+}
+
+TEST_F(ModelLoaderContractTest, UnsupportedBiasTensorReturnsExplicitError) {
+    TempFile file(".gguf");
+    // 不支持的 bias（output.bias）→ 显式报错而非静默忽略（无需 GPU，校验在加载前）
+    writeMinimalGGUF(file, /*include_output=*/true, /*include_qwen_bias=*/false,
+                     {GGUFTensorSpec{"output.bias", {8}, ramp(8, 3.0f)}});
+
+    ModelConfig config;
+    auto        result = ModelLoader::loadGGUF(file.path(), config);
+    ASSERT_TRUE(result.isErr()) << "unsupported bias must be rejected explicitly";
+    EXPECT_NE(result.error().find("bias"), std::string::npos)
+        << "unexpected error: " << result.error();
+    EXPECT_NE(result.error().find("output.bias"), std::string::npos)
+        << "unexpected error: " << result.error();
+}
 
 // Unit tests for GGUF header parsing
 class GGUFHeaderTest : public ::testing::Test {};
