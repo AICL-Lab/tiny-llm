@@ -571,6 +571,73 @@ TEST_F(AttentionTest, GQAPrefillAttention) {
     });
 }
 
+// ============================================================================
+// 任务 A1：QKV layout 统一 —— token-major prefill 与 CPU 参考逐元素对比。
+// 覆盖 S>1, H>1（GQA Hq=4/Hkv=2）：Q/K/V 均按 token-major 布局构造
+//   q(s,h,d) = (s*Hq  + h )*D + d
+//   k(s,kh,d)= (s*Hkv + kh)*D + d
+// attention kernel 按同一契约读取；与 CPU 参考全维度逐元素比较，容差 1e-2f。
+// ============================================================================
+TEST_F(AttentionTest, PrefillLayoutMatchesCpuReference) {
+    const int num_q_heads = 4;
+    const int num_kv_heads = 2;
+    const int seq_len = 16; // S > 1
+    const int head_dim = 32;
+    const float scale = 1.0f / std::sqrt(static_cast<float>(head_dim));
+    const int group_size = num_q_heads / num_kv_heads;
+
+    auto query = randomFP16(seq_len * num_q_heads * head_dim, 1.0f, 400);
+    auto key = randomFP16(seq_len * num_kv_heads * head_dim, 1.0f, 401);
+    auto value = randomFP16(seq_len * num_kv_heads * head_dim, 1.0f, 402);
+
+    DeviceBuffer<half> d_query(seq_len * num_q_heads * head_dim);
+    DeviceBuffer<half> d_key(seq_len * num_kv_heads * head_dim);
+    DeviceBuffer<half> d_value(seq_len * num_kv_heads * head_dim);
+    DeviceBuffer<half> d_output(seq_len * num_q_heads * head_dim);
+    d_query.copyFromHost(query.data(), query.size());
+    d_key.copyFromHost(key.data(), key.size());
+    d_value.copyFromHost(value.data(), value.size());
+
+    attention_prefill(d_query.data(), d_key.data(), d_value.data(), d_output.data(), scale,
+                      num_q_heads, num_kv_heads, seq_len, head_dim);
+    cudaDeviceSynchronize();
+
+    std::vector<half> output(seq_len * num_q_heads * head_dim);
+    d_output.copyToHost(output.data(), output.size());
+    cudaDeviceSynchronize();
+
+    // CPU reference：causal（key_pos <= query_pos，注意是 <=），token-major 读取。
+    for (int s = 0; s < seq_len; ++s) {
+        for (int h = 0; h < num_q_heads; ++h) {
+            const int kh = h / group_size;
+            std::vector<float> scores(static_cast<size_t>(s) + 1);
+            float smax = -1e30f;
+            for (int ks = 0; ks <= s; ++ks) {
+                float acc = 0.0f;
+                for (int d = 0; d < head_dim; ++d) {
+                    acc += __half2float(query[(s * num_q_heads + h) * head_dim + d]) *
+                           __half2float(key[(ks * num_kv_heads + kh) * head_dim + d]);
+                }
+                scores[static_cast<size_t>(ks)] = acc * scale;
+                smax = std::max(smax, scores[static_cast<size_t>(ks)]);
+            }
+            float sum_exp = 0.0f;
+            for (int ks = 0; ks <= s; ++ks)
+                sum_exp += std::exp(scores[static_cast<size_t>(ks)] - smax);
+            for (int d = 0; d < head_dim; ++d) {
+                float out_val = 0.0f;
+                for (int ks = 0; ks <= s; ++ks) {
+                    float w = std::exp(scores[static_cast<size_t>(ks)] - smax) / sum_exp;
+                    out_val += w * __half2float(value[(ks * num_kv_heads + kh) * head_dim + d]);
+                }
+                const float actual = __half2float(output[(s * num_q_heads + h) * head_dim + d]);
+                EXPECT_NEAR(actual, out_val, 1e-2f)
+                    << "query_pos " << s << " head " << h << " dim " << d;
+            }
+        }
+    }
+}
+
 TEST_F(AttentionTest, SoftmaxSumsToOne) {
     int batch_size = 4;
     int seq_len = 16;
