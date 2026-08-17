@@ -96,8 +96,9 @@ TransformerLayer &TransformerLayer::operator=(TransformerLayer &&other) noexcept
 }
 
 Result<void> TransformerLayer::forward(half *hidden_states, KVCacheManager &kv_cache,
-                                         int seq_id, int position, const float *rope_cos,
-                                         const float *rope_sin, cudaStream_t stream) {
+                                         int seq_id, int position, const int *decode_len,
+                                         const float *rope_cos, const float *rope_sin,
+                                         cudaStream_t stream) {
     // Input validation
     auto ptr_result = Validator::validateNotNull(hidden_states, "hidden_states");
     if (ptr_result.isErr()) {
@@ -119,7 +120,8 @@ Result<void> TransformerLayer::forward(half *hidden_states, KVCacheManager &kv_c
     }
 
     // Single token decode
-    return runLayer(hidden_states, kv_cache, seq_id, position, 1, rope_cos, rope_sin, stream);
+    return runLayer(hidden_states, kv_cache, seq_id, position, 1, decode_len, rope_cos, rope_sin,
+                    stream);
 }
 
 Result<void> TransformerLayer::forwardPrefill(half *hidden_states, KVCacheManager &kv_cache,
@@ -150,19 +152,20 @@ Result<void> TransformerLayer::forwardPrefill(half *hidden_states, KVCacheManage
     }
 
     // Multiple tokens prefill
-    return runLayer(hidden_states, kv_cache, seq_id, 0, seq_len, rope_cos, rope_sin, stream);
+    return runLayer(hidden_states, kv_cache, seq_id, 0, seq_len, nullptr, rope_cos, rope_sin,
+                    stream);
 }
 
 Result<void> TransformerLayer::runLayer(half *hidden_states, KVCacheManager &kv_cache,
                                           int seq_id, int position, int num_tokens,
-                                          const float *rope_cos, const float *rope_sin,
-                                          cudaStream_t stream) {
+                                          const int *decode_len, const float *rope_cos,
+                                          const float *rope_sin, cudaStream_t stream) {
     const int hidden_dim = config_.hidden_dim;
 
     // Attention sublayer with residual: x = x + attention(rms_norm(x))
     rmsNorm(hidden_states, weights_.rms_att_weight, ws_->norm_output, num_tokens, stream);
     auto attn_result = attention(ws_->norm_output, ws_->attn_output, kv_cache, seq_id, position,
-                                  num_tokens, rope_cos, rope_sin, stream);
+                                  num_tokens, decode_len, rope_cos, rope_sin, stream);
     if (attn_result.isErr()) {
         return attn_result;
     }
@@ -178,8 +181,8 @@ Result<void> TransformerLayer::runLayer(half *hidden_states, KVCacheManager &kv_
 
 Result<void> TransformerLayer::attention(const half *x, half *output, KVCacheManager &kv_cache,
                                            int seq_id, int position, int num_tokens,
-                                           const float *rope_cos, const float *rope_sin,
-                                           cudaStream_t stream) {
+                                           const int *decode_len, const float *rope_cos,
+                                           const float *rope_sin, cudaStream_t stream) {
     int hidden_dim = config_.hidden_dim;
     int num_heads = config_.num_heads;
     int num_kv_heads = config_.num_kv_heads;
@@ -234,16 +237,19 @@ Result<void> TransformerLayer::attention(const half *x, half *output, KVCacheMan
 
     // Compute attention
     float scale = 1.0f / std::sqrt(static_cast<float>(head_dim));
-    int   current_seq_len = kv_cache.getSeqLen(seq_id);
 
-    if (num_tokens == 1) {
-        // Decode: appendKV() writes the current token into cache but does not make it
+    if (num_tokens == 1 && decode_len != nullptr) {
+        // Decode：appendKV() writes the current token into cache but does not make it
         // visible via getSeqLen() until the caller advances once after all layers.
-        int attended_seq_len = current_seq_len + 1;
+        // visible_len 由 device 端 int 提供（CUDA Graph 重放前置条件），
+        // 其值在 decodeStep 中设为 current_seq_len + 1。
         kernels::attention_decode(ws_->q_buf, k_cache, v_cache, ws_->attn_buf, scale, num_heads,
-                                  num_kv_heads, attended_seq_len, head_dim, stream);
+                                  num_kv_heads, decode_len, head_dim, stream);
     } else {
         // Prefill: full attention with causal mask over the current token batch.
+        // 注意：单 token prefill（seq_len==1）也会走到这里（decode_len 为
+        // nullptr），此时 attention_prefill(seq_len=1) 与 attention_decode(1)
+        // 数值等价（softmax 只有一个位置）。
         kernels::attention_prefill(ws_->q_buf, ws_->k_buf, ws_->v_buf, ws_->attn_buf, scale,
                                    num_heads, num_kv_heads, num_tokens, head_dim, stream);
     }

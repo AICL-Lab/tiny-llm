@@ -83,11 +83,15 @@ __device__ __forceinline__ float block_reduce_sum_dyn(float val, float *red, int
 
 // Decode attention: single query token against cached K/V.
 // Q: [1, Hq, D].  One block per q_head.
+// visible_len is read from global memory so the kernel is CUDA-Graph
+// replayable (task 3.1): the host updates one device int then replays.
 __global__ void attention_decode_kernel(const half *__restrict__ query,
                                          const half *__restrict__ k_cache,
                                          const half *__restrict__ v_cache,
                                          half *__restrict__ output, float scale, int num_q_heads,
-                                         int num_kv_heads, int visible_len, int head_dim) {
+                                         int num_kv_heads, const int *device_visible_len,
+                                         int head_dim) {
+    const int visible_len = *device_visible_len;
     const int q_head = blockIdx.x;
     const int tid = threadIdx.x;
     const int nthreads = blockDim.x;
@@ -176,9 +180,9 @@ __global__ void attention_decode_kernel(const half *__restrict__ query,
 }
 
 void attention_decode(const half *query, const half *k_cache, const half *v_cache, half *output,
-                       float scale, int num_q_heads, int num_kv_heads, int visible_len,
-                       int head_dim, cudaStream_t stream) {
-    if (num_q_heads <= 0 || num_kv_heads <= 0 || visible_len <= 0 || head_dim <= 0) {
+                       float scale, int num_q_heads, int num_kv_heads,
+                       const int *device_visible_len, int head_dim, cudaStream_t stream) {
+    if (num_q_heads <= 0 || num_kv_heads <= 0 || head_dim <= 0 || device_visible_len == nullptr) {
         return;
     }
 
@@ -188,7 +192,22 @@ void attention_decode(const half *query, const half *k_cache, const half *v_cach
     const size_t shared_size = layout.total_bytes();
 
     attention_decode_kernel<<<num_blocks, block_size, shared_size, stream>>>(
-        query, k_cache, v_cache, output, scale, num_q_heads, num_kv_heads, visible_len, head_dim);
+        query, k_cache, v_cache, output, scale, num_q_heads, num_kv_heads, device_visible_len,
+        head_dim);
+}
+
+// 旧签名薄封装：把 host 端 int 复制到 device 后转发。仅测试/兼容用，
+// 每次调用复用同一块 device 缓冲（不适用于并发多线程，生产路径应直接用
+// device 指针版本）。
+void attention_decode(const half *query, const half *k_cache, const half *v_cache, half *output,
+                      float scale, int num_q_heads, int num_kv_heads, int visible_len, int head_dim,
+                      cudaStream_t stream) {
+    // 函数级 static：避免测试场景每次调用都 cudaMalloc。CUDA 上下文在
+    // 首次调用前已初始化。
+    static DeviceBuffer<int> device_len(1);
+    device_len.copyFromHost(&visible_len, 1, stream);
+    attention_decode(query, k_cache, v_cache, output, scale, num_q_heads, num_kv_heads,
+                     device_len.data(), head_dim, stream);
 }
 
 // Prefill attention: full sequence with causal masking.

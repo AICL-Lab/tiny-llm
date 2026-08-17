@@ -90,6 +90,12 @@ class InferenceEngine {
     half *hidden_states_ = nullptr;
     half *logits_ = nullptr;
 
+    // 任务 3.1：decode 可见 KV 长度（device 端 int，长度 1）。
+    // attention_decode 从该缓冲读取 visible_len，使 decode kernel 参数不含
+    // 每次变化的值 —— CUDA Graph 捕获/重放的前置条件。每次 decodeStep 前
+    // 在 stream_ 上 cudaMemcpyAsync 更新。
+    DeviceBuffer<int> decode_len_;
+
     // TLLM-003: RoPE cos/sin half cache (FP32)
     float *rope_cos_ = nullptr;
     float *rope_sin_ = nullptr;

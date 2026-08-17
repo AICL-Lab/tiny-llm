@@ -48,6 +48,7 @@ struct TinyLlmHandleImpl {
     cudaStream_t                                stream = 0;
     int                                         max_batch_size = 1;
     tiny_llm::DeviceBuffer<int>                 d_tokens; // token ids 上传缓冲（gather 需 device 指针）
+    tiny_llm::DeviceBuffer<int>                 decode_len; // 任务 3.1：decode 可见 KV 长度 (device int)
     std::unordered_map<int, SeqState>           sequences;
 };
 
@@ -218,6 +219,8 @@ TinyLlmHandle *tinyllm_load(const char *model_path, const TinyLlmConfig *config,
                                                   h->config.hidden_dim * sizeof(half)));
         CUDA_CHECK(cudaMalloc(&h->logits_buf,
                               static_cast<size_t>(h->config.vocab_size) * sizeof(half)));
+        // 任务 3.1：decode 可见 KV 长度（device int，CUDA Graph 前置）
+        h->decode_len = tiny_llm::DeviceBuffer<int>(1);
         CUDA_CHECK(cudaStreamCreate(&h->stream));
         CUDA_CHECK(cudaStreamSynchronize(h->stream));
 
@@ -341,9 +344,13 @@ int tinyllm_step(TinyLlmHandle *handle, const int *seq_ids, const int *input_tok
                 const int pos = st.position;
                 embed(h, toks, 1, h->hidden_buf + static_cast<size_t>(pos) * hidden);
                 half *token_state = h->hidden_buf + static_cast<size_t>(pos) * hidden;
+                // 任务 3.1：把 appendKV 后的可见长度写入 device 缓冲
+                const int decode_len = h->kv_cache->getSeqLen(seq_id) + 1;
+                h->decode_len.copyFromHost(&decode_len, 1, h->stream);
                 for (auto &layer : h->layers) {
-                    auto r = layer->forward(token_state, *h->kv_cache, seq_id, pos, h->rope_cos,
-                                            h->rope_sin, h->stream);
+                    auto r = layer->forward(token_state, *h->kv_cache, seq_id, pos,
+                                            h->decode_len.data(), h->rope_cos, h->rope_sin,
+                                            h->stream);
                     if (r.isErr()) return TLLM_ERR;
                 }
                 auto adv = h->kv_cache->advanceSeqLen(seq_id, 1);

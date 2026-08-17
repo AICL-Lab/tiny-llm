@@ -30,6 +30,18 @@ namespace kernels {
 // K_cache: [T, Hkv, D]   (T = visible_len, includes the just-appended token)
 // V_cache: [T, Hkv, D]
 // O:       [1, Hq,  D]
+//
+// CUDA Graph 重放前置条件（任务 3.1）：visible_len 不再作为 kernel 参数，
+// 而是由 device 端 int 变量提供。graph 捕获后 host 只需更新该 device 值
+// （同一 stream 上的 cudaMemcpyAsync）再重放，无需重新 capture。
+// 调用方必须保证 *device_visible_len 已在同一 stream 上被写入。
+void attention_decode(const half *__restrict__ query, const half *__restrict__ k_cache,
+                      const half *__restrict__ v_cache, half *__restrict__ output, float scale,
+                      int num_q_heads, int num_kv_heads, const int *device_visible_len,
+                      int head_dim, cudaStream_t stream = 0);
+
+// 旧签名薄封装：host int 版本，内部分配/复用 device int 后转发给上面版本。
+// 供测试与不需要 graph 重放的调用方使用。
 void attention_decode(const half *__restrict__ query, const half *__restrict__ k_cache,
                       const half *__restrict__ v_cache, half *__restrict__ output, float scale,
                       int num_q_heads, int num_kv_heads, int visible_len, int head_dim,

@@ -258,8 +258,14 @@ TEST_F(IntegrationTest, TransformerLayerDimensions) {
     // Create input hidden states
     half *hidden_states = randomDeviceFP16(hidden, 1.0f, 200);
 
-    // Forward pass should not crash
-    auto fwd_result = layer.forward(hidden_states, *kv_cache, seq_id, 0, rope_cos, rope_sin);
+    // Forward pass should not crash.
+    // 任务 3.1：decode 分支的 visible_len 改由 device int 提供；这里 seq 尚未
+    // advance，appendKV 后可见长度 = 0 + 1 = 1。
+    DeviceBuffer<int> decode_len(1);
+    int               decode_len_val = 1;
+    decode_len.copyFromHost(&decode_len_val, 1);
+    auto fwd_result = layer.forward(hidden_states, *kv_cache, seq_id, 0, decode_len.data(),
+                                    rope_cos, rope_sin);
     ASSERT_TRUE(fwd_result.isOk()) << fwd_result.error();
     cudaDeviceSynchronize();
 

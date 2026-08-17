@@ -51,9 +51,12 @@ class TransformerLayer {
 
     // Forward pass for single token (decode phase)
     // hidden_states: [batch_size, hidden_dim] - input and output
+    // decode_len: device int = 当前可见 KV 长度（appendKV 后 = getSeqLen+1），
+    //             只在 decode 分支（num_tokens==1）使用；CUDA Graph 重放前置。
     // TLLM-005: Returns Result<void> for proper error propagation
     Result<void> forward(half *hidden_states, KVCacheManager &kv_cache, int seq_id, int position,
-                         const float *rope_cos, const float *rope_sin, cudaStream_t stream = 0);
+                         const int *decode_len, const float *rope_cos, const float *rope_sin,
+                         cudaStream_t stream = 0);
 
     // Forward pass for multiple tokens (prefill phase)
     // hidden_states: [batch_size, seq_len, hidden_dim] - input and output
@@ -67,9 +70,10 @@ class TransformerLayer {
 
   private:
     // Attention sublayer
+    // decode_len: 见 forward；仅在 num_tokens==1 分支使用。
     Result<void> attention(const half *x, half *output, KVCacheManager &kv_cache, int seq_id,
-                           int position, int num_tokens, const float *rope_cos,
-                           const float *rope_sin, cudaStream_t stream);
+                           int position, int num_tokens, const int *decode_len,
+                           const float *rope_cos, const float *rope_sin, cudaStream_t stream);
 
     // Feed-forward network sublayer (SwiGLU)
     void feedForward(const half *x, half *output, int num_tokens, cudaStream_t stream);
@@ -80,8 +84,8 @@ class TransformerLayer {
 
     // Shared attention + FFN residual block for forward/forwardPrefill
     Result<void> runLayer(half *hidden_states, KVCacheManager &kv_cache, int seq_id, int position,
-                          int num_tokens, const float *rope_cos, const float *rope_sin,
-                          cudaStream_t stream);
+                          int num_tokens, const int *decode_len, const float *rope_cos,
+                          const float *rope_sin, cudaStream_t stream);
 
     int                       layer_idx_;
     const TransformerWeights &weights_;

@@ -129,6 +129,8 @@ InferenceEngine::InferenceEngine(const ModelConfig &config, ModelWeights &&weigh
 
     CUDA_CHECK(cudaMalloc(&hidden_states_, hidden_size));
     CUDA_CHECK(cudaMalloc(&logits_, logits_size));
+    // 任务 3.1：decode 可见 KV 长度的 device int 缓冲（CUDA Graph 前置）。
+    decode_len_ = DeviceBuffer<int>(1);
     if (std::getenv("TLLM_DEBUG_ZERO")) {
         CUDA_CHECK(cudaMemset(hidden_states_, 0, hidden_size));
         CUDA_CHECK(cudaMemset(logits_, 0, logits_size));
@@ -384,10 +386,16 @@ Result<int> InferenceEngine::decodeStep(int seq_id, int position, int token_id,
     half *token_state = hidden_states_ + position * config_.hidden_dim;
     embedTokens(d_token.data(), 1, token_state);
 
+    // 任务 3.1：把“appendKV 后可见长度”写入 device 缓冲（同一 stream，
+    // 与 kernel 串行），attention_decode 从 device 读取，参数不再携带
+    // 每次变化的值。
+    const int decode_len = kv_cache_->getSeqLen(seq_id) + 1;
+    decode_len_.copyFromHost(&decode_len, 1, stream_);
+
     // Forward through all layers for single token
     for (auto &layer : layers_) {
-        auto layer_result = layer->forward(token_state, *kv_cache_, seq_id, position, rope_cos_,
-                                            rope_sin_, stream_);
+        auto layer_result = layer->forward(token_state, *kv_cache_, seq_id, position,
+                                            decode_len_.data(), rope_cos_, rope_sin_, stream_);
         if (layer_result.isErr()) {
             TLLM_ERROR("decodeStep: layer {} failed: {}", layer->getLayerIdx(),
                        layer_result.error());
