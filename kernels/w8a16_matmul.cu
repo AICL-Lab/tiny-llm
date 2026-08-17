@@ -71,6 +71,48 @@ void fp16_matmul_reference(const half *input, const half *weight, half *output, 
     fp16_matmul_kernel<<<grid, block, 0, stream>>>(input, weight, output, M, N, K);
 }
 
+// Decode-optimized FP16 GEMM for M == 1.  Same warp-per-output-column scheme
+// as w8a16_matmul_m1_kernel; this keeps the fp16 lm_head path from becoming
+// the decode bottleneck for large vocabularies.
+__global__ void fp16_matmul_m1_kernel(const half *__restrict__ input,
+                                      const half *__restrict__ weight,
+                                      half *__restrict__ output, int N, int K) {
+    const int warps_per_block = blockDim.x / 32;
+    const int col = blockIdx.x * warps_per_block + (threadIdx.x / 32);
+    if (col >= N) return;
+
+    const int lane = threadIdx.x & 31;
+    float sum = 0.0f;
+
+    for (int k = lane; k < K; k += 32) {
+        float a = __half2float(input[k]);
+        float w = __half2float(weight[k * N + col]);
+        sum += a * w;
+    }
+
+    sum = warp_reduce_sum(sum);
+    if (lane == 0) {
+        output[col] = __float2half(sum);
+    }
+}
+
+void fp16_matmul(const half *input, const half *weight, half *output, int M, int N, int K,
+                 cudaStream_t stream) {
+    if (M <= 0 || N <= 0 || K <= 0) {
+        return;
+    }
+
+    if (M == 1) {
+        constexpr int WARPS_PER_BLOCK = 4; // 128 threads
+        dim3 block(WARPS_PER_BLOCK * 32);
+        dim3 grid((N + WARPS_PER_BLOCK - 1) / WARPS_PER_BLOCK);
+        fp16_matmul_m1_kernel<<<grid, block, 0, stream>>>(input, weight, output, N, K);
+        return;
+    }
+
+    fp16_matmul_reference(input, weight, output, M, N, K, stream);
+}
+
 // W8A16 reference kernel (simple but correct)
 __global__ void w8a16_matmul_reference_kernel(const half *__restrict__ input,
                                               const int8_t *__restrict__ weight,

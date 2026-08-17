@@ -427,8 +427,8 @@ void InferenceEngine::computeLogits(const half *hidden_states, int num_tokens, h
     // 优先 FP16 lm_head（output 层不量化，保持 logits 精度与 llama.cpp 对齐）；
     // W8A16 版本作为后备。
     if (weights_.lm_head_fp16) {
-        kernels::fp16_matmul_reference(hidden_states, weights_.lm_head_fp16, logits, num_tokens,
-                                       config_.vocab_size, config_.hidden_dim, stream_);
+        kernels::fp16_matmul(hidden_states, weights_.lm_head_fp16, logits, num_tokens,
+                             config_.vocab_size, config_.hidden_dim, stream_);
     } else if (weights_.lm_head.isValid()) {
         kernels::w8a16_matmul(hidden_states, weights_.lm_head.data, weights_.lm_head.scales, logits,
                               num_tokens, config_.vocab_size, config_.hidden_dim,

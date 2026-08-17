@@ -385,3 +385,73 @@ TEST_F(W8A16MatMulTest, LargeMatrixTiledMatchesReference) {
             << "mismatch at " << i << ": tiled=" << a << " ref=" << b;
     }
 }
+
+// fp16_matmul 的 M==1 decode 快速路径：与 GPU reference 及 CPU float 参考对齐。
+// lm_head 形状 [1, hidden] @ [hidden, vocab]，N 可能很大（Qwen2.5 为 151936）。
+TEST_F(W8A16MatMulTest, Fp16MatmulM1MatchesReference) {
+    int M = 1, K = 128, N = 1024;
+
+    auto input  = randomFP16(M, K);
+    auto weight = randomFP16(K, N);
+
+    DeviceBuffer<half> d_input(M * K);
+    DeviceBuffer<half> d_weight(K * N);
+    DeviceBuffer<half> d_output(M * N);
+    DeviceBuffer<half> d_output_ref(M * N);
+
+    d_input.copyFromHost(input.data(), M * K);
+    d_weight.copyFromHost(weight.data(), K * N);
+
+    // M==1 走 warp-per-column 快速路径
+    fp16_matmul(d_input.data(), d_weight.data(), d_output.data(), M, N, K);
+    // reference kernel（测试基准）
+    fp16_matmul_reference(d_input.data(), d_weight.data(), d_output_ref.data(), M, N, K);
+    cudaDeviceSynchronize();
+
+    std::vector<half> out(M * N);
+    std::vector<half> out_ref(M * N);
+    d_output.copyToHost(out.data(), M * N);
+    d_output_ref.copyToHost(out_ref.data(), M * N);
+    cudaDeviceSynchronize();
+
+    // CPU float 参考（float 累加后转 half），与 GPU 快速路径逐元素比较
+    for (int col = 0; col < N; ++col) {
+        float cpu_sum = 0.0f;
+        for (int k = 0; k < K; ++k) {
+            cpu_sum += __half2float(input[k]) * __half2float(weight[k * N + col]);
+        }
+        EXPECT_NEAR(__half2float(out[col]), cpu_sum, 1e-1f)
+            << "fast path mismatch vs CPU at col " << col;
+        EXPECT_NEAR(__half2float(out[col]), __half2float(out_ref[col]), 1e-1f)
+            << "fast path mismatch vs gpu reference at col " << col;
+    }
+}
+
+// fp16_matmul 的 M>1 路径必须回退到 reference 并保持正确。
+TEST_F(W8A16MatMulTest, Fp16MatmulM4FallsBackToReference) {
+    int M = 4, K = 128, N = 256;
+
+    auto input  = randomFP16(M, K);
+    auto weight = randomFP16(K, N);
+
+    DeviceBuffer<half> d_input(M * K);
+    DeviceBuffer<half> d_weight(K * N);
+    DeviceBuffer<half> d_output(M * N);
+    DeviceBuffer<half> d_output_ref(M * N);
+
+    d_input.copyFromHost(input.data(), M * K);
+    d_weight.copyFromHost(weight.data(), K * N);
+
+    fp16_matmul(d_input.data(), d_weight.data(), d_output.data(), M, N, K);
+    fp16_matmul_reference(d_input.data(), d_weight.data(), d_output_ref.data(), M, N, K);
+    cudaDeviceSynchronize();
+
+    std::vector<half> out(M * N);
+    std::vector<half> out_ref(M * N);
+    d_output.copyToHost(out.data(), M * N);
+    d_output_ref.copyToHost(out_ref.data(), M * N);
+    cudaDeviceSynchronize();
+
+    float rel_error = computeRelativeError(out, out_ref);
+    EXPECT_LT(rel_error, 0.01f) << "M>1 fp16_matmul diverged from reference";
+}

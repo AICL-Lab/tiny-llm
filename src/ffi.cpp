@@ -77,8 +77,8 @@ int sample_from_hidden(TinyLlmHandleImpl *h, half *hidden) {
     tiny_llm::kernels::rmsnorm(hidden, h->weights.final_norm_weight, hidden, 1, hidden_dim,
                                h->config.rms_norm_eps, h->stream);
     if (h->weights.lm_head_fp16) {
-        tiny_llm::kernels::fp16_matmul_reference(hidden, h->weights.lm_head_fp16, h->logits_buf, 1,
-                                                 h->config.vocab_size, hidden_dim, h->stream);
+        tiny_llm::kernels::fp16_matmul(hidden, h->weights.lm_head_fp16, h->logits_buf, 1,
+                                       h->config.vocab_size, hidden_dim, h->stream);
     } else {
         tiny_llm::kernels::w8a16_matmul(hidden, h->weights.lm_head.data, h->weights.lm_head.scales,
                                         h->logits_buf, 1, h->config.vocab_size, hidden_dim,
