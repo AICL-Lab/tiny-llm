@@ -1,9 +1,11 @@
 #include "tiny_llm/cuda_utils.h"
+#include "tiny_llm/gguf_parser.h"
 #include "tiny_llm/inference_engine.h"
 #include <algorithm>
 #include <cmath>
 #include <cuda_fp16.h>
 #include <cuda_runtime.h>
+#include <cstdlib>
 #include <gtest/gtest.h>
 #include <random>
 // #include <rapidcheck.h>
@@ -416,6 +418,57 @@ TEST_F(InferenceEngineTest, SamplingHandlesSmallVocabularyAcrossStrategies) {
     auto logits = randomLogits(1, 10.0f, 2828);
     EXPECT_EQ(InferenceEngine::sampleGreedy(logits.data(), 1), 0);
     EXPECT_EQ(InferenceEngine::sampleTemperature(logits.data(), 1, 1.0f, 317), 0);
+}
+
+// 任务 3.3：CUDA Graphs 开/关的 generate() 差分测试。
+// 门控于 TLLM_GGUF_TEST_MODEL（与现有真实模型门控测试风格一致）。
+// 同一模型分别以 TLLM_CUDA_GRAPHS=0/1 生成，必须逐 token 一致。
+TEST_F(InferenceEngineTest, CudaGraphsGenerateMatchesNonGraph) {
+    const char *path = std::getenv("TLLM_GGUF_TEST_MODEL");
+    if (path == nullptr) {
+        GTEST_SKIP() << "set TLLM_GGUF_TEST_MODEL to a GGUF file to enable";
+    }
+    int         device_count = 0;
+    cudaError_t cuda_err = cudaGetDeviceCount(&device_count);
+    if (cuda_err != cudaSuccess || device_count == 0) {
+        GTEST_SKIP() << "No CUDA device available";
+    }
+
+    tiny_llm::GGUFParser parser(path);
+    auto                 parse_result = parser.parse();
+    ASSERT_TRUE(parse_result.isOk()) << parse_result.error();
+    auto config_result = parser.extractModelConfig();
+    ASSERT_TRUE(config_result.isOk()) << config_result.error();
+    const auto &config = config_result.value();
+
+    // 与 FFI 门控测试相同的 prompt（token ids 由 llama.cpp tokenizer 给出）
+    const std::vector<int> prompt = {9707, 11, 1246, 525, 498, 30};
+    tiny_llm::GenerationConfig gen_config;
+    gen_config.max_new_tokens = 16;
+    gen_config.do_sample = false; // greedy
+
+    // 1) graphs off（默认）
+    auto engine_off = tiny_llm::InferenceEngine::load(path, config);
+    ASSERT_TRUE(engine_off.isOk()) << engine_off.error();
+    auto tokens_off = engine_off.value()->generate(prompt, gen_config);
+    ASSERT_TRUE(tokens_off.isOk()) << tokens_off.error();
+
+    // 2) graphs on（构造前设环境变量；测试进程内串行，构造后立即 unset）
+    setenv("TLLM_CUDA_GRAPHS", "1", 1);
+    auto engine_on = tiny_llm::InferenceEngine::load(path, config);
+    setenv("TLLM_CUDA_GRAPHS", "0", 1);
+    ASSERT_TRUE(engine_on.isOk()) << engine_on.error();
+    auto tokens_on = engine_on.value()->generate(prompt, gen_config);
+    ASSERT_TRUE(tokens_on.isOk()) << tokens_on.error();
+    unsetenv("TLLM_CUDA_GRAPHS");
+
+    ASSERT_EQ(tokens_off.value().size(), tokens_on.value().size())
+        << "graph on/off generated different number of tokens";
+    for (size_t i = 0; i < tokens_off.value().size(); ++i) {
+        EXPECT_EQ(tokens_off.value()[i], tokens_on.value()[i])
+            << "token " << i << " differs: non-graph=" << tokens_off.value()[i]
+            << " graph=" << tokens_on.value()[i];
+    }
 }
 
 #if 0
