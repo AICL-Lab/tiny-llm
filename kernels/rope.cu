@@ -43,9 +43,11 @@ void rope_precompute_cache(float *cos_output, float *sin_output, int max_seq_len
 // Apply RoPE in-place to Q and K using half-split convention
 // Q: [num_tokens, Hq, D]  (token-major)
 // K: [num_tokens, Hkv, D] (token-major)
+// start_position 从 device 端 int 读取，使 kernel 可被 CUDA Graph 重放。
 __global__ void apply_rope_inplace_kernel(half *q, half *k, const float *cos, const float *sin,
-                                           int num_tokens, int start_position, int num_q_heads,
-                                           int num_kv_heads, int head_dim) {
+                                           int num_tokens, const int *device_start_position,
+                                           int num_q_heads, int num_kv_heads, int head_dim) {
+    const int start_position = *device_start_position;
     int idx = blockIdx.x * blockDim.x + threadIdx.x;
     int half_d = head_dim / 2;
 
@@ -95,9 +97,9 @@ __global__ void apply_rope_inplace_kernel(half *q, half *k, const float *cos, co
 }
 
 void apply_rope_inplace(half *q, half *k, const float *cos, const float *sin, int num_tokens,
-                        int start_position, int num_q_heads, int num_kv_heads, int head_dim,
-                        cudaStream_t stream) {
-    if (num_tokens <= 0 || head_dim <= 0) return;
+                        const int *device_start_position, int num_q_heads, int num_kv_heads,
+                        int head_dim, cudaStream_t stream) {
+    if (num_tokens <= 0 || head_dim <= 0 || device_start_position == nullptr) return;
 
     int half_d = head_dim / 2;
     int total = num_tokens * (num_q_heads + num_kv_heads) * half_d;
@@ -105,7 +107,17 @@ void apply_rope_inplace(half *q, half *k, const float *cos, const float *sin, in
     int grid_size = (total + block_size - 1) / block_size;
 
     apply_rope_inplace_kernel<<<grid_size, block_size, 0, stream>>>(
-        q, k, cos, sin, num_tokens, start_position, num_q_heads, num_kv_heads, head_dim);
+        q, k, cos, sin, num_tokens, device_start_position, num_q_heads, num_kv_heads, head_dim);
+}
+
+// 旧签名薄封装：把 host 端 start_position 复制到 device 后转发（测试/兼容用）。
+void apply_rope_inplace(half *q, half *k, const float *cos, const float *sin, int num_tokens,
+                        int start_position, int num_q_heads, int num_kv_heads, int head_dim,
+                        cudaStream_t stream) {
+    static DeviceBuffer<int> device_pos(1);
+    device_pos.copyFromHost(&start_position, 1, stream);
+    apply_rope_inplace(q, k, cos, sin, num_tokens, device_pos.data(), num_q_heads, num_kv_heads,
+                       head_dim, stream);
 }
 
 } // namespace kernels

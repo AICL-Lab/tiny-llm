@@ -259,13 +259,18 @@ TEST_F(IntegrationTest, TransformerLayerDimensions) {
     half *hidden_states = randomDeviceFP16(hidden, 1.0f, 200);
 
     // Forward pass should not crash.
-    // 任务 3.1：decode 分支的 visible_len 改由 device int 提供；这里 seq 尚未
-    // advance，appendKV 后可见长度 = 0 + 1 = 1。
+    // 任务 3.1/3.2：decode 分支的 visible_len / RoPE 位置改由 device int 提供；
+    // 这里 seq 尚未 advance，appendKV 后可见长度 = 0 + 1 = 1，RoPE 位置 = 0。
     DeviceBuffer<int> decode_len(1);
     int               decode_len_val = 1;
     decode_len.copyFromHost(&decode_len_val, 1);
+    DeviceBuffer<int> rope_pos(1);
+    int               rope_pos_val = 0;
+    rope_pos.copyFromHost(&rope_pos_val, 1);
+    // append 写位置 = 当前可见长度（0）
+    kv_cache->setAppendPos(0);
     auto fwd_result = layer.forward(hidden_states, *kv_cache, seq_id, 0, decode_len.data(),
-                                    rope_cos, rope_sin);
+                                    rope_pos.data(), rope_cos, rope_sin);
     ASSERT_TRUE(fwd_result.isOk()) << fwd_result.error();
     cudaDeviceSynchronize();
 

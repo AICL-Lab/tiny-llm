@@ -1,6 +1,7 @@
 #include "tiny_llm/kv_cache.h"
 #include "tiny_llm/logger.h"
 #include "tiny_llm/validator.h"
+#include "elementwise.cuh"
 #include <algorithm>
 
 namespace tiny_llm {
@@ -55,6 +56,9 @@ Result<std::unique_ptr<KVCacheManager>> KVCacheManager::create(const KVCacheConf
         slot.current_len = 0;
         slot.max_len = config.max_seq_len;
     }
+
+    // 任务 3.2：append 写位置的 device int 缓冲（CUDA Graph 重放前置）
+    manager->append_pos_ = DeviceBuffer<int>(1);
 
     return Result<std::unique_ptr<KVCacheManager>>::ok(std::move(manager));
 }
@@ -253,6 +257,69 @@ Result<void> KVCacheManager::appendKV(int seq_id, int layer_idx, const half *new
 
     TLLM_TRACE("appendKV: seq_id={}, layer={}, num_tokens={}, write_pos={}", seq_id, layer_idx,
                num_tokens, write_pos);
+    return Result<void>::ok();
+}
+
+void KVCacheManager::setAppendPos(int pos, cudaStream_t stream) {
+    if (append_pos_.data() == nullptr) return;
+    append_pos_.copyFromHost(&pos, 1, stream);
+}
+
+// 任务 3.2：device 写位置版本的 appendKV。
+// 写位置由 device int 提供（调用方保证 *device_write_pos == getSeqLen()），
+// 使 append 成为可被 CUDA Graph 重放的确定性 device 工作。
+Result<void> KVCacheManager::appendKV(int seq_id, int layer_idx, const half *new_k,
+                                      const half *new_v, int num_tokens,
+                                      const int *device_write_pos, cudaStream_t stream) {
+    // 与 host 版本相同的校验（不复制数据，只做不变量检查）
+    auto ptr_result = Validator::validateNotNull(new_k, "new_k");
+    if (ptr_result.isErr()) {
+        TLLM_ERROR("appendKV: {}", ptr_result.error());
+        return ptr_result;
+    }
+    ptr_result = Validator::validateNotNull(new_v, "new_v");
+    if (ptr_result.isErr()) {
+        TLLM_ERROR("appendKV: {}", ptr_result.error());
+        return ptr_result;
+    }
+    if (num_tokens <= 0) {
+        TLLM_ERROR("appendKV: invalid num_tokens: {}", num_tokens);
+        return Result<void>::err("appendKV: num_tokens must be positive: " +
+                                 std::to_string(num_tokens));
+    }
+    auto layer_result = Validator::validateLayerIndex(layer_idx, config_.num_layers, "appendKV");
+    if (layer_result.isErr()) {
+        TLLM_ERROR("{}", layer_result.error());
+        return layer_result;
+    }
+    auto it = seq_to_slot_.find(seq_id);
+    if (it == seq_to_slot_.end()) {
+        TLLM_ERROR("appendKV: sequence not found: {}", seq_id);
+        return Result<void>::err("appendKV: sequence not found: " + std::to_string(seq_id));
+    }
+    if (device_write_pos == nullptr) {
+        return Result<void>::err("appendKV: device_write_pos is null");
+    }
+
+    // host 侧溢出检查（device 值与 getSeqLen 一致，host 检查不变量即可）
+    auto &slot = slots_[it->second];
+    int write_pos = slot.current_len;
+    if (write_pos + num_tokens > slot.max_len) {
+        TLLM_ERROR("appendKV: cache overflow. seq_id={}, write_pos={}, num_tokens={}, max_len={}",
+                   seq_id, write_pos, num_tokens, slot.max_len);
+        return Result<void>::err("appendKV: cache overflow. Current: " + std::to_string(write_pos) +
+                                 ", appending: " + std::to_string(num_tokens) +
+                                 ", max: " + std::to_string(slot.max_len));
+    }
+
+    auto [k_cache, v_cache] = getCache(seq_id, layer_idx);
+    if (!k_cache || !v_cache) {
+        TLLM_ERROR("appendKV: failed to get cache pointers");
+        return Result<void>::err("appendKV: failed to get cache pointers");
+    }
+
+    kernels::append_kv_at(new_k, new_v, k_cache, v_cache, device_write_pos, config_.num_kv_heads,
+                          config_.head_dim, stream);
     return Result<void>::ok();
 }
 

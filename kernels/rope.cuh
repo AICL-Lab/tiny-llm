@@ -47,6 +47,15 @@ void rope_precompute_cache(float *cos_output, float *sin_output, int max_seq_len
 // cos: [max_seq_len, head_dim/2]  (FP32, precomputed)
 // sin: [max_seq_len, head_dim/2]  (FP32, precomputed)
 // start_position: absolute position of the first token in this batch
+//
+// CUDA Graph 重放前置条件（任务 3.2）：start_position 由 device 端 int
+// 提供（graph 捕获后 host 更新该值即可重放），与 attention visible_len
+// 的间接化同理。调用方须保证 *device_start_position 已在同一 stream 写入。
+void apply_rope_inplace(half *q, half *k, const float *cos, const float *sin, int num_tokens,
+                        const int *device_start_position, int num_q_heads, int num_kv_heads,
+                        int head_dim, cudaStream_t stream = 0);
+
+// 旧签名薄封装：host int 版本，复制到 device 后转发（测试/兼容用）。
 void apply_rope_inplace(half *q, half *k, const float *cos, const float *sin, int num_tokens,
                         int start_position, int num_q_heads, int num_kv_heads, int head_dim,
                         cudaStream_t stream = 0);

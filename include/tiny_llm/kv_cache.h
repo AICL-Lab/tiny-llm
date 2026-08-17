@@ -64,6 +64,19 @@ class KVCacheManager {
     Result<void> appendKV(int seq_id, int layer_idx, const half *new_k, const half *new_v,
                           int num_tokens, cudaStream_t stream = 0);
 
+    // 任务 3.2：device 写位置版本的 appendKV（CUDA Graph 重放前置）。
+    // 写位置从 *device_write_pos 读取（host 每次 decode 前更新），而非 host
+    // 计算的目标地址 —— 否则 graph 会固化地址、重放时写回同一位置。
+    // 要求 *device_write_pos == 该序列当前 visible len（= getSeqLen()）。
+    Result<void> appendKV(int seq_id, int layer_idx, const half *new_k, const half *new_v,
+                          int num_tokens, const int *device_write_pos, cudaStream_t stream = 0);
+
+    // 设置 append 写位置（device int）。调用方在每次 prefill/decode 前调用。
+    void setAppendPos(int pos, cudaStream_t stream = 0);
+
+    // append 写位置（device int）指针，供 appendKV 使用。
+    const int *appendPosDevicePtr() const { return append_pos_.data(); }
+
     // Advance sequence length after all layers have appended.
     // Call exactly ONCE per logical step, after all layers' appendKV calls.
     // Returns error if sequence not found or invalid num_tokens.
@@ -111,6 +124,9 @@ class KVCacheManager {
 
     // Per-slot memory size
     size_t slot_size_ = 0;
+
+    // 任务 3.2：append 写位置（device int，CUDA Graph 重放前置）
+    DeviceBuffer<int> append_pos_;
 };
 
 } // namespace tiny_llm

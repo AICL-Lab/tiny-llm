@@ -97,8 +97,8 @@ TransformerLayer &TransformerLayer::operator=(TransformerLayer &&other) noexcept
 
 Result<void> TransformerLayer::forward(half *hidden_states, KVCacheManager &kv_cache,
                                          int seq_id, int position, const int *decode_len,
-                                         const float *rope_cos, const float *rope_sin,
-                                         cudaStream_t stream) {
+                                         const int *rope_pos, const float *rope_cos,
+                                         const float *rope_sin, cudaStream_t stream) {
     // Input validation
     auto ptr_result = Validator::validateNotNull(hidden_states, "hidden_states");
     if (ptr_result.isErr()) {
@@ -120,13 +120,14 @@ Result<void> TransformerLayer::forward(half *hidden_states, KVCacheManager &kv_c
     }
 
     // Single token decode
-    return runLayer(hidden_states, kv_cache, seq_id, position, 1, decode_len, rope_cos, rope_sin,
-                    stream);
+    return runLayer(hidden_states, kv_cache, seq_id, position, 1, decode_len, rope_pos, rope_cos,
+                    rope_sin, stream);
 }
 
 Result<void> TransformerLayer::forwardPrefill(half *hidden_states, KVCacheManager &kv_cache,
-                                               int seq_id, int seq_len, const float *rope_cos,
-                                               const float *rope_sin, cudaStream_t stream) {
+                                               int seq_id, int seq_len, const int *rope_pos,
+                                               const float *rope_cos, const float *rope_sin,
+                                               cudaStream_t stream) {
     // Input validation
     auto ptr_result = Validator::validateNotNull(hidden_states, "hidden_states");
     if (ptr_result.isErr()) {
@@ -152,20 +153,21 @@ Result<void> TransformerLayer::forwardPrefill(half *hidden_states, KVCacheManage
     }
 
     // Multiple tokens prefill
-    return runLayer(hidden_states, kv_cache, seq_id, 0, seq_len, nullptr, rope_cos, rope_sin,
-                    stream);
+    return runLayer(hidden_states, kv_cache, seq_id, 0, seq_len, nullptr, rope_pos, rope_cos,
+                    rope_sin, stream);
 }
 
 Result<void> TransformerLayer::runLayer(half *hidden_states, KVCacheManager &kv_cache,
                                           int seq_id, int position, int num_tokens,
-                                          const int *decode_len, const float *rope_cos,
-                                          const float *rope_sin, cudaStream_t stream) {
+                                          const int *decode_len, const int *rope_pos,
+                                          const float *rope_cos, const float *rope_sin,
+                                          cudaStream_t stream) {
     const int hidden_dim = config_.hidden_dim;
 
     // Attention sublayer with residual: x = x + attention(rms_norm(x))
     rmsNorm(hidden_states, weights_.rms_att_weight, ws_->norm_output, num_tokens, stream);
     auto attn_result = attention(ws_->norm_output, ws_->attn_output, kv_cache, seq_id, position,
-                                  num_tokens, decode_len, rope_cos, rope_sin, stream);
+                                  num_tokens, decode_len, rope_pos, rope_cos, rope_sin, stream);
     if (attn_result.isErr()) {
         return attn_result;
     }
@@ -181,8 +183,9 @@ Result<void> TransformerLayer::runLayer(half *hidden_states, KVCacheManager &kv_
 
 Result<void> TransformerLayer::attention(const half *x, half *output, KVCacheManager &kv_cache,
                                            int seq_id, int position, int num_tokens,
-                                           const int *decode_len, const float *rope_cos,
-                                           const float *rope_sin, cudaStream_t stream) {
+                                           const int *decode_len, const int *rope_pos,
+                                           const float *rope_cos, const float *rope_sin,
+                                           cudaStream_t stream) {
     int hidden_dim = config_.hidden_dim;
     int num_heads = config_.num_heads;
     int num_kv_heads = config_.num_kv_heads;
@@ -219,16 +222,18 @@ Result<void> TransformerLayer::attention(const half *x, half *output, KVCacheMan
 
     // TLLM-003: Apply RoPE to Q and K after projection, before KV append.
     // Q: [num_tokens, Hq, D], K: [num_tokens, Hkv, D]
-    // Uses absolute position: for prefill, start_position=position (typically 0);
-    // for decode, start_position=position (the current token's position).
-    kernels::apply_rope_inplace(ws_->q_buf, ws_->k_buf, rope_cos, rope_sin, num_tokens, position,
+    // 起始位置由 device int 提供（graph 重放前置）；decode 为当前 token 绝对
+    // 位置，prefill 为 0。
+    kernels::apply_rope_inplace(ws_->q_buf, ws_->k_buf, rope_cos, rope_sin, num_tokens, rope_pos,
                                 num_heads, num_kv_heads, head_dim, stream);
 
     // Get KV cache pointers
     auto [k_cache, v_cache] = kv_cache.getCache(seq_id, layer_idx_);
 
-    // Append new K, V to cache
-    auto append_result = kv_cache.appendKV(seq_id, layer_idx_, ws_->k_buf, ws_->v_buf, num_tokens, stream);
+    // Append new K, V to cache（device 写位置版本，CUDA Graph 重放前置）
+    auto append_result =
+        kv_cache.appendKV(seq_id, layer_idx_, ws_->k_buf, ws_->v_buf, num_tokens,
+                          kv_cache.appendPosDevicePtr(), stream);
     if (append_result.isErr()) {
         TLLM_ERROR("attention: appendKV failed for layer {}: {}", layer_idx_,
                    append_result.error());

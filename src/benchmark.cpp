@@ -41,6 +41,7 @@ struct BenchOptions {
     int         iters = 10;
     bool        json = false;
     bool        use_reference = false;
+    bool        graphs = false;
 };
 
 struct TimingStats {
@@ -86,6 +87,7 @@ void printUsage(const char *program_name) {
     std::cout << "  --iters N          Timed iterations (default: 10)\n";
     std::cout << "  --json             Emit one JSON line (machine readable)\n";
     std::cout << "  --use-reference    Force reference w8a16 kernels (diagnostic)\n";
+    std::cout << "  --graphs           Enable CUDA Graphs decode (TLLM_CUDA_GRAPHS=1)\n";
     std::cout << "  -h, --help         Show this help\n";
 }
 
@@ -272,6 +274,8 @@ int main(int argc, char **argv) {
             opt.iters = std::stoi(argv[++i]);
         } else if (arg == "--json") {
             opt.json = true;
+        } else if (arg == "--graphs") {
+            opt.graphs = true;
         } else if (arg == "--use-reference") {
             opt.use_reference = true;
         } else if (!arg.empty() && arg[0] != '-') {
@@ -286,6 +290,12 @@ int main(int argc, char **argv) {
     if (opt.use_reference) {
         tiny_llm::kernels::g_force_reference = true;
         std::cout << "[diagnostic] forcing reference w8a16 kernel" << std::endl;
+    }
+
+    // --graphs：引擎在构造时读环境变量，须在 InferenceEngine::load 前设置。
+    if (opt.graphs) {
+        setenv("TLLM_CUDA_GRAPHS", "1", 1);
+        std::cout << "[diagnostic] enabling CUDA Graphs decode" << std::endl;
     }
 
     if (opt.model_path.empty()) {

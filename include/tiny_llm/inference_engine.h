@@ -96,6 +96,26 @@ class InferenceEngine {
     // 在 stream_ 上 cudaMemcpyAsync 更新。
     DeviceBuffer<int> decode_len_;
 
+    // 任务 3.2（CUDA Graphs）：decode 固定输入缓冲与 RoPE 起始位置。
+    // graph_token_: 单 token id（embed 的输入指针必须跨重放稳定）。
+    // rope_pos_: RoPE 起始绝对位置（device int，graph 重放前置）。
+    DeviceBuffer<int> graph_token_;
+    DeviceBuffer<int> rope_pos_;
+
+    // 任务 3.2：CUDA Graph 状态。TLLM_CUDA_GRAPHS=1 启用 decode graph
+    // 捕获/重放；默认关闭（老行为）。捕获失败自动回退并置 graphs_enabled=false。
+    bool          cuda_graphs_enabled_ = false;
+    bool          graph_captured_ = false;
+    cudaGraph_t   decode_graph_ = nullptr;
+    cudaGraphExec_t decode_graph_exec_ = nullptr;
+
+    // 任务 3.2：decode 的 device 序列（embed + 24 层 forward + finalNorm +
+    // computeLogits），graph 捕获/直接执行共用同一函数保证路径一致。
+    Result<void> runDecodeDevicePath(half *token_state, int seq_id, int position);
+
+    // 任务 3.2：从 logits_ 采样（sync + D2H + sample，graph 不覆盖）。
+    int sampleFromLogits(const GenerationConfig &config);
+
     // TLLM-003: RoPE cos/sin half cache (FP32)
     float *rope_cos_ = nullptr;
     float *rope_sin_ = nullptr;

@@ -49,6 +49,7 @@ struct TinyLlmHandleImpl {
     int                                         max_batch_size = 1;
     tiny_llm::DeviceBuffer<int>                 d_tokens; // token ids 上传缓冲（gather 需 device 指针）
     tiny_llm::DeviceBuffer<int>                 decode_len; // 任务 3.1：decode 可见 KV 长度 (device int)
+    tiny_llm::DeviceBuffer<int>                 rope_pos; // 任务 3.2：RoPE 起始位置 (device int)
     std::unordered_map<int, SeqState>           sequences;
 };
 
@@ -219,8 +220,9 @@ TinyLlmHandle *tinyllm_load(const char *model_path, const TinyLlmConfig *config,
                                                   h->config.hidden_dim * sizeof(half)));
         CUDA_CHECK(cudaMalloc(&h->logits_buf,
                               static_cast<size_t>(h->config.vocab_size) * sizeof(half)));
-        // 任务 3.1：decode 可见 KV 长度（device int，CUDA Graph 前置）
+        // 任务 3.1/3.2：decode 可见长度与 RoPE 位置（device int，graph 前置）
         h->decode_len = tiny_llm::DeviceBuffer<int>(1);
+        h->rope_pos = tiny_llm::DeviceBuffer<int>(1);
         CUDA_CHECK(cudaStreamCreate(&h->stream));
         CUDA_CHECK(cudaStreamSynchronize(h->stream));
 
@@ -308,12 +310,17 @@ int tinyllm_step(TinyLlmHandle *handle, const int *seq_ids, const int *input_tok
                     cudaError_t e = cudaGetLastError();
                     fprintf(stderr, "  [ffi] embed: %s\n", cudaGetErrorString(e));
                 }
+                // 任务 3.2：prefill 起始位置 0、append 写位置 = 当前可见长度
+                const int zero_pos = 0;
+                h->rope_pos.copyFromHost(&zero_pos, 1, h->stream);
+                h->kv_cache->setAppendPos(0, h->stream);
                 int li = 0;
                 for (auto &layer : h->layers) {
                     auto r = [&]() -> tiny_llm::Result<void> {
                         try {
                             return layer->forwardPrefill(h->hidden_buf, *h->kv_cache, seq_id, len,
-                                                         h->rope_cos, h->rope_sin, h->stream);
+                                                         h->rope_pos.data(), h->rope_cos,
+                                                         h->rope_sin, h->stream);
                         } catch (const std::exception &e) {
                             if (std::getenv("TLLM_FFI_DEBUG")) {
                                 fprintf(stderr, "  [ffi] layer %d threw: %s\n", li, e.what());
@@ -344,13 +351,16 @@ int tinyllm_step(TinyLlmHandle *handle, const int *seq_ids, const int *input_tok
                 const int pos = st.position;
                 embed(h, toks, 1, h->hidden_buf + static_cast<size_t>(pos) * hidden);
                 half *token_state = h->hidden_buf + static_cast<size_t>(pos) * hidden;
-                // 任务 3.1：把 appendKV 后的可见长度写入 device 缓冲
+                // 任务 3.1/3.2：把 appendKV 后的可见长度、RoPE 位置与
+                // append 写位置写入 device 缓冲
                 const int decode_len = h->kv_cache->getSeqLen(seq_id) + 1;
                 h->decode_len.copyFromHost(&decode_len, 1, h->stream);
+                h->rope_pos.copyFromHost(&pos, 1, h->stream);
+                h->kv_cache->setAppendPos(h->kv_cache->getSeqLen(seq_id), h->stream);
                 for (auto &layer : h->layers) {
                     auto r = layer->forward(token_state, *h->kv_cache, seq_id, pos,
-                                            h->decode_len.data(), h->rope_cos, h->rope_sin,
-                                            h->stream);
+                                            h->decode_len.data(), h->rope_pos.data(), h->rope_cos,
+                                            h->rope_sin, h->stream);
                     if (r.isErr()) return TLLM_ERR;
                 }
                 auto adv = h->kv_cache->advanceSeqLen(seq_id, 1);

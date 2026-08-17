@@ -81,5 +81,33 @@ void gather_embeddings(const int *tokens, const half *embedding, half *output, i
         tokens, embedding, output, num_tokens, hidden_dim, vocab_size);
 }
 
+// 任务 3.2：KV append（device 写位置版本）。
+// 每个线程负责一个 (head, dim) 元素；写位置从 device int 读取，使该 kernel
+// 可被 CUDA Graph 重放（host 在每次 decode 前更新 device 值）。
+__global__ void append_kv_at_kernel(const half *__restrict__ new_k, const half *__restrict__ new_v,
+                                    half *__restrict__ dst_k, half *__restrict__ dst_v,
+                                    const int *__restrict__ device_write_pos, int kv_heads,
+                                    int head_dim) {
+    const int write_pos = *device_write_pos;
+    const int idx = blockIdx.x * blockDim.x + threadIdx.x;
+    const int total = kv_heads * head_dim;
+    if (idx >= total) return;
+    const int offset = write_pos * total + idx;
+    dst_k[offset] = new_k[idx];
+    dst_v[offset] = new_v[idx];
+}
+
+void append_kv_at(const half *new_k, const half *new_v, half *dst_k, half *dst_v,
+                  const int *device_write_pos, int kv_heads, int head_dim, cudaStream_t stream) {
+    if (!new_k || !new_v || !dst_k || !dst_v || !device_write_pos || kv_heads <= 0 || head_dim <= 0) {
+        return;
+    }
+    const int total = kv_heads * head_dim;
+    const int block_size = 256;
+    const int grid_size = (total + block_size - 1) / block_size;
+    append_kv_at_kernel<<<grid_size, block_size, 0, stream>>>(new_k, new_v, dst_k, dst_v,
+                                                              device_write_pos, kv_heads, head_dim);
+}
+
 } // namespace kernels
 } // namespace tiny_llm

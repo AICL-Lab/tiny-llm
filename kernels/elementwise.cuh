@@ -19,5 +19,12 @@ void silu_mul_inplace(half *gate, const half *up, int num_elements, cudaStream_t
 void gather_embeddings(const int *tokens, const half *embedding, half *output, int num_tokens,
                        int hidden_dim, int vocab_size, cudaStream_t stream = 0);
 
+// 任务 3.2：KV append 的 device 写位置版本。把当前 step 的 K/V 写入 cache 的
+// *device_write_pos 位置（CUDA Graph 重放：host 更新 device 位置后重放即可，
+// 不像 host 计算的目标地址会被 graph 固化）。new_k/new_v 都是 [1, kv_heads*D]。
+void append_kv_at(const half *new_k, const half *new_v, half *dst_k, half *dst_v,
+                  const int *device_write_pos, int kv_heads, int head_dim,
+                  cudaStream_t stream = 0);
+
 } // namespace kernels
 } // namespace tiny_llm
