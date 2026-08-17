@@ -47,6 +47,11 @@ class InferenceEngine {
     // Reset statistics
     void resetStats() { stats_ = GenerationStats{}; }
 
+    // 当前活跃 KV 序列数（任务 4.1 失败路径测试用：超长输入拒绝后不应增加）
+    int getActiveSequenceCount() const {
+        return kv_cache_ ? kv_cache_->getActiveSequenceCount() : 0;
+    }
+
     // Sampling functions (public for testing)
     static int sampleGreedy(const half *logits, int vocab_size);
     static int sampleTemperature(const half *logits, int vocab_size, float temperature,

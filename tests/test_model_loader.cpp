@@ -194,6 +194,64 @@ TEST_F(GGUFHeaderTest, IncompleteRuntimeGGUFReturnsStructuredErrorWithoutThrowin
     });
 }
 
+TEST_F(GGUFHeaderTest, ValidHeaderTruncatedTensorData) {
+    // 合法 header + 完整 metadata/tensor info，但 tensor 数据区被截断
+    //（声明的数据大小超过文件长度）。parse() 只读 info 应成功；
+    // readTensorData() 必须干净地返回错误且不崩溃。
+    GGUFFileBuilder builder;
+    // 手写一条合法 string 元数据（GGUF：key + type + uint64 长度 + 字节）
+    appendString(builder.metadata_entries, "general.architecture");
+    appendValue(builder.metadata_entries, uint32_t(static_cast<uint32_t>(GGUFType::STRING)));
+    appendString(builder.metadata_entries, "qwen2");
+    builder.metadata_count = 1;
+    builder.tensor_count = 1;
+    appendString(builder.tensor_entries, "blk.0.weight");
+    appendValue(builder.tensor_entries, uint32_t(1));    // n_dims
+    appendValue(builder.tensor_entries, uint32_t(4096)); // dim
+    appendValue(builder.tensor_entries,
+                uint32_t(static_cast<uint32_t>(GGMLType::F32)));
+    appendValue(builder.tensor_entries, uint64_t(0)); // offset（无对齐、无数据）
+
+    TempFile file(".gguf");
+    builder.writeTo(file); // 只写 header+metadata+tensor info，不写 tensor 数据
+
+    GGUFParser parser(file.path());
+    auto       parse_result = parser.parse();
+    ASSERT_TRUE(parse_result.isOk()) << parse_result.error();
+
+    ASSERT_EQ(parser.getTensors().size(), 1u);
+    auto data_result = parser.readTensorData(parser.getTensors()[0]);
+    EXPECT_TRUE(data_result.isErr()) << "truncated tensor data must fail cleanly";
+    EXPECT_TRUE(data_result.error().find("Failed to read tensor") != std::string::npos ||
+                data_result.error().find("seek") != std::string::npos)
+        << "unexpected error message: " << data_result.error();
+}
+
+TEST_F(GGUFHeaderTest, ValidHeaderTruncatedMetadata) {
+    // 合法 header 但 metadata 在中间被截断 → parse() 返回错误且不崩溃。
+    std::vector<uint8_t> bytes;
+    appendValue(bytes, GGUF_MAGIC);
+    appendValue(bytes, uint32_t(3));
+    appendValue(bytes, uint64_t(0)); // tensor_count
+    appendValue(bytes, uint64_t(5)); // metadata_count = 5，但只写了 2 个
+    // key 1
+    appendString(bytes, "general.architecture");
+    appendValue(bytes, uint32_t(static_cast<uint32_t>(GGUFType::STRING)));
+    appendString(bytes, "qwen2");
+    // key 2 只写 key、不写 type/value —— 截断
+    appendString(bytes, "general.name");
+
+    TempFile file(".gguf");
+    file.writeBytes(bytes);
+
+    GGUFParser parser(file.path());
+    auto       result = parser.parse();
+    EXPECT_TRUE(result.isErr());
+    EXPECT_TRUE(result.error().find("metadata") != std::string::npos ||
+                result.error().find("Failed") != std::string::npos)
+        << "unexpected error message: " << result.error();
+}
+
 TEST_F(GGUFHeaderTest, ValidHeader) {
     TempFile file(".gguf");
 

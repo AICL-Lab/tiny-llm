@@ -471,6 +471,47 @@ TEST_F(InferenceEngineTest, CudaGraphsGenerateMatchesNonGraph) {
     }
 }
 
+// 任务 4.1：超长输入失败路径。prompt + max_new_tokens 超过 max_seq_len 时，
+// generate() 必须在分配 KV 之前返回验证错误，活跃序列数不增加、不崩溃。
+TEST_F(InferenceEngineTest, GenerateRejectsOverlongInput) {
+    // 小型合成配置：1 层、max_seq_len=16
+    ModelConfig config;
+    config.vocab_size = 1000;
+    config.hidden_dim = 64;
+    config.num_layers = 1;
+    config.num_heads = 1;
+    config.num_kv_heads = 1;
+    config.head_dim = 64;
+    config.intermediate_dim = 128;
+    config.max_seq_len = 16;
+    config.rope_theta = 10000.0f;
+    config.rms_norm_eps = 1e-5f;
+
+    // 空权重即可：generate() 在校验阶段就返回，不会触碰权重。
+    ModelWeights weights;
+    weights.layers.resize(1);
+
+    InferenceEngine engine(config, std::move(weights));
+    EXPECT_EQ(engine.getActiveSequenceCount(), 0);
+
+    GenerationConfig gen;
+    gen.max_new_tokens = 8;
+    gen.do_sample = false;
+
+    // 20 个 token 的 prompt：20 + 8 > 16（max_seq_len）
+    std::vector<int> prompt(20, 1);
+    auto             result = engine.generate(prompt, gen);
+    EXPECT_TRUE(result.isErr()) << "overlong input must be rejected before KV allocation";
+    EXPECT_TRUE(result.error().find("length") != std::string::npos ||
+                result.error().find("max_seq_len") != std::string::npos ||
+                result.error().find("too") != std::string::npos ||
+                result.error().find("exceed") != std::string::npos)
+        << "unexpected error message: " << result.error();
+
+    // 拒绝后不应分配 KV 序列
+    EXPECT_EQ(engine.getActiveSequenceCount(), 0);
+}
+
 #if 0
 // Property-based tests
 // Feature: tiny-llm-inference-engine, Property 6: Greedy Sampling Correctness

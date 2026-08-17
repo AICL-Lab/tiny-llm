@@ -193,6 +193,29 @@ TEST_F(KVCacheTest, MemoryAccountingIsCorrect) {
     EXPECT_EQ(used_after_two, used_after_one * 2);
 }
 
+// 任务 4.1：OOM 失败路径。超大 max_seq_len/max_batch_size 使 cudaMalloc
+// 失败，create() 必须返回错误、进程不崩溃、且不泄漏显存。
+TEST_F(KVCacheTest, CreateFailsOnHugeAllocationWithoutLeak) {
+    // 2 层 × 4 KV 头 × 64 head_dim × 2^30 seq × 2 (K/V) × 2B ≈ 2 TB >> GPU 显存
+    KVCacheConfig config;
+    config.num_layers = 2;
+    config.num_kv_heads = 4;
+    config.head_dim = 64;
+    config.max_seq_len = 1u << 30;
+    config.max_batch_size = 4;
+
+    size_t free_before = 0, total = 0;
+    ASSERT_EQ(cudaMemGetInfo(&free_before, &total), cudaSuccess);
+
+    auto result = KVCacheManager::create(config);
+    EXPECT_TRUE(result.isErr()) << "huge allocation should fail cleanly";
+
+    // 失败后不应有显存泄漏（create 在失败路径上释放/不分配）
+    size_t free_after = 0;
+    ASSERT_EQ(cudaMemGetInfo(&free_after, &total), cudaSuccess);
+    EXPECT_GE(free_after + 1, free_before) << "KVCacheManager::create leaked device memory on OOM";
+}
+
 TEST_F(KVCacheTest, AppendDoesNotAdvanceVisibleSequenceLength) {
     auto config = createConfig(2, 4, 8, 32, 2);
     auto cache = createCache(config);
