@@ -97,14 +97,15 @@ cmake --build build -j$(nproc)
 ## 5. 结果表模板
 
 归档位置：`docs/performance/results/<date>-<gpu>.md`（模板见
-`docs/performance/results/TEMPLATE.md`）。
+`docs/performance/results/TEMPLATE.md`）。**实测快照（2026-08-18，RTX 3060
+Laptop，详见 [2026-08-18-rtx3060](results/2026-08-18-rtx3060.md)）**：
 
 | 指标 | tiny-llm | llama.cpp | 比值 (tiny/llama) |
 |------|----------|-----------|-------------------|
-| TTFT (ms) | | | |
-| TPOT (ms/token) | | | |
-| decode tok/s | | | |
-| 峰值显存 (MB) | | | |
+| TTFT (ms) | 22.9（1-token prompt，含首次 logits） | 4.9（`pp1`，仅 prompt 处理，口径不同） | ~4.7（口径见归档） |
+| TPOT (ms/token) | 22.1 | 3.7（`tg64`: 272 t/s） | 6.0 |
+| decode tok/s | 45.3 | 272.2 | 0.17 |
+| 峰值显存 (MB) | 2490 | 未测（同口径） | — |
 
 每张表下方必须附：第 1、2 节的环境快照 + 实际执行的完整命令 + 原始日志路径。
 
