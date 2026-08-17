@@ -1018,3 +1018,123 @@ TEST_F(AttentionTest, LongSequencePrefillMatchesCpuReference) {
         }
     }
 }
+
+// ============================================================================
+// 任务 4.2：第二个真实模型的 GQA 配置映射验证（kernel 级）。
+// 手头没有第二个 GGUF 时，先验证推荐模型配置的 group_size 映射：
+//   - Llama-3.2-1B-Instruct：Hq=32, Hkv=8（group_size=4，与 Qwen 14→2 差异大）
+//   - MQA 类模型：Hq=16, Hkv=1（group_size=16）
+// 真实模型到位后，用 gated 测试（TLLM_GGUF_TEST_MODEL_2）做端到端验证。
+// ============================================================================
+
+// Llama-3.2-1B 的 GQA 比例：32 个 Q head 共享 8 个 KV head（group_size=4）。
+TEST_F(AttentionTest, Llama32GQA32To8DecodeMatchesCpuReference) {
+    const int num_q_heads = 32;
+    const int num_kv_heads = 8;
+    const int seq_len = 16;
+    const int head_dim = 64;
+    const float scale = 1.0f / std::sqrt(static_cast<float>(head_dim));
+    const int group_size = num_q_heads / num_kv_heads;
+
+    auto query = randomFP16(num_q_heads * head_dim, 1.0f, 800);
+    auto k_cache = randomFP16(seq_len * num_kv_heads * head_dim, 1.0f, 801);
+    auto v_cache = randomFP16(seq_len * num_kv_heads * head_dim, 1.0f, 802);
+
+    DeviceBuffer<half> d_query(num_q_heads * head_dim);
+    DeviceBuffer<half> d_k_cache(seq_len * num_kv_heads * head_dim);
+    DeviceBuffer<half> d_v_cache(seq_len * num_kv_heads * head_dim);
+    DeviceBuffer<half> d_output(num_q_heads * head_dim);
+    d_query.copyFromHost(query.data(), query.size());
+    d_k_cache.copyFromHost(k_cache.data(), k_cache.size());
+    d_v_cache.copyFromHost(v_cache.data(), v_cache.size());
+
+    attention_decode(d_query.data(), d_k_cache.data(), d_v_cache.data(), d_output.data(), scale,
+                     num_q_heads, num_kv_heads, seq_len, head_dim);
+    cudaDeviceSynchronize();
+
+    std::vector<half> output(num_q_heads * head_dim);
+    d_output.copyToHost(output.data(), output.size());
+    cudaDeviceSynchronize();
+
+    for (int h = 0; h < num_q_heads; ++h) {
+        int kh = h / group_size;
+        std::vector<float> scores(seq_len);
+        float smax = -1e30f;
+        for (int s = 0; s < seq_len; ++s) {
+            float acc = 0.0f;
+            for (int d = 0; d < head_dim; ++d) {
+                acc += __half2float(query[h * head_dim + d]) *
+                       __half2float(k_cache[(s * num_kv_heads + kh) * head_dim + d]);
+            }
+            scores[s] = acc * scale;
+            smax = std::max(smax, scores[s]);
+        }
+        float sum_exp = 0.0f;
+        for (int s = 0; s < seq_len; ++s) sum_exp += std::exp(scores[s] - smax);
+        for (int d = 0; d < head_dim; ++d) {
+            float out_val = 0.0f;
+            for (int s = 0; s < seq_len; ++s) {
+                float w = std::exp(scores[s] - smax) / sum_exp;
+                out_val += w * __half2float(v_cache[(s * num_kv_heads + kh) * head_dim + d]);
+            }
+            EXPECT_NEAR(__half2float(output[h * head_dim + d]), out_val, 8e-2f)
+                << "head " << h << " dim " << d;
+        }
+    }
+}
+
+// MQA：16 个 Q head 共享 1 个 KV head（group_size=16）。
+TEST_F(AttentionTest, MQA16To1DecodeMatchesCpuReference) {
+    const int num_q_heads = 16;
+    const int num_kv_heads = 1;
+    const int seq_len = 16;
+    const int head_dim = 64;
+    const float scale = 1.0f / std::sqrt(static_cast<float>(head_dim));
+    const int group_size = num_q_heads / num_kv_heads;
+
+    auto query = randomFP16(num_q_heads * head_dim, 1.0f, 900);
+    auto k_cache = randomFP16(seq_len * num_kv_heads * head_dim, 1.0f, 901);
+    auto v_cache = randomFP16(seq_len * num_kv_heads * head_dim, 1.0f, 902);
+
+    DeviceBuffer<half> d_query(num_q_heads * head_dim);
+    DeviceBuffer<half> d_k_cache(seq_len * num_kv_heads * head_dim);
+    DeviceBuffer<half> d_v_cache(seq_len * num_kv_heads * head_dim);
+    DeviceBuffer<half> d_output(num_q_heads * head_dim);
+    d_query.copyFromHost(query.data(), query.size());
+    d_k_cache.copyFromHost(k_cache.data(), k_cache.size());
+    d_v_cache.copyFromHost(v_cache.data(), v_cache.size());
+
+    attention_decode(d_query.data(), d_k_cache.data(), d_v_cache.data(), d_output.data(), scale,
+                     num_q_heads, num_kv_heads, seq_len, head_dim);
+    cudaDeviceSynchronize();
+
+    std::vector<half> output(num_q_heads * head_dim);
+    d_output.copyToHost(output.data(), output.size());
+    cudaDeviceSynchronize();
+
+    for (int h = 0; h < num_q_heads; ++h) {
+        int kh = h / group_size;
+        std::vector<float> scores(seq_len);
+        float smax = -1e30f;
+        for (int s = 0; s < seq_len; ++s) {
+            float acc = 0.0f;
+            for (int d = 0; d < head_dim; ++d) {
+                acc += __half2float(query[h * head_dim + d]) *
+                       __half2float(k_cache[(s * num_kv_heads + kh) * head_dim + d]);
+            }
+            scores[s] = acc * scale;
+            smax = std::max(smax, scores[s]);
+        }
+        float sum_exp = 0.0f;
+        for (int s = 0; s < seq_len; ++s) sum_exp += std::exp(scores[s] - smax);
+        for (int d = 0; d < head_dim; ++d) {
+            float out_val = 0.0f;
+            for (int s = 0; s < seq_len; ++s) {
+                float w = std::exp(scores[s] - smax) / sum_exp;
+                out_val += w * __half2float(v_cache[(s * num_kv_heads + kh) * head_dim + d]);
+            }
+            EXPECT_NEAR(__half2float(output[h * head_dim + d]), out_val, 8e-2f)
+                << "head " << h << " dim " << d;
+        }
+    }
+}

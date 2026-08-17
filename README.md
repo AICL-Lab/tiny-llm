@@ -70,6 +70,14 @@ Tiny-LLM 将仓库表面保持得尽量小：CUDA/C++17 内核、W8A16 量化、
 > CLI 提供 CPU-only 的 `tiny_llm_demo --inspect model.gguf` 查看配置与 tensor 摘要；
 > tokenizer 已实现并通过差分验证；端到端文本生成待 GPU 环境（见 [ROADMAP](ROADMAP.md)）。
 
+> **GQA/MQA 映射验证**（任务 4.2）：
+> - 已验：Qwen2.5-0.5B **GQA 14→2**（真实模型端到端）。
+> - Kernel 级已验证：Llama-3.2-1B **GQA 32→8**（group_size=4）与 **MQA 16→1**
+>   （group_size=16）的 decode 与 CPU 参考逐元素对齐（`tests/test_kernels.cu`）。
+> - 第二个真实模型门控测试已就绪：`tests/test_gguf_real.cpp`，设
+>   `TLLM_GGUF_TEST_MODEL_2` 指向第二个模型的 GGUF（如 Llama-3.2-1B 或任意
+>   MQA 模型）后运行 `tiny_llm_tests` 即可完成端到端验证（待用户提供模型文件）。
+
 ## 从源码构建
 
 Tiny-LLM 需要可用的 CUDA 工具链（`nvcc` 在 `PATH` 中，或已正确配置 CUDA 安装）。
