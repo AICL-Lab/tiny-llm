@@ -934,3 +934,87 @@ TEST_F(AttentionTest, LongSequenceDecodeMatchesCpuReference) {
         }
     }
 }
+
+// ============================================================================
+// Prefill 长序列 + 非整 tile 边界（1025 = 8×128 + 1）：覆盖 causal mask 与
+// online-softmax 在 seq_len % ATTEND_TILE != 0 时的重缩放路径。
+// ============================================================================
+TEST_F(AttentionTest, LongSequencePrefillMatchesCpuReference) {
+    const int num_q_heads = 4;
+    const int num_kv_heads = 2;
+    const int seq_len = 1025;
+    const int head_dim = 64;
+    const float scale = 1.0f / std::sqrt(static_cast<float>(head_dim));
+    const int group_size = num_q_heads / num_kv_heads;
+
+    auto query = randomFP16(seq_len * num_q_heads * head_dim, 1.0f, 700);
+    auto key = randomFP16(seq_len * num_kv_heads * head_dim, 1.0f, 701);
+    auto value = randomFP16(seq_len * num_kv_heads * head_dim, 1.0f, 702);
+
+    DeviceBuffer<half> d_query(seq_len * num_q_heads * head_dim);
+    DeviceBuffer<half> d_key(seq_len * num_kv_heads * head_dim);
+    DeviceBuffer<half> d_value(seq_len * num_kv_heads * head_dim);
+    DeviceBuffer<half> d_output(seq_len * num_q_heads * head_dim);
+    d_query.copyFromHost(query.data(), query.size());
+    d_key.copyFromHost(key.data(), key.size());
+    d_value.copyFromHost(value.data(), value.size());
+
+    attention_prefill(d_query.data(), d_key.data(), d_value.data(), d_output.data(), scale,
+                      num_q_heads, num_kv_heads, seq_len, head_dim);
+    cudaDeviceSynchronize();
+
+    std::vector<half> output(seq_len * num_q_heads * head_dim);
+    d_output.copyToHost(output.data(), output.size());
+    cudaDeviceSynchronize();
+
+    // 全维度数值比较只做边界 query_pos（含 tile 边界两侧与序列尾部），
+    // 其余 query 只检查非零，避免 O(seq_len²×D×H) 的 CPU 参考拖慢单测。
+    const int checked_pos[] = {0, 1, 127, 128, 129, 1024};
+    const size_t num_checked = sizeof(checked_pos) / sizeof(checked_pos[0]);
+
+    std::vector<bool> full_check(static_cast<size_t>(seq_len), false);
+    for (size_t i = 0; i < num_checked; ++i) full_check[static_cast<size_t>(checked_pos[i])] = true;
+
+    for (int s = 0; s < seq_len; ++s) {
+        for (int h = 0; h < num_q_heads; ++h) {
+            int kh = h / group_size;
+            if (full_check[static_cast<size_t>(s)]) {
+                // 只对 key_pos <= query_pos 求 score（causal，注意是 <=）
+                std::vector<float> scores(static_cast<size_t>(s) + 1);
+                float smax = -1e30f;
+                for (int ks = 0; ks <= s; ++ks) {
+                    float acc = 0.0f;
+                    for (int d = 0; d < head_dim; ++d) {
+                        acc += __half2float(query[(s * num_q_heads + h) * head_dim + d]) *
+                               __half2float(key[(ks * num_kv_heads + kh) * head_dim + d]);
+                    }
+                    scores[static_cast<size_t>(ks)] = acc * scale;
+                    smax = std::max(smax, scores[static_cast<size_t>(ks)]);
+                }
+                float sum_exp = 0.0f;
+                for (int ks = 0; ks <= s; ++ks)
+                    sum_exp += std::exp(scores[static_cast<size_t>(ks)] - smax);
+                for (int d = 0; d < head_dim; ++d) {
+                    float out_val = 0.0f;
+                    for (int ks = 0; ks <= s; ++ks) {
+                        float w = std::exp(scores[static_cast<size_t>(ks)] - smax) / sum_exp;
+                        out_val += w *
+                                   __half2float(value[(ks * num_kv_heads + kh) * head_dim + d]);
+                    }
+                    float actual = __half2float(output[(s * num_q_heads + h) * head_dim + d]);
+                    EXPECT_NEAR(actual, out_val, 8e-2f)
+                        << "query_pos " << s << " head " << h << " dim " << d;
+                }
+            } else {
+                bool has_nonzero = false;
+                for (int d = 0; d < head_dim; ++d) {
+                    if (__half2float(output[(s * num_q_heads + h) * head_dim + d]) != 0.0f) {
+                        has_nonzero = true;
+                        break;
+                    }
+                }
+                EXPECT_TRUE(has_nonzero) << "query_pos " << s << " head " << h << " all zero";
+            }
+        }
+    }
+}
