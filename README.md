@@ -20,6 +20,18 @@ Tiny-LLM 将仓库表面保持得尽量小：CUDA/C++17 内核、W8A16 量化、
 
 在五仓学习路径中，本仓库只负责模型权重到 token 生成的运行时主线；CUDA/Triton kernel 学习和 Serving 调度保持在各自主仓。整体顺序见 [`cuda-kernel-academy/LEARNING_PATH.md`](https://github.com/AICL-Lab/cuda-kernel-academy/blob/master/LEARNING_PATH.md)。
 
+## 项目边界（IN / OUT）
+
+**IN（本仓库负责）**：
+- GGUF 加载与反量化（F16/F32/Q4_0/Q5_0/Q8_0/Q4_K/Q6_K）
+- W8A16 量化推理、KV Cache、tokenizer、采样、端到端生成
+- 性能基准（TTFT / TPOT / tok/s / 峰值显存）与 CUDA Graphs 加速 decode
+
+**OUT（明确不做，见对应仓库）**：
+- 调度 / 批处理 / 分页 KV / continuous batching → [paged-infer](https://github.com/AICL-Lab/paged-infer)
+- FlashAttention 深挖与优化 → [cuflash-attn](https://github.com/AICL-Lab/cuflash-attn)
+- Triton 算子 → [triton-fused-ops](https://github.com/AICL-Lab/triton-fused-ops)
+
 ## 项目状态（诚实声明）
 
 | 能力 | 状态 |
