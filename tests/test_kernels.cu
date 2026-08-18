@@ -1,5 +1,6 @@
 #include "rmsnorm.cuh"
 #include "rope.cuh"
+#include "paged_kv.cuh"
 #include "tiny_llm/cuda_utils.h"
 #include <cmath>
 #include <cuda_fp16.h>
@@ -1367,6 +1368,203 @@ TEST(RoPETest, ApplyInplaceMatchesReference) {
                 EXPECT_NEAR(got_second, exp_second, 1e-3f)
                     << "K s=" << s << " kh=" << kh << " d=" << d;
             }
+        }
+    }
+}
+
+// ── 分页 KV：scatter/gather 原语 ────────────────────────────────
+// 第一版简单正确即可（一个元素一个线程），正确性优先、不做优化。
+
+namespace {
+
+// 把连续 src（token-major）按块表散布到 pool 的 CPU 参考实现。
+// 返回目标 pool 索引（以 half 元素为单位）处的期望值映射（仅用于校验）。
+std::vector<half> cpuScatter(const std::vector<half> &src, const std::vector<int> &block_table,
+                             int num_tokens, int position, int block_size, int chunk_dim,
+                             int pool_blocks) {
+    std::vector<half> pool(static_cast<size_t>(pool_blocks) * block_size * chunk_dim,
+                           __float2half(0.0f));
+    for (int t = 0; t < num_tokens; ++t) {
+        int abs = position + t;
+        int b = abs / block_size;
+        int within = abs - b * block_size;
+        int block_id = block_table[b];
+        for (int c = 0; c < chunk_dim; ++c) {
+            size_t dst = ((size_t)block_id * block_size + within) * chunk_dim + c;
+            pool[dst] = src[(size_t)t * chunk_dim + c];
+        }
+    }
+    return pool;
+}
+
+// 从 pool 按块表读回前 visible_tokens 行的 CPU 参考。
+std::vector<half> cpuGather(const std::vector<half> &pool, const std::vector<int> &block_table,
+                            int visible_tokens, int block_size, int chunk_dim) {
+    std::vector<half> dst(static_cast<size_t>(visible_tokens) * chunk_dim);
+    for (int t = 0; t < visible_tokens; ++t) {
+        int b = t / block_size;
+        int within = t - b * block_size;
+        int block_id = block_table[b];
+        for (int c = 0; c < chunk_dim; ++c) {
+            size_t src = ((size_t)block_id * block_size + within) * chunk_dim + c;
+            dst[(size_t)t * chunk_dim + c] = pool[src];
+        }
+    }
+    return dst;
+}
+
+std::vector<half> randomFp16(size_t n, unsigned seed) {
+    std::mt19937                          gen(seed);
+    std::uniform_real_distribution<float> dist(-1.0f, 1.0f);
+    std::vector<half>                     v(n);
+    for (auto &x : v) x = __float2half(dist(gen));
+    return v;
+}
+
+} // namespace
+
+TEST(PagedKvTest, PagedScatterGatherRoundTrip) {
+    if (!hasCudaDevice()) GTEST_SKIP() << "No CUDA device available";
+    const int block_size = 16;
+    const int chunk_dim = 128;
+    const int num_tokens = 17; // 跨块边界：block 0 的 16 行 + block 1 的 1 行
+    const int pool_blocks = 8;
+    const std::vector<int> block_table = {3, 7};
+
+    const std::vector<half> src = randomFp16(static_cast<size_t>(num_tokens) * chunk_dim, 7);
+    DeviceBuffer<half> d_src(src.size());
+    d_src.copyFromHost(src.data(), src.size());
+
+    DeviceBuffer<half>  d_pool(static_cast<size_t>(pool_blocks) * block_size * chunk_dim);
+    DeviceBuffer<half>  d_dst(src.size());
+    DeviceBuffer<int>   d_table(block_table.size());
+    d_table.copyFromHost(block_table.data(), block_table.size());
+
+    kernels::paged_scatter_blocks(d_src.data(), d_pool.data(), d_table.data(), num_tokens,
+                                  /*position=*/0, block_size, chunk_dim);
+    kernels::paged_gather_blocks(d_dst.data(), d_pool.data(), d_table.data(), num_tokens,
+                                 block_size, chunk_dim);
+    cudaDeviceSynchronize();
+
+    std::vector<half> got(src.size());
+    d_dst.copyToHost(got.data(), got.size());
+    cudaDeviceSynchronize();
+    for (size_t i = 0; i < src.size(); ++i) {
+        EXPECT_NEAR(__half2float(got[i]), __half2float(src[i]), 1e-2f)
+            << "round-trip element " << i << " differs";
+    }
+}
+
+TEST(PagedKvTest, PagedGatherPartialVisibility) {
+    if (!hasCudaDevice()) GTEST_SKIP() << "No CUDA device available";
+    const int block_size = 16;
+    const int chunk_dim = 64;
+    const int num_tokens = 16;
+    const int visible_tokens = 7; // 只读前 7 个位置
+    const int pool_blocks = 8;
+    const std::vector<int> block_table = {2};
+
+    const std::vector<half> src = randomFp16(static_cast<size_t>(num_tokens) * chunk_dim, 11);
+    DeviceBuffer<half> d_src(src.size());
+    d_src.copyFromHost(src.data(), src.size());
+
+    DeviceBuffer<half> d_pool(static_cast<size_t>(pool_blocks) * block_size * chunk_dim);
+    DeviceBuffer<half> d_dst(static_cast<size_t>(visible_tokens) * chunk_dim);
+    DeviceBuffer<int>  d_table(block_table.size());
+    d_table.copyFromHost(block_table.data(), block_table.size());
+
+    kernels::paged_scatter_blocks(d_src.data(), d_pool.data(), d_table.data(), num_tokens, 0,
+                                  block_size, chunk_dim);
+    kernels::paged_gather_blocks(d_dst.data(), d_pool.data(), d_table.data(), visible_tokens,
+                                 block_size, chunk_dim);
+    cudaDeviceSynchronize();
+
+    // CPU 参考：直接取 src 前 visible_tokens 行
+    std::vector<half> got(static_cast<size_t>(visible_tokens) * chunk_dim);
+    d_dst.copyToHost(got.data(), got.size());
+    cudaDeviceSynchronize();
+    for (int t = 0; t < visible_tokens; ++t) {
+        for (int c = 0; c < chunk_dim; ++c) {
+            size_t i = (size_t)t * chunk_dim + c;
+            EXPECT_NEAR(__half2float(got[i]), __half2float(src[i]), 1e-2f)
+                << "visible token " << t << " dim " << c << " differs";
+        }
+    }
+}
+
+TEST(PagedKvTest, PagedScatterWritesAtAbsolutePosition) {
+    if (!hasCudaDevice()) GTEST_SKIP() << "No CUDA device available";
+    const int block_size = 16;
+    const int chunk_dim = 32;
+    const int position = 20; // abs=20 → block 1（abs/16），块内 offset 4
+    const int num_tokens = 1;
+    const int pool_blocks = 8;
+    const std::vector<int> block_table = {0, 5};
+
+    const std::vector<half> src = randomFp16(static_cast<size_t>(num_tokens) * chunk_dim, 13);
+    DeviceBuffer<half> d_src(src.size());
+    d_src.copyFromHost(src.data(), src.size());
+
+    DeviceBuffer<half> d_pool(static_cast<size_t>(pool_blocks) * block_size * chunk_dim);
+    DeviceBuffer<int>  d_table(block_table.size());
+    d_table.copyFromHost(block_table.data(), block_table.size());
+
+    kernels::paged_scatter_blocks(d_src.data(), d_pool.data(), d_table.data(), num_tokens,
+                                  position, block_size, chunk_dim);
+    cudaDeviceSynchronize();
+
+    // 期望落在 block_table[1]=5 块的第 4 行（块内 offset = 20 - 1*16 = 4）
+    std::vector<half> pool(static_cast<size_t>(pool_blocks) * block_size * chunk_dim);
+    d_pool.copyToHost(pool.data(), pool.size());
+    cudaDeviceSynchronize();
+    const size_t expected_base = ((size_t)5 * block_size + 4) * chunk_dim;
+    for (int c = 0; c < chunk_dim; ++c) {
+        EXPECT_NEAR(__half2float(pool[expected_base + c]), __half2float(src[c]), 1e-2f)
+            << "row 4 of block 5, dim " << c << " differs";
+    }
+}
+
+TEST(PagedKvTest, PagedLayersDoNotOverlap) {
+    if (!hasCudaDevice()) GTEST_SKIP() << "No CUDA device available";
+    const int block_size = 16;
+    const int chunk_dim = 64;
+    const int num_tokens = 8;
+    const int pool_blocks = 4;
+    const int num_layers = 2;
+    const int layer_stride = pool_blocks * block_size * chunk_dim;
+
+    // 两个"层"用不同 pool 偏移写不同数据
+    const std::vector<half> src0 = randomFp16(static_cast<size_t>(num_tokens) * chunk_dim, 21);
+    const std::vector<half> src1 = randomFp16(static_cast<size_t>(num_tokens) * chunk_dim, 22);
+    DeviceBuffer<half> d_src0(src0.size());
+    DeviceBuffer<half> d_src1(src1.size());
+    d_src0.copyFromHost(src0.data(), src0.size());
+    d_src1.copyFromHost(src1.data(), src1.size());
+
+    DeviceBuffer<half> d_pool(static_cast<size_t>(num_layers) * layer_stride);
+    const std::vector<int> block_table = {0};
+    DeviceBuffer<int>      d_table(1);
+    d_table.copyFromHost(block_table.data(), 1);
+
+    // 层 0 写 block 0、层 1 写 block 0（不同 layer 偏移）
+    kernels::paged_scatter_blocks(d_src0.data(), d_pool.data(), d_table.data(), num_tokens, 0,
+                                  block_size, chunk_dim);
+    kernels::paged_scatter_blocks(d_src1.data(), d_pool.data() + layer_stride, d_table.data(),
+                                  num_tokens, 0, block_size, chunk_dim);
+    cudaDeviceSynchronize();
+
+    std::vector<half> pool(static_cast<size_t>(num_layers) * layer_stride);
+    d_pool.copyToHost(pool.data(), pool.size());
+    cudaDeviceSynchronize();
+
+    // 层 0 区域 = src0，层 1 区域 = src1，且互不污染
+    for (int t = 0; t < num_tokens; ++t) {
+        for (int c = 0; c < chunk_dim; ++c) {
+            size_t i = (size_t)t * chunk_dim + c;
+            EXPECT_NEAR(__half2float(pool[i]), __half2float(src0[i]), 1e-2f)
+                << "layer0 token " << t << " dim " << c << " differs";
+            EXPECT_NEAR(__half2float(pool[layer_stride + i]), __half2float(src1[i]), 1e-2f)
+                << "layer1 token " << t << " dim " << c << " differs";
         }
     }
 }

@@ -60,6 +60,7 @@ list(FILTER SOURCES EXCLUDE REGEX "src/benchmark\\.cpp$")
 # 显式追加（GLOB 在增量构建时不会发现新文件；保留原 GLOB 不动，见 NOTE）
 list(APPEND SOURCES src/execution_common.cpp)
 list(APPEND SOURCES kernels/transpose_weights.cu)
+list(APPEND SOURCES kernels/paged_kv.cu)
 
 add_library(tiny_llm STATIC ${SOURCES})
 add_library(tiny_llm::tiny_llm ALIAS tiny_llm)
