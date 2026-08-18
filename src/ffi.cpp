@@ -52,6 +52,16 @@ struct TinyLlmHandleImpl {
     tiny_llm::DeviceBuffer<int>                 decode_len; // 任务 3.1：decode 可见 KV 长度 (device int)
     tiny_llm::DeviceBuffer<int>                 rope_pos; // 任务 3.2：RoPE 起始位置 (device int)
     std::unordered_map<int, SeqState>           sequences;
+
+    // ── 分页 KV（策略 1，max_num_blocks > 0）──
+    bool  paged_kv = false;
+    int   max_num_blocks = 0;
+    int   max_visible_tokens = 0;
+    half *paged_k_pool = nullptr;    // [L * max_num_blocks * block_size * kv_dim]
+    half *paged_v_pool = nullptr;
+    half *paged_k_scratch = nullptr; // [max_visible_tokens * kv_dim]
+    half *paged_v_scratch = nullptr;
+    tiny_llm::DeviceBuffer<int> d_block_tables; // 容量 max_num_blocks
 };
 
 // ── 内部工具 ─────────────────────────────────────────────
@@ -175,21 +185,50 @@ TinyLlmHandle *tinyllm_load(const char *model_path, const TinyLlmConfig *config,
         }
         h->weights = std::move(w_result.value());
 
-        // KV cache（多序列，max_batch_size 由调用方配置；连续 KV，策略 2）
+        // KV 生命周期（多序列，max_batch_size 由调用方配置）。
         int max_batch = config ? std::max(1, config->max_batch_size) : 1;
         h->max_batch_size = max_batch;
-        tiny_llm::KVCacheConfig kv_config;
-        kv_config.num_layers = h->config.num_layers;
-        kv_config.num_kv_heads = h->config.num_kv_heads;
-        kv_config.head_dim = h->config.head_dim;
-        kv_config.max_seq_len = h->config.max_seq_len;
-        kv_config.max_batch_size = max_batch;
-        auto kv_result = tiny_llm::KVCacheManager::create(kv_config);
-        if (kv_result.isErr()) {
-            set_err(err_buf, err_buf_len, "KV cache: " + kv_result.error());
-            return nullptr;
+
+        const bool use_paged = (config != nullptr && config->max_num_blocks > 0);
+        if (use_paged) {
+            // 策略 1：分页 KV 池。校验 + 分配 K/V pool 与 scratch；跳过
+            // KVCacheManager（h->kv_cache 保持 nullptr），块表由调用方传入。
+            if (config->block_size <= 0 || config->max_num_blocks <= 0) {
+                set_err(err_buf, err_buf_len,
+                        "tinyllm_load: paged KV requires block_size > 0 and max_num_blocks > 0");
+                return nullptr;
+            }
+            h->paged_kv = true;
+            h->max_num_blocks = config->max_num_blocks;
+            h->max_visible_tokens = config->max_num_blocks * config->block_size;
+            const int kv_dim = h->config.num_kv_heads * h->config.head_dim;
+            const size_t pool_elems = static_cast<size_t>(h->config.num_layers) *
+                                      static_cast<size_t>(h->max_num_blocks) *
+                                      static_cast<size_t>(config->block_size) *
+                                      static_cast<size_t>(kv_dim);
+            const size_t scratch_elems =
+                static_cast<size_t>(h->max_visible_tokens) * static_cast<size_t>(kv_dim);
+            CUDA_CHECK(cudaMalloc(&h->paged_k_pool, pool_elems * sizeof(half)));
+            CUDA_CHECK(cudaMalloc(&h->paged_v_pool, pool_elems * sizeof(half)));
+            CUDA_CHECK(cudaMalloc(&h->paged_k_scratch, scratch_elems * sizeof(half)));
+            CUDA_CHECK(cudaMalloc(&h->paged_v_scratch, scratch_elems * sizeof(half)));
+            h->d_block_tables =
+                tiny_llm::DeviceBuffer<int>(static_cast<size_t>(h->max_num_blocks));
+        } else {
+            // 策略 2：连续 KV（KVCacheManager）
+            tiny_llm::KVCacheConfig kv_config;
+            kv_config.num_layers = h->config.num_layers;
+            kv_config.num_kv_heads = h->config.num_kv_heads;
+            kv_config.head_dim = h->config.head_dim;
+            kv_config.max_seq_len = h->config.max_seq_len;
+            kv_config.max_batch_size = max_batch;
+            auto kv_result = tiny_llm::KVCacheManager::create(kv_config);
+            if (kv_result.isErr()) {
+                set_err(err_buf, err_buf_len, "KV cache: " + kv_result.error());
+                return nullptr;
+            }
+            h->kv_cache = std::move(kv_result.value());
         }
-        h->kv_cache = std::move(kv_result.value());
 
         // 共享激活工作区 + 层
         h->workspace.allocate(h->config);
@@ -229,6 +268,17 @@ int tinyllm_allocate_sequence(TinyLlmHandle *handle, int seq_id, int num_tokens)
     if (handle == nullptr || num_tokens <= 0) return TLLM_ERR;
     auto *h = reinterpret_cast<TinyLlmHandleImpl *>(handle);
     try {
+        if (h->paged_kv) {
+            // 策略 1：分页 KV 由调用方管理块表；这里只登记序列。
+            SeqState st;
+            st.allocated = true;
+            h->sequences[seq_id] = st;
+            if (std::getenv("TLLM_FFI_DEBUG")) {
+                fprintf(stderr, "  [ffi] paged allocate_sequence(%d, %d) ok\n", seq_id,
+                        num_tokens);
+            }
+            return TLLM_OK;
+        }
         auto alloc = h->kv_cache->allocateSequence(seq_id, num_tokens);
         if (alloc.isErr()) {
             if (std::getenv("TLLM_FFI_DEBUG")) {
@@ -256,6 +306,11 @@ int tinyllm_free_sequence(TinyLlmHandle *handle, int seq_id) {
     if (handle == nullptr) return TLLM_ERR;
     auto *h = reinterpret_cast<TinyLlmHandleImpl *>(handle);
     try {
+        if (h->paged_kv) {
+            // 策略 1：无连续 KV 可释放，仅移除序列登记。
+            h->sequences.erase(seq_id);
+            return TLLM_OK;
+        }
         auto rel = h->kv_cache->releaseSequence(seq_id);
         h->sequences.erase(seq_id);
         return rel.isErr() ? TLLM_ERR : TLLM_OK;
@@ -394,6 +449,23 @@ void tinyllm_free(TinyLlmHandle *handle) {
     if (h->logits_buf) {
         cudaFree(h->logits_buf);
         h->logits_buf = nullptr;
+    }
+    // 分页 KV pool / scratch（裸指针，显式释放；d_block_tables 是 RAII）
+    if (h->paged_k_pool) {
+        cudaFree(h->paged_k_pool);
+        h->paged_k_pool = nullptr;
+    }
+    if (h->paged_v_pool) {
+        cudaFree(h->paged_v_pool);
+        h->paged_v_pool = nullptr;
+    }
+    if (h->paged_k_scratch) {
+        cudaFree(h->paged_k_scratch);
+        h->paged_k_scratch = nullptr;
+    }
+    if (h->paged_v_scratch) {
+        cudaFree(h->paged_v_scratch);
+        h->paged_v_scratch = nullptr;
     }
     if (h->stream) {
         cudaStreamDestroy(h->stream);
