@@ -33,7 +33,7 @@ TEST(FFITest, LoadAllocateStepFree) {
     }
 
     char err[256] = {0};
-    TinyLlmConfig cfg = {0, 0, 0, 0, 0, 0, 16, 1};
+    TinyLlmConfig cfg = {0, 0, 0, 0, 0, 0, 16, 1, 0};
     TinyLlmHandle *h = tinyllm_load(path, &cfg, err, sizeof(err));
     ASSERT_NE(h, nullptr) << "load failed: " << err;
 
@@ -47,8 +47,8 @@ TEST(FFITest, LoadAllocateStepFree) {
     int seq_ids[] = {0};
     int next = -1;
     float logprobs[6] = {0.0f};
-    ASSERT_EQ(tinyllm_step(h, seq_ids, prompt, positions, seq_lens, nullptr, pre, 1, &next,
-                           logprobs, 3),
+    ASSERT_EQ(tinyllm_step(h, seq_ids, prompt, positions, seq_lens, nullptr, nullptr, pre, 1,
+                           &next, logprobs, 3),
               0);
     ASSERT_GE(next, 0);
     EXPECT_EQ(next, 358) << "Qwen2.5-0.5B 对 \"Hello, how are you?\" 的首生成 token 应为 358"
@@ -64,7 +64,9 @@ TEST(FFITest, LoadAllocateStepFree) {
         int lens[] = {1};
         unsigned char dec[] = {0};
         int sid[] = {0};
-        ASSERT_EQ(tinyllm_step(h, sid, &in, &pos, lens, nullptr, dec, 1, &next, nullptr, 0), 0);
+        ASSERT_EQ(tinyllm_step(h, sid, &in, &pos, lens, nullptr, nullptr, dec, 1, &next, nullptr,
+                               0),
+                  0);
         ASSERT_GE(next, 0);
         ++pos;
     }
@@ -76,8 +78,8 @@ TEST(FFITest, LoadAllocateStepFree) {
 TEST(FFITest, InvalidArgsReturnError) {
     ASSERT_EQ(tinyllm_load(nullptr, nullptr, nullptr, 0), nullptr);
     TinyLlmHandle *h = nullptr;
-    ASSERT_EQ(tinyllm_step(h, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, 0, nullptr,
-                          nullptr, 0),
+    ASSERT_EQ(tinyllm_step(h, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, 0,
+                           nullptr, nullptr, 0),
               -1);
     ASSERT_EQ(tinyllm_allocate_sequence(h, 0, 0), -1);
     tinyllm_free(nullptr); // 不崩溃

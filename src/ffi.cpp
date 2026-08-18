@@ -266,8 +266,8 @@ int tinyllm_free_sequence(TinyLlmHandle *handle, int seq_id) {
 
 int tinyllm_step(TinyLlmHandle *handle, const int *seq_ids, const int *input_tokens,
                  const int *positions, const int *seq_lens, const int *block_tables,
-                 const unsigned char *is_prefill, int num_sequences, int *next_tokens,
-                 float *logprobs, int logprobs_k) {
+                 const int *num_blocks, const unsigned char *is_prefill, int num_sequences,
+                 int *next_tokens, float *logprobs, int logprobs_k) {
     if (handle == nullptr || seq_ids == nullptr || input_tokens == nullptr || seq_lens == nullptr ||
         is_prefill == nullptr || next_tokens == nullptr || num_sequences <= 0) {
         return TLLM_ERR;
@@ -371,6 +371,7 @@ int tinyllm_step(TinyLlmHandle *handle, const int *seq_ids, const int *input_tok
 
     (void)positions;   // 策略 2：位置由引擎内部跟踪
     (void)block_tables; // 策略 2：连续 KV，忽略分页表
+    (void)num_blocks;   // 策略 2：连续 KV，忽略逐序列块计数（D2d 接入策略 1）
     return TLLM_OK;
 }
 
