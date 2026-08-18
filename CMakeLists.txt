@@ -57,6 +57,8 @@ file(GLOB_RECURSE SOURCES "src/*.cpp" "kernels/*.cu")
 # Exclude main.cpp / benchmark.cpp from library (they are standalone executables)
 list(FILTER SOURCES EXCLUDE REGEX "src/main\\.cpp$")
 list(FILTER SOURCES EXCLUDE REGEX "src/benchmark\\.cpp$")
+# 显式追加（GLOB 在增量构建时不会发现新文件；保留原 GLOB 不动，见 NOTE）
+list(APPEND SOURCES src/execution_common.cpp)
 
 add_library(tiny_llm STATIC ${SOURCES})
 add_library(tiny_llm::tiny_llm ALIAS tiny_llm)

@@ -7,6 +7,7 @@
 
 #include "tiny_llm/ffi.h"
 #include "tiny_llm/cuda_utils.h"
+#include "tiny_llm/execution_common.h"
 #include "tiny_llm/gguf_parser.h"
 #include "tiny_llm/inference_engine.h"  // sampleGreedy
 #include "tiny_llm/kv_cache.h"
@@ -75,17 +76,8 @@ void embed(TinyLlmHandleImpl *h, const int *tokens, int num_tokens, half *output
 
 /// final norm + lm_head + greedy 采样，返回下一 token id。
 int sample_from_hidden(TinyLlmHandleImpl *h, half *hidden) {
-    const int hidden_dim = h->config.hidden_dim;
-    tiny_llm::kernels::rmsnorm(hidden, h->weights.final_norm_weight, hidden, 1, hidden_dim,
-                               h->config.rms_norm_eps, h->stream);
-    if (h->weights.lm_head_fp16) {
-        tiny_llm::kernels::fp16_matmul(hidden, h->weights.lm_head_fp16, h->logits_buf, 1,
-                                       h->config.vocab_size, hidden_dim, h->stream);
-    } else {
-        tiny_llm::kernels::w8a16_matmul(hidden, h->weights.lm_head.data, h->weights.lm_head.scales,
-                                        h->logits_buf, 1, h->config.vocab_size, hidden_dim,
-                                        h->weights.lm_head.group_size, h->stream);
-    }
+    // 任务 4.3：final norm + lm_head 走共享 helper（与 InferenceEngine 一致）
+    tiny_llm::finalNormAndComputeLogits(hidden, h->weights, h->config, h->logits_buf, h->stream);
     CUDA_CHECK(cudaStreamSynchronize(h->stream));
 
     std::vector<half> h_logits(static_cast<size_t>(h->config.vocab_size));

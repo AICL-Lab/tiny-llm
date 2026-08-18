@@ -3,6 +3,7 @@
 #include "rmsnorm.cuh"
 #include "rope.cuh"
 #include "tiny_llm/cuda_utils.h"
+#include "tiny_llm/execution_common.h"
 #include "tiny_llm/logger.h"
 #include "tiny_llm/model_loader.h"
 #include "tiny_llm/validator.h"
@@ -521,8 +522,8 @@ Result<void> InferenceEngine::runDecodeDevicePath(half *token_state, int seq_id,
         }
     }
 
-    finalNorm(token_state, token_state, 1);
-    computeLogits(token_state, 1, logits_);
+    // 任务 4.3：final norm + lm_head 走共享 helper（与 FFI 路径一致）
+    finalNormAndComputeLogits(token_state, weights_, config_, logits_, stream_);
     return Result<void>::ok();
 }
 
@@ -538,8 +539,8 @@ int InferenceEngine::sampleFromLogits(const GenerationConfig &config) {
 }
 
 int InferenceEngine::sampleFromHidden(half *hidden_state, const GenerationConfig &config) {
-    finalNorm(hidden_state, hidden_state, 1);
-    computeLogits(hidden_state, 1, logits_);
+    // 任务 4.3：final norm + lm_head 走共享 helper（与 FFI 路径一致）
+    finalNormAndComputeLogits(hidden_state, weights_, config_, logits_, stream_);
     return sampleFromLogits(config);
 }
 
@@ -550,6 +551,7 @@ void InferenceEngine::embedTokens(const int *tokens, int num_tokens, half *outpu
 
 void InferenceEngine::computeLogits(const half *hidden_states, int num_tokens, half *logits) {
     // LM head projection: hidden_states @ lm_head.T
+    // 只做 lm_head，不包含 final RMSNorm（RMSNorm 由调用方/helper 负责）。
     // 优先 FP16 lm_head（output 层不量化，保持 logits 精度与 llama.cpp 对齐）；
     // W8A16 版本作为后备。
     if (weights_.lm_head_fp16) {
