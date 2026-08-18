@@ -1,5 +1,7 @@
 # Tiny-LLM 推理引擎
 
+> 📚 Portfolio map: https://github.com/aicl-lab/aicl-lab
+
 > 面向聚焦型 Transformer 工作负载的 CUDA 原生 C++ 推理引擎。
 
 [![CI](https://github.com/AICL-Lab/tiny-llm/actions/workflows/ci.yml/badge.svg)](https://github.com/AICL-Lab/tiny-llm/actions/workflows/ci.yml)
