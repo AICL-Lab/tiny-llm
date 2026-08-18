@@ -28,6 +28,16 @@ void w8a16_matmul(const half *__restrict__ input,    // [M, K] FP16
                   half *__restrict__ output,         // [M, N] FP16
                   int M, int N, int K, int group_size, cudaStream_t stream = 0);
 
+// M==1 decode 快路径的重载：额外接收 [N, K] 转置权重布局（weight_t/scales_t）。
+// 传入非空指针时，M==1 分支走 coalesced 转置 kernel；否则回退旧 m1 kernel。
+void w8a16_matmul(const half *__restrict__ input,      // [M, K] FP16
+                  const int8_t *__restrict__ weight,   // [K, N] INT8
+                  const half *__restrict__ scales,     // [K/group_size, N] FP16
+                  const int8_t *__restrict__ weight_t, // [N, K] INT8（转置）
+                  const half *__restrict__ scales_t,   // [N, K/group_size] FP16（转置）
+                  half *__restrict__ output,           // [M, N] FP16
+                  int M, int N, int K, int group_size, cudaStream_t stream = 0);
+
 // Reference implementation for testing (slower but correct)
 void w8a16_matmul_reference(const half *input, const int8_t *weight, const half *scales,
                             half *output, int M, int N, int K, int group_size,
@@ -37,6 +47,14 @@ void w8a16_matmul_reference(const half *input, const int8_t *weight, const half 
 // simple reference kernel (baseline / accuracy comparison).
 void fp16_matmul(const half *input, const half *weight, half *output, int M, int N, int K,
                  cudaStream_t stream = 0);
+
+// M==1 decode 快路径重载：额外接收 [N, K] 转置 FP16 权重（weight_t）。
+// 非空时 M==1 走 coalesced 转置 kernel；否则回退旧 m1 kernel。
+void fp16_matmul(const half *__restrict__ input,    // [M, K] FP16
+                 const half *__restrict__ weight,   // [K, N] FP16
+                 const half *__restrict__ weight_t, // [N, K] FP16（转置）
+                 half *__restrict__ output,         // [M, N] FP16
+                 int M, int N, int K, cudaStream_t stream = 0);
 
 // FP16 baseline for accuracy comparison
 void fp16_matmul_reference(const half *input, const half *weight, half *output, int M, int N, int K,

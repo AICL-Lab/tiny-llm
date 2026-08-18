@@ -25,6 +25,7 @@
 #include "elementwise.cuh"
 #include "rmsnorm.cuh"
 #include "rope.cuh"
+#include "transpose_weights.cuh"
 #include "w8a16_matmul.cuh"
 
 #include <chrono>
@@ -79,7 +80,8 @@ double benchW8A16(const char *name, const char *shape, int M, int N, int K, int 
     std::vector<__half> h_output(static_cast<size_t>(M) * N);
 
     __half   *d_input = nullptr, *d_scales = nullptr, *d_output = nullptr;
-    int8_t   *d_weight = nullptr;
+    int8_t   *d_weight = nullptr, *d_weight_t = nullptr;
+    __half   *d_scales_t = nullptr;
     check(cudaMalloc(&d_input, h_input.size() * sizeof(__half)), "cudaMalloc input");
     check(cudaMalloc(&d_weight, h_weight.size()), "cudaMalloc weight");
     check(cudaMalloc(&d_scales, h_scales.size() * sizeof(__half)), "cudaMalloc scales");
@@ -91,15 +93,24 @@ double benchW8A16(const char *name, const char *shape, int M, int N, int K, int 
     check(cudaMemcpy(d_scales, h_scales.data(), h_scales.size() * sizeof(__half),
                      cudaMemcpyHostToDevice), "copy scales");
 
+    // 任务 C1：构建转置布局 [N, K] / [N, scale_rows]（M==1 decode 生产路径），
+    // 测量的是与推理引擎 decode 相同的 coalesced 快路径。
+    check(cudaMalloc(&d_weight_t, h_weight.size()), "cudaMalloc weight_t");
+    check(cudaMalloc(&d_scales_t, h_scales.size() * sizeof(__half)), "cudaMalloc scales_t");
+    tiny_llm::kernels::transpose_int8(d_weight, d_weight_t, K, N, 0);
+    tiny_llm::kernels::transpose_scales(d_scales, d_scales_t, scale_rows, N, 0);
+
     double ms = bench([&] {
-        tiny_llm::kernels::w8a16_matmul(d_input, d_weight, d_scales, d_output, M, N, K,
-                                        group_size, 0);
+        tiny_llm::kernels::w8a16_matmul(d_input, d_weight, d_scales, d_weight_t, d_scales_t,
+                                        d_output, M, N, K, group_size, 0);
     }, warmup, iters);
 
     std::printf("w8a16_matmul,%s,%.4f\n", shape, ms);
     check(cudaFree(d_input), "cudaFree input");
     check(cudaFree(d_weight), "cudaFree weight");
     check(cudaFree(d_scales), "cudaFree scales");
+    check(cudaFree(d_weight_t), "cudaFree weight_t");
+    check(cudaFree(d_scales_t), "cudaFree scales_t");
     check(cudaFree(d_output), "cudaFree output");
     return ms;
 }
@@ -112,7 +123,7 @@ double benchFP16(const char *name, const char *shape, int M, int N, int K, int w
     std::vector<__half> h_weight(static_cast<size_t>(K) * N, __float2half(0.5f));
     std::vector<__half> h_output(static_cast<size_t>(M) * N);
 
-    __half *d_input = nullptr, *d_weight = nullptr, *d_output = nullptr;
+    __half *d_input = nullptr, *d_weight = nullptr, *d_output = nullptr, *d_weight_t = nullptr;
     check(cudaMalloc(&d_input, h_input.size() * sizeof(__half)), "cudaMalloc input");
     check(cudaMalloc(&d_weight, h_weight.size() * sizeof(__half)), "cudaMalloc weight");
     check(cudaMalloc(&d_output, h_output.size() * sizeof(__half)), "cudaMalloc output");
@@ -121,13 +132,18 @@ double benchFP16(const char *name, const char *shape, int M, int N, int K, int w
     check(cudaMemcpy(d_weight, h_weight.data(), h_weight.size() * sizeof(__half),
                      cudaMemcpyHostToDevice), "copy weight");
 
+    // 任务 C1：构建转置布局 [N, K]（M==1 decode 生产路径）
+    check(cudaMalloc(&d_weight_t, h_weight.size() * sizeof(__half)), "cudaMalloc weight_t");
+    tiny_llm::kernels::transpose_fp16(d_weight, d_weight_t, K, N, 0);
+
     double ms = bench([&] {
-        tiny_llm::kernels::fp16_matmul(d_input, d_weight, d_output, M, N, K, 0);
+        tiny_llm::kernels::fp16_matmul(d_input, d_weight, d_weight_t, d_output, M, N, K, 0);
     }, warmup, iters);
 
     std::printf("fp16_matmul,%s,%.4f\n", shape, ms);
     check(cudaFree(d_input), "cudaFree input");
     check(cudaFree(d_weight), "cudaFree weight");
+    check(cudaFree(d_weight_t), "cudaFree weight_t");
     check(cudaFree(d_output), "cudaFree output");
     return ms;
 }

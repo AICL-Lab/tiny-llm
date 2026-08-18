@@ -39,6 +39,12 @@ struct QuantizedWeight {
     int     cols = 0;
     int     group_size = 128;
 
+    // 转置布局（[cols, rows]）供 M==1 decode 快路径使用；prefill 仍用 data/scales。
+    // data_t    = transpose(data)   [cols, rows]
+    // scales_t  = transpose(scales) [cols, scaleRows()]
+    int8_t *data_t = nullptr;
+    half   *scales_t = nullptr;
+
     // Calculate expected scale dimensions
     int scaleRows() const { return (rows + group_size - 1) / group_size; }
     int scaleCols() const { return cols; }
@@ -50,7 +56,15 @@ struct QuantizedWeight {
     // Memory sizes
     size_t weightBytes() const { return weightElements() * sizeof(int8_t); }
     size_t scaleBytes() const { return scaleElements() * sizeof(half); }
+    // 注意：totalBytes() 不统计转置副本（data_t/scales_t）；转置副本由
+    // model_loader 单独分配/释放（见 loadGGUF / freeWeights），不计入
+    // 常规权重占用语义。
     size_t totalBytes() const { return weightBytes() + scaleBytes(); }
+
+    // 转置副本是否已就绪（M==1 decode 快路径前置条件）
+    bool hasTransposed() const {
+        return data_t != nullptr && scales_t != nullptr;
+    }
 
     // Validate dimensions
     bool isValid() const {
@@ -93,6 +107,7 @@ struct ModelWeights {
     half           *final_norm_weight = nullptr; // [hidden_dim]
     QuantizedWeight lm_head;                     // [hidden_dim, vocab_size]（W8A16）
     half           *lm_head_fp16 = nullptr;      // [hidden_dim, vocab_size]（可选，logits 精度优先）
+    half           *lm_head_fp16_t = nullptr;    // [vocab_size, hidden_dim]（lm_head_fp16 的转置，M==1 decode 快路径）
 };
 
 // Forward declaration

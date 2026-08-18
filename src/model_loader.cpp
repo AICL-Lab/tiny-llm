@@ -2,6 +2,7 @@
 #include "tiny_llm/gguf_parser.h"
 #include "tiny_llm/logger.h"
 #include "tiny_llm/quantization.h"
+#include "transpose_weights.cuh"
 
 #include <algorithm>
 #include <cstring>
@@ -234,6 +235,13 @@ Result<ModelWeights> ModelLoader::loadGGUF(const std::string &path, ModelConfig 
                               cudaMemcpyHostToDevice));
         CUDA_CHECK(cudaMemcpy(qw.scales, scales.data(), scales.size() * sizeof(half),
                               cudaMemcpyHostToDevice));
+
+        // 任务 C1：构建 [cols, rows] 转置副本，供 M==1 decode 快路径使用。
+        CUDA_CHECK(cudaMalloc(&qw.data_t, qw.weightElements()));
+        CUDA_CHECK(cudaMalloc(&qw.scales_t, qw.scaleElements() * sizeof(half)));
+        kernels::transpose_int8(qw.data, qw.data_t, qw.rows, qw.cols, /*stream=*/0);
+        kernels::transpose_scales(qw.scales, qw.scales_t, qw.scaleRows(), qw.cols, /*stream=*/0);
+
         return Result<QuantizedWeight>::ok(qw);
     };
 
@@ -352,6 +360,15 @@ Result<ModelWeights> ModelLoader::loadGGUF(const std::string &path, ModelConfig 
     CUDA_CHECK(cudaMemcpy(lm_fp16_d, lm_f16_vec.data(), lm_f16_vec.size() * sizeof(half),
                           cudaMemcpyHostToDevice));
     weights.lm_head_fp16 = lm_fp16_d;
+
+    // 任务 C1：构建 lm_head_fp16 的转置副本 [vocab, hidden]（M==1 decode 快路径）。
+    // lm_f16_vec 此时为行主 [hidden, vocab]（上面 transpose_f16 已转）。
+    const int hidden_f = static_cast<int>(config.hidden_dim);
+    const int vocab_f = static_cast<int>(config.vocab_size);
+    CUDA_CHECK(cudaMalloc(&weights.lm_head_fp16_t,
+                          static_cast<size_t>(hidden_f) * vocab_f * sizeof(half)));
+    kernels::transpose_fp16(weights.lm_head_fp16, weights.lm_head_fp16_t, hidden_f, vocab_f,
+                            /*stream=*/0);
 
     success = true;
     return Result<ModelWeights>::ok(std::move(weights));
@@ -581,6 +598,12 @@ Result<QuantizedWeight> ModelLoader::loadQuantizedTensor(std::ifstream &file, in
     CUDA_CHECK(cudaMemcpy(qw.scales, scale_host.data(), scale_size * sizeof(half),
                           cudaMemcpyHostToDevice));
 
+    // 任务 C1：构建 [cols, rows] 转置副本，供 M==1 decode 快路径使用。
+    CUDA_CHECK(cudaMalloc(&qw.data_t, weight_size * sizeof(int8_t)));
+    CUDA_CHECK(cudaMalloc(&qw.scales_t, scale_size * sizeof(half)));
+    kernels::transpose_int8(qw.data, qw.data_t, qw.rows, qw.cols, /*stream=*/0);
+    kernels::transpose_scales(qw.scales, qw.scales_t, qw.scaleRows(), qw.cols, /*stream=*/0);
+
     return Result<QuantizedWeight>::ok(qw);
 }
 
@@ -600,6 +623,15 @@ void ModelLoader::freeWeights(ModelWeights &weights) {
             if (qw.scales) {
                 cudaFree(qw.scales);
                 qw.scales = nullptr;
+            }
+            // 任务 C1：转置副本（[cols, rows] 布局）
+            if (qw.data_t) {
+                cudaFree(qw.data_t);
+                qw.data_t = nullptr;
+            }
+            if (qw.scales_t) {
+                cudaFree(qw.scales_t);
+                qw.scales_t = nullptr;
             }
         };
 
@@ -637,6 +669,11 @@ void ModelLoader::freeWeights(ModelWeights &weights) {
         cudaFree(weights.lm_head_fp16);
         weights.lm_head_fp16 = nullptr;
     }
+    // 任务 C1：lm_head_fp16 转置副本（[vocab, hidden]）
+    if (weights.lm_head_fp16_t) {
+        cudaFree(weights.lm_head_fp16_t);
+        weights.lm_head_fp16_t = nullptr;
+    }
 
     if (weights.lm_head.data) {
         cudaFree(weights.lm_head.data);
@@ -645,6 +682,15 @@ void ModelLoader::freeWeights(ModelWeights &weights) {
     if (weights.lm_head.scales) {
         cudaFree(weights.lm_head.scales);
         weights.lm_head.scales = nullptr;
+    }
+    // 任务 C1：lm_head W8A16 转置副本
+    if (weights.lm_head.data_t) {
+        cudaFree(weights.lm_head.data_t);
+        weights.lm_head.data_t = nullptr;
+    }
+    if (weights.lm_head.scales_t) {
+        cudaFree(weights.lm_head.scales_t);
+        weights.lm_head.scales_t = nullptr;
     }
 }
 

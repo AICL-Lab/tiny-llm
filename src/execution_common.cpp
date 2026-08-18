@@ -16,11 +16,14 @@ void finalNormAndComputeLogits(half *hidden, const ModelWeights &weights,
     // LM head projection: hidden @ lm_head.T
     // 优先 FP16 lm_head（output 层不量化，保持 logits 精度与 llama.cpp 对齐）；
     // W8A16 版本作为后备。
+    // 任务 C1：本函数只处理单 token（num_tokens==1），一律传转置布局
+    // 走 coalesced M==1 快路径。
     if (weights.lm_head_fp16) {
-        kernels::fp16_matmul(hidden, weights.lm_head_fp16, logits, 1, config.vocab_size,
-                             config.hidden_dim, stream);
+        kernels::fp16_matmul(hidden, weights.lm_head_fp16, weights.lm_head_fp16_t, logits, 1,
+                             config.vocab_size, config.hidden_dim, stream);
     } else if (weights.lm_head.isValid()) {
-        kernels::w8a16_matmul(hidden, weights.lm_head.data, weights.lm_head.scales, logits, 1,
+        kernels::w8a16_matmul(hidden, weights.lm_head.data, weights.lm_head.scales,
+                              weights.lm_head.data_t, weights.lm_head.scales_t, logits, 1,
                               config.vocab_size, config.hidden_dim, weights.lm_head.group_size,
                               stream);
     }

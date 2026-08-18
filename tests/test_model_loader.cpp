@@ -304,6 +304,50 @@ TEST_F(ModelLoaderContractTest, QwenAttentionBiasTensorsLoad) {
     ModelLoader::freeWeights(weights);
 }
 
+// 任务 C1：loadGGUF 后每个 QuantizedWeight 必须已构建转置副本（data_t/scales_t），
+// 且 data_t 确实等于 data 的转置（抽查一个 8×4 子块）。
+TEST_F(ModelLoaderContractTest, TransposedWeightCopiesBuiltAndCorrect) {
+    if (!hasCuda()) GTEST_SKIP() << "No CUDA device available";
+    TempFile file(".gguf");
+    writeMinimalGGUF(file, /*include_output=*/true, /*include_qwen_bias=*/false);
+
+    ModelConfig config;
+    auto        result = ModelLoader::loadGGUF(file.path(), config);
+    ASSERT_TRUE(result.isOk()) << result.error();
+    auto &weights = result.value();
+
+    // 逐层所有 QuantizedWeight + lm_head 都必须有转置副本
+    ASSERT_EQ(weights.layers.size(), 1u);
+    auto &lw = weights.layers[0];
+    for (const QuantizedWeight *qw : {&lw.wq, &lw.wk, &lw.wv, &lw.wo, &lw.w1, &lw.w2, &lw.w3,
+                                      &weights.lm_head}) {
+        EXPECT_TRUE(qw->hasTransposed()) << "missing transposed copy";
+    }
+    EXPECT_NE(weights.lm_head_fp16_t, nullptr);
+
+    // 抽查 wq（8×8）：D2H 读回 data 与 data_t，比较 data_t[i*rows+j] == data[j*cols+i]
+    const QuantizedWeight &qw = lw.wq;
+    const int rows = qw.rows;
+    const int cols = qw.cols;
+    ASSERT_EQ(rows, 8);
+    ASSERT_EQ(cols, 8);
+    std::vector<int8_t> data_host(static_cast<size_t>(rows) * cols);
+    std::vector<int8_t> data_t_host(static_cast<size_t>(rows) * cols);
+    cudaMemcpy(data_host.data(), qw.data, data_host.size(), cudaMemcpyDeviceToHost);
+    cudaMemcpy(data_t_host.data(), qw.data_t, data_t_host.size(), cudaMemcpyDeviceToHost);
+    cudaDeviceSynchronize();
+
+    for (int i = 0; i < 8; ++i) {      // data_t 行（= data 列）
+        for (int j = 0; j < 4; ++j) {  // data_t 列（= data 行），抽查 8×4 子块
+            EXPECT_EQ(data_t_host[static_cast<size_t>(i) * cols + j],
+                      data_host[static_cast<size_t>(j) * cols + i])
+                << "transpose mismatch at data_t[" << i << "][" << j << "]";
+        }
+    }
+
+    ModelLoader::freeWeights(weights);
+}
+
 TEST_F(ModelLoaderContractTest, UnsupportedBiasTensorReturnsExplicitError) {
     TempFile file(".gguf");
     // 不支持的 bias（output.bias）→ 显式报错而非静默忽略（无需 GPU，校验在加载前）

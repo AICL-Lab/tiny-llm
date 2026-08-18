@@ -193,17 +193,21 @@ Result<void> TransformerLayer::attention(const half *x, half *output, KVCacheMan
     int group_size = weights_.wq.group_size;
 
     // Q projection: [num_tokens, hidden_dim] @ [hidden_dim, num_heads * head_dim]
-    kernels::w8a16_matmul(x, weights_.wq.data, weights_.wq.scales, ws_->q_buf, num_tokens,
-                          num_heads * head_dim, hidden_dim, group_size, stream);
+    // 任务 C1：传转置布局（data_t/scales_t），M==1 decode 时走 coalesced 快路径。
+    kernels::w8a16_matmul(x, weights_.wq.data, weights_.wq.scales, weights_.wq.data_t,
+                          weights_.wq.scales_t, ws_->q_buf, num_tokens, num_heads * head_dim,
+                          hidden_dim, group_size, stream);
 
     // K projection: [num_tokens, hidden_dim] @ [hidden_dim, num_kv_heads *
     // head_dim]
-    kernels::w8a16_matmul(x, weights_.wk.data, weights_.wk.scales, ws_->k_buf, num_tokens,
+    kernels::w8a16_matmul(x, weights_.wk.data, weights_.wk.scales, weights_.wk.data_t,
+                          weights_.wk.scales_t, ws_->k_buf, num_tokens,
                           num_kv_heads * head_dim, hidden_dim, group_size, stream);
 
     // V projection: [num_tokens, hidden_dim] @ [hidden_dim, num_kv_heads *
     // head_dim]
-    kernels::w8a16_matmul(x, weights_.wv.data, weights_.wv.scales, ws_->v_buf, num_tokens,
+    kernels::w8a16_matmul(x, weights_.wv.data, weights_.wv.scales, weights_.wv.data_t,
+                          weights_.wv.scales_t, ws_->v_buf, num_tokens,
                           num_kv_heads * head_dim, hidden_dim, group_size, stream);
 
     // Qwen2 系 attention bias：q = x@Wq^T + bq（bias 在 RoPE 之前加）
@@ -260,8 +264,9 @@ Result<void> TransformerLayer::attention(const half *x, half *output, KVCacheMan
     }
 
     // Output projection: 注意力输出在 attn_buf（独立缓冲，避免就地 matmul 覆盖输入）
-    kernels::w8a16_matmul(ws_->attn_buf, weights_.wo.data, weights_.wo.scales, output, num_tokens,
-                          hidden_dim, num_heads * head_dim, group_size, stream);
+    kernels::w8a16_matmul(ws_->attn_buf, weights_.wo.data, weights_.wo.scales, weights_.wo.data_t,
+                          weights_.wo.scales_t, output, num_tokens, hidden_dim,
+                          num_heads * head_dim, group_size, stream);
 
     return Result<void>::ok();
 }
@@ -278,20 +283,23 @@ void TransformerLayer::feedForward(const half *x, half *output, int num_tokens,
     // output = (gate * up) @ w2
 
     // Gate projection: [num_tokens, hidden_dim] @ [hidden_dim, intermediate_dim]
-    kernels::w8a16_matmul(x, weights_.w1.data, weights_.w1.scales, ws_->ffn_gate, num_tokens,
-                          intermediate_dim, hidden_dim, group_size, stream);
+    kernels::w8a16_matmul(x, weights_.w1.data, weights_.w1.scales, weights_.w1.data_t,
+                          weights_.w1.scales_t, ws_->ffn_gate, num_tokens, intermediate_dim,
+                          hidden_dim, group_size, stream);
 
     // Up projection: [num_tokens, hidden_dim] @ [hidden_dim, intermediate_dim]
-    kernels::w8a16_matmul(x, weights_.w3.data, weights_.w3.scales, ws_->ffn_up, num_tokens,
-                          intermediate_dim, hidden_dim, group_size, stream);
+    kernels::w8a16_matmul(x, weights_.w3.data, weights_.w3.scales, weights_.w3.data_t,
+                          weights_.w3.scales_t, ws_->ffn_up, num_tokens, intermediate_dim,
+                          hidden_dim, group_size, stream);
 
     // SiLU activation and element-wise multiply
     kernels::silu_mul_inplace(ws_->ffn_gate, ws_->ffn_up, num_tokens * intermediate_dim, stream);
 
     // Down projection: [num_tokens, intermediate_dim] @ [intermediate_dim,
     // hidden_dim]
-    kernels::w8a16_matmul(ws_->ffn_gate, weights_.w2.data, weights_.w2.scales, output, num_tokens,
-                          hidden_dim, intermediate_dim, group_size, stream);
+    kernels::w8a16_matmul(ws_->ffn_gate, weights_.w2.data, weights_.w2.scales, weights_.w2.data_t,
+                          weights_.w2.scales_t, output, num_tokens, hidden_dim, intermediate_dim,
+                          group_size, stream);
 }
 
 void TransformerLayer::rmsNorm(const half *x, const half *weight, half *output, int num_tokens,
