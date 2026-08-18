@@ -14,21 +14,23 @@
 | 真实模型端到端生成 | Qwen2.5-0.5B-Instruct（Q4_K_M）在 RTX 3060 上验证 | ✅ |
 | 吞吐 / 延迟 / 显存基准 | `tiny_llm_bench`（TTFT / TPOT / tok/s / 峰值显存） | ✅ |
 
-## 基准快照（2026-08-17）
+## 基准快照（2026-08-18，C0–C2 优化后）
 
 | 指标 | 数值 |
 |------|------|
-| 硬件 | RTX 3060（12GB），CUDA 12.0，驱动 591.44 |
+| 硬件 | RTX 3060（6GB Laptop），CUDA 12.x，驱动 591.44 |
 | 模型 | Qwen2.5-0.5B-Instruct，GGUF Q4_K_M（重量化为 W8A16 后推理） |
-| commit | `5981711` |
-| TTFT (mean) | 23.0 ms |
-| TPOT (mean) | 21.9 ms/token |
-| decode 吞吐 | 45.6 tok/s |
-| 峰值显存增量 | 2490 MB |
+| commit | `f897084` |
+| TTFT (mean) | 10.6 ms |
+| TPOT (mean) | 6.1 ms/token |
+| decode 吞吐 | 164.3 tok/s |
+| 峰值显存增量 | 3368 MB（含 M==1 转置权重副本） |
 
 复现：`./build/tiny_llm_bench model.gguf --prompt "你好" --max-tokens 64 --warmup 3 --iters 10`
+（CUDA Graphs decode 默认开启；`TLLM_CUDA_GRAPHS=0` 关闭）
 
-> 数字会随优化（如 CUDA Graphs）更新，每次更新都会同步记录 commit 与命令。
+> 数字会随优化更新，每次更新都会同步记录 commit 与命令。kernel 级证据见
+> [2026-08-18-decode-optimization](results/2026-08-18-decode-optimization.md)。
 
 ## 章节
 

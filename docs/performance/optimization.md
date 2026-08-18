@@ -21,13 +21,35 @@
 - `kernels/` 下的 attention / rmsnorm / elementwise kernel 使用共享内存分块与 warp 级归约
 - GQA 支持：`ModelConfig::num_kv_heads` 与 `num_heads` 可不同
 
+### 4. M==1 转置权重 GEMM 快路径（decode 核心，C1）
+
+- 根因：M==1 kernel 的 `lane=k` 映射 × 权重 `[K,N]` 布局 → 跨 lane 地址
+  `stride=N×2B`（非 coalesced）。
+- 解法：加载时构建 `[N,K]` 转置权重（`data_t`/`scales_t`，`QuantizedWeight`
+  新增字段），M==1 走 `w8a16_matmul_m1_transposed_kernel` /
+  `fp16_matmul_m1_transposed_kernel`，lane 沿 k 连续读，coalesced。
+- 效果：lm_head FP16 ~10.0 → ~0.98 ms；W8A16 N=4864 ~0.163 → ~0.049 ms。
+- 实现：`kernels/transpose_weights.cu`、`kernels/w8a16_matmul.cu`、
+  `src/model_loader.cpp`（加载时构建转置副本 + freeWeights 释放）。
+
+### 5. CUDA Graphs decode 默认开启（C2）
+
+- decode 的确定性 device 序列（`runDecodeDevicePath`）捕获为 CUDA Graph，
+  step 变化值（visible_len / RoPE pos / append pos / token id）改为 device 端
+  int + 固定缓冲，host 每次重放前更新。
+- 默认开启；`TLLM_CUDA_GRAPHS=0` 显式关闭（opt-out）。捕获失败自动回退。
+- 设计细节见 `docs/performance/cuda-graphs.md`。
+
 ## 计划中的优化（按 ROADMAP 顺序）
 
 | 优化项 | 预期收益 | 状态 |
 |--------|----------|------|
-| 真实模型端到端 + 基准脚本 | 使所有优化可度量 | 待做（前置条件） |
-| CUDA Graphs | 降低 decode 阶段 kernel launch 开销 | 待做 |
-| FlashAttention 风格 attention | prefill 阶段显存与速度 | 待做（可复用 [cuflash-attn](https://github.com/AICL-Lab/cuflash-attn) 的经验） |
+| 真实模型端到端 + 基准脚本 | 使所有优化可度量 | ✅ 已完成（`tiny_llm_bench`） |
+| CUDA Graphs | 降低 decode 阶段 kernel launch 开销 | ✅ 已完成（默认开启） |
+| M==1 转置权重 GEMM 快路径 | 消解 decode GEMM 非 coalesced 访存 | ✅ 已完成（C1） |
+| Tensor Core WMMA（FP16/INT8） | GEMM 再提速（未做 `mma.sync`） | 待做 |
+| KV paged / FlashDecoding | attention 长序列显存与速度 | 待做（可复用 [cuflash-attn](https://github.com/AICL-Lab/cuflash-attn) 的经验） |
+| fused kernel（rmsnorm/RoPE/QKV/bias） | 减少 kernel 数与中间显存 | 待做 |
 | KV Cache swapping/offload | 支持超出显存的并发序列 | 待做 |
 | 连续批处理 | 吞吐导向场景 | 待做（调度层设计见 [paged-infer](https://github.com/AICL-Lab/paged-infer)） |
 

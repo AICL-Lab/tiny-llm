@@ -4,6 +4,12 @@
 > `docs/performance/results/` 的报告。所有命令可直接复制执行；
 > 报告模板见 [results/TEMPLATE.md](./results/TEMPLATE.md)。
 
+> ⚠️ **本机限制（2026-08-18 实测）**：`ncu` 报 `ERR_NVGPUCTRPERM`（WSL2
+> 无性能计数器权限），`nsys stats` 因 importer 缺失无法转报告。本机 kernel
+> 级证据改用仓库内 `tiny_llm_kernel_bench`（见
+> [benchmark-methodology](./benchmark-methodology) 第 8 节）。本文档保留为
+> 通用参考，在具备权限/工具的环境仍可按此执行。
+
 ## 0. 准备
 
 ```bash

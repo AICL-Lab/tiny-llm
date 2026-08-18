@@ -98,16 +98,21 @@ cmake --build build -j$(nproc)
 
 归档位置：`docs/performance/results/<date>-<gpu>.md`（模板见
 `docs/performance/results/TEMPLATE.md`）。**实测快照（2026-08-18，RTX 3060
-Laptop，详见 [2026-08-18-rtx3060](results/2026-08-18-rtx3060.md)）**：
+Laptop，详见 [2026-08-18-rtx3060](results/2026-08-18-rtx3060.md) 与
+[2026-08-18-decode-optimization](results/2026-08-18-decode-optimization.md)）**：
 
 | 指标 | tiny-llm | llama.cpp | 比值 (tiny/llama) |
 |------|----------|-----------|-------------------|
-| TTFT (ms) | 22.9（1-token prompt，含首次 logits） | 4.9（`pp1`，仅 prompt 处理，口径不同） | ~4.7（口径见归档） |
-| TPOT (ms/token) | 22.1 | 3.7（`tg64`: 272 t/s） | 6.0 |
-| decode tok/s | 45.3 | 272.2 | 0.17 |
-| 峰值显存 (MB) | 2490 | 未测（同口径） | — |
+| TTFT (ms) | 10.6（1-token prompt，含首次 logits） | 4.9（`pp1`，仅 prompt 处理，口径不同） | ~2.2（口径见归档） |
+| TPOT (ms/token) | 6.1 | 3.7（`tg64`: 272 t/s） | 1.65 |
+| decode tok/s | 164.3 | 272.2 | 0.60 |
+| 峰值显存 (MB) | 3368（含 M==1 转置权重副本） | 未测（同口径） | — |
 
 每张表下方必须附：第 1、2 节的环境快照 + 实际执行的完整命令 + 原始日志路径。
+
+> C1 前（转置快路径落地前）tiny-llm TPOT ≈ 24.3 ms / 41 tok/s（比值 ~6.6）；
+> C1/C2 后 TPOT ≈ 6.1 ms / 164 tok/s（比值 ~1.65）。kernel 级证据见
+> [2026-08-18-decode-optimization](results/2026-08-18-decode-optimization.md) 第 4.2 节。
 
 ## 6. 预期差距来源分析（先写假设，实测后回填）
 
@@ -115,20 +120,43 @@ Laptop，详见 [2026-08-18-rtx3060](results/2026-08-18-rtx3060.md)）**：
 
 1. **GEMM 实现差距**：llama.cpp 的 Q4_K_M 内核针对 K 量化格式做了 SIMD
    向量化与分块；tiny-llm 的 W8A16 m1 kernel 是每 warp 一列、32 lane 归约
-   K 的简单实现，且 lm_head（FP16，[1, hidden] @ [hidden, 151936]）仍占
-   decode 大头。
+   K 的简单实现（C1 起对 M==1 使用 [N,K] 转置布局 + coalesced 快路径，
+   lm_head 由 ~10ms 降到 ~0.98ms）。
 2. **attention 实现差距**：tiny-llm 的 decode attention 未做 KV 缓存
    L2/共享内存复用与页式布局优化。
-3. **运行时/launch 开销**：24 层 × 每层多个 kernel，launch 串行无
-   CUDA Graph；llama.cpp 对 decode 有专门的流式优化。
+3. **运行时/launch 开销**：24 层 × 每层多个 kernel；CUDA Graphs 已默认开启
+   消解 launch 串行（见 `cuda-graphs.md`）。
 4. **continuous batching 缺失**：tiny-llm 单序列；llama.cpp 即使单序列
    也有更紧凑的调度。
 
-> 实测后：把每一行差距归因到具体 kernel（用任务 2.3 的 nsys/ncu 数据），
-> 而不是笼统写“实现差距”。
+> 实测后：把每一行差距归因到具体 kernel（用仓库内 `tiny_llm_kernel_bench`
+> 数据，见第 8 节），而不是笼统写“实现差距”。
 
 ## 7. 不在对比范围内的事项
 
 - 多请求并发 / batch > 1 吞吐（tiny-llm 无 continuous batching）。
 - 采样配置差异（temperature/top-p）——对比固定 greedy。
 - 非本机、非同一时段的数据。
+
+## 8. 工具说明：ncu / nsys 不可用与替代方案
+
+本机（WSL2）无法使用常用 GPU profiler：
+
+- **`ncu` 不可用**：`ERR_NVGPUCTRPERM`（WSL2 无性能计数器权限）。
+- **`nsys stats` 不可用**：importer 缺失，qdstrm 无法转报告。
+
+因此 kernel 级瓶颈分析改用仓库内微基准 **`tiny_llm_kernel_bench`**：
+
+```bash
+cmake --build build -j$(nproc)
+./build/tiny_llm_kernel_bench
+# 输出 CSV：<name>,<shape>,<ms>
+# 每项先 warmup 20 次，再测 200 次（lm_head 100 次），
+# 循环前后各一次 cudaDeviceSynchronize，std::chrono::steady_clock 均值。
+```
+
+测量对象为 decode 路径真实 shape（Qwen2.5-0.5B）：W8A16 GEMM（M=1, K=896,
+N∈{128,896,4864} 与 down M=1,K=4864,N=896）、FP16 lm_head（M=1,K=896,
+N=151936）、attention_decode（S∈{8,32,64,128}）、rmsnorm、RoPE、add、
+silu_mul。C1 起该工具测量的是 M==1 转置快路径（与推理引擎 decode 一致的
+公开接口）。

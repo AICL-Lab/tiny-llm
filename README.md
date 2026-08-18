@@ -50,16 +50,18 @@ Tiny-LLM 将仓库表面保持得尽量小：CUDA/C++17 内核、W8A16 量化、
 
 | 指标 | 数值 |
 |------|------|
-| 硬件 | RTX 3060（12GB，Laptop），CUDA 12.0，驱动 591.44 |
+| 硬件 | RTX 3060（6GB Laptop），CUDA 12.x，驱动 591.44 |
 | 模型 | Qwen2.5-0.5B-Instruct，GGUF Q4_K_M（本仓库重量化为 W8A16 后推理） |
-| commit | `5981711` |
+| commit | `f897084` |
 | 复现命令 | `./build/tiny_llm_bench model.gguf --prompt "你好" --max-tokens 64 --warmup 3 --iters 10` |
-| TTFT (mean) | 23.0 ms |
-| TPOT (mean) | 21.9 ms/token |
-| decode 吞吐 | 45.6 tok/s |
-| 峰值显存增量 | 2490 MB |
+| TTFT (mean) | 10.6 ms |
+| TPOT (mean) | 6.1 ms/token |
+| decode 吞吐 | 164.3 tok/s |
+| 峰值显存增量 | 3368 MB（含 M==1 转置权重副本） |
 
-完整方法论与可复制命令见 [benchmark-methodology](docs/performance/benchmark-methodology.md)。
+> CUDA Graphs decode 默认开启；`TLLM_CUDA_GRAPHS=0` 显式关闭。
+> kernel 级 microbench 与 llama.cpp 比值见
+> [2026-08-18-decode-optimization](docs/performance/results/2026-08-18-decode-optimization.md)。
 
 ## 已实现能力
 

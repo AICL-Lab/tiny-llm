@@ -30,19 +30,30 @@
 
 ## 阶段 2：可复现的性能基准
 
-- [ ] 编写 benchmark 驱动（固定预热/迭代/统计口径，CUDA Event + 宿主计时）
-- [ ] 指标：TTFT、TPOT、decode 吞吐（tok/s）、峰值显存
-- [ ] 对比基线：llama.cpp（同硬件、同量化、同模型）
-- [ ] nsys 时间线 + ncu kernel 分析各一份，归档到 docs/performance/
-- [ ] 将实测数字回填 docs/performance/（附硬件/软件版本/复现命令）
+- [x] 编写 benchmark 驱动（固定预热/迭代/统计口径，CUDA Event + 宿主计时）
+      —— `tiny_llm_bench`（TTFT / TPOT / tok/s / 峰值显存，warmup/iters/统计口径固定）
+- [x] 指标：TTFT、TPOT、decode 吞吐（tok/s）、峰值显存
+- [x] 对比基线：llama.cpp（同硬件、同量化、同模型）
+      —— 实测归档 `docs/performance/results/2026-08-18-rtx3060.md`
+- [x] kernel 级瓶颈分析 —— ncu/nsys 本机不可用（`ERR_NVGPUCTRPERM` / importer
+      缺失），改用仓库内微基准 `tiny_llm_kernel_bench`（C0）作为替代证据
+- [x] 将实测数字回填 docs/performance/（附硬件/软件版本/复现命令）
+      —— 见 `docs/performance/results/2026-08-18-decode-optimization.md`
 
-**完成证据**：README 出现第一张带基线对比、可复现的性能表。
+**完成证据**：README 出现第一张带基线对比、可复现的性能表（TPOT 21.9 →
+**6.1 ms/token**，decode 45.6 → **164.3 tok/s**）。
 
 ## 阶段 3：选一个推理加速主题做深（二选一）
 
-**选项 A：CUDA Graphs**
-- [ ] decode 阶段 graph capture/replay，配置开关
-- [ ] before/after 的 launch 开销与 TPOT 对比数字
+**选项 A：CUDA Graphs（已选，已完成）**
+- [x] decode 阶段 graph capture/replay，配置开关
+      —— 默认开启，`TLLM_CUDA_GRAPHS=0` opt-out（见 `cuda-graphs.md`）
+- [x] before/after 的 launch 开销与 TPOT 对比数字
+      —— 转置快路径 + graphs 后 TPOT 24.3 → 6.1 ms；见
+      `docs/performance/results/2026-08-18-decode-optimization.md`
+
+**完成证据**：一个有数字、有 profiling 证据、能讲清取舍的优化故事。
+（C1 转置权重 M==1 快路径是本批另一个核心加速点，与 CUDA Graphs 叠加。）
 
 **选项 B：Speculative Decoding（草稿模型 n-gram 或小型同构模型）**
 - [ ] 接受率统计与端到端加速比
