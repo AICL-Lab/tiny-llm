@@ -42,6 +42,7 @@ struct BenchOptions {
     bool        json = false;
     bool        use_reference = false;
     bool        graphs = false;
+    bool        no_graphs = false;
 };
 
 struct TimingStats {
@@ -87,7 +88,9 @@ void printUsage(const char *program_name) {
     std::cout << "  --iters N          Timed iterations (default: 10)\n";
     std::cout << "  --json             Emit one JSON line (machine readable)\n";
     std::cout << "  --use-reference    Force reference w8a16 kernels (diagnostic)\n";
-    std::cout << "  --graphs           Enable CUDA Graphs decode (TLLM_CUDA_GRAPHS=1)\n";
+    std::cout << "  --graphs           CUDA Graphs decode is ON by default; flag kept for\n";
+    std::cout << "                     compatibility and prints the current state\n";
+    std::cout << "  --no-graphs        Explicitly disable CUDA Graphs decode (TLLM_CUDA_GRAPHS=0)\n";
     std::cout << "  -h, --help         Show this help\n";
 }
 
@@ -276,6 +279,8 @@ int main(int argc, char **argv) {
             opt.json = true;
         } else if (arg == "--graphs") {
             opt.graphs = true;
+        } else if (arg == "--no-graphs") {
+            opt.no_graphs = true;
         } else if (arg == "--use-reference") {
             opt.use_reference = true;
         } else if (!arg.empty() && arg[0] != '-') {
@@ -292,10 +297,14 @@ int main(int argc, char **argv) {
         std::cout << "[diagnostic] forcing reference w8a16 kernel" << std::endl;
     }
 
-    // --graphs：引擎在构造时读环境变量，须在 InferenceEngine::load 前设置。
-    if (opt.graphs) {
-        setenv("TLLM_CUDA_GRAPHS", "1", 1);
-        std::cout << "[diagnostic] enabling CUDA Graphs decode" << std::endl;
+    // 任务 C2：CUDA Graphs 默认开启。--no-graphs 显式关闭（引擎在构造时读
+    // 环境变量，须在 InferenceEngine::load 前设置）；--graphs 仅作兼容/诊断，
+    // 输出当前状态（默认已开启）。
+    if (opt.no_graphs) {
+        setenv("TLLM_CUDA_GRAPHS", "0", 1);
+        std::cout << "[diagnostic] disabling CUDA Graphs decode (TLLM_CUDA_GRAPHS=0)" << std::endl;
+    } else if (opt.graphs) {
+        std::cout << "[diagnostic] CUDA Graphs decode is enabled by default" << std::endl;
     }
 
     if (opt.model_path.empty()) {

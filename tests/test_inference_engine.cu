@@ -447,20 +447,22 @@ TEST_F(InferenceEngineTest, CudaGraphsGenerateMatchesNonGraph) {
     gen_config.max_new_tokens = 16;
     gen_config.do_sample = false; // greedy
 
-    // 1) graphs off（默认）
+    // 任务 C2：CUDA Graphs 默认开启；TLLM_CUDA_GRAPHS=0 显式关闭。
+    // 1) graphs off（显式 TLLM_CUDA_GRAPHS=0）
+    setenv("TLLM_CUDA_GRAPHS", "0", 1);
     auto engine_off = tiny_llm::InferenceEngine::load(path, config);
+    unsetenv("TLLM_CUDA_GRAPHS");
     ASSERT_TRUE(engine_off.isOk()) << engine_off.error();
     auto tokens_off = engine_off.value()->generate(prompt, gen_config);
     ASSERT_TRUE(tokens_off.isOk()) << tokens_off.error();
 
-    // 2) graphs on（构造前设环境变量；测试进程内串行，构造后立即 unset）
+    // 2) graphs on（默认即开启；显式设 1 以确保语义明确）
     setenv("TLLM_CUDA_GRAPHS", "1", 1);
     auto engine_on = tiny_llm::InferenceEngine::load(path, config);
-    setenv("TLLM_CUDA_GRAPHS", "0", 1);
+    unsetenv("TLLM_CUDA_GRAPHS");
     ASSERT_TRUE(engine_on.isOk()) << engine_on.error();
     auto tokens_on = engine_on.value()->generate(prompt, gen_config);
     ASSERT_TRUE(tokens_on.isOk()) << tokens_on.error();
-    unsetenv("TLLM_CUDA_GRAPHS");
 
     ASSERT_EQ(tokens_off.value().size(), tokens_on.value().size())
         << "graph on/off generated different number of tokens";

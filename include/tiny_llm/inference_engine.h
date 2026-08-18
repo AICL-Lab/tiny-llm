@@ -107,8 +107,9 @@ class InferenceEngine {
     DeviceBuffer<int> graph_token_;
     DeviceBuffer<int> rope_pos_;
 
-    // 任务 3.2：CUDA Graph 状态。TLLM_CUDA_GRAPHS=1 启用 decode graph
-    // 捕获/重放；默认关闭（老行为）。捕获失败自动回退并置 graphs_enabled=false。
+    // 任务 3.2 / C2：CUDA Graph 状态。默认开启 decode graph 捕获/重放；
+    // 环境变量 TLLM_CUDA_GRAPHS=0 显式关闭（opt-out）。捕获失败自动回退
+    // 并置 graphs_enabled=false。
     bool          cuda_graphs_enabled_ = false;
     bool          graph_captured_ = false;
     cudaGraph_t   decode_graph_ = nullptr;

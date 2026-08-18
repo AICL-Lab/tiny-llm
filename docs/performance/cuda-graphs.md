@@ -6,14 +6,17 @@
 
 ## 1. 开关
 
-- 环境变量 `TLLM_CUDA_GRAPHS=1` 启用；默认关闭（老行为不变）。
-- `tiny_llm_bench --graphs` 等价于设置该变量后跑 benchmark。
+- 环境变量 `TLLM_CUDA_GRAPHS`：**默认开启**（任务 C2 起）；`TLLM_CUDA_GRAPHS=0`
+  显式关闭（opt-out）。
+- `tiny_llm_bench` 默认跑 graphs 路径；`--no-graphs` 等价于设置
+  `TLLM_CUDA_GRAPHS=0`（A/B 对比用），`--graphs` 为兼容/诊断保留（打印当前
+  状态，默认已开启）。
 - `InferenceEngine` 构造时读取；捕获失败自动回退并 `TLLM_WARN` 记录原因。
 
 ```bash
-TLLM_CUDA_GRAPHS=1 ./build/tiny_llm_demo model.gguf --prompt "你好" --max-tokens 32 --show-tokens
+./build/tiny_llm_demo model.gguf --prompt "你好" --max-tokens 32 --show-tokens   # 默认 graphs 开
 TLLM_CUDA_GRAPHS=0 ./build/tiny_llm_demo model.gguf --prompt "你好" --max-tokens 32 --show-tokens
-diff <(TLLM_CUDA_GRAPHS=1 ...) <(TLLM_CUDA_GRAPHS=0 ...)   # 必须逐 token 一致
+diff <(./build/tiny_llm_demo ...) <(TLLM_CUDA_GRAPHS=0 ./build/tiny_llm_demo ...)  # 必须逐 token 一致
 ```
 
 ## 2. 设计：把 step 变化值移出 kernel 参数
@@ -77,7 +80,7 @@ embedTokens(graph_token_, 1, 固定行)
 - `tests/test_inference_engine.cu::CudaGraphsGenerateMatchesNonGraph`
   （门控 `TLLM_GGUF_TEST_MODEL`）：同一模型 graphs 开/关 generate 16 token，
   逐 token 断言相等。
-- 手工验收：`TLLM_CUDA_GRAPHS=1/0` 输出 diff（见第 1 节）。
+- 手工验收：默认（graphs 开）与 `TLLM_CUDA_GRAPHS=0` 输出 diff（见第 1 节）。
 
 如果出现不一致，先 `TLLM_CUDA_GRAPHS=0` 排除 graph 引入，再检查是否有未
 固定地址的缓冲（如每个 step 重新 cudaMalloc 的输入缓冲）或 host 端顺序

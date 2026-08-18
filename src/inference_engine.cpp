@@ -140,10 +140,14 @@ InferenceEngine::InferenceEngine(const ModelConfig &config, ModelWeights &&weigh
         CUDA_CHECK(cudaMemset(logits_, 0, logits_size));
     }
 
-    // 任务 3.2：TLLM_CUDA_GRAPHS=1 启用 decode CUDA Graph 捕获/重放。
-    if (const char *g = std::getenv("TLLM_CUDA_GRAPHS"); g && std::string(g) == "1") {
+    // 任务 C2：CUDA Graphs 默认开启；TLLM_CUDA_GRAPHS=0 显式关闭（opt-out）。
+    // 状态仍打印当前值。
+    if (const char *g = std::getenv("TLLM_CUDA_GRAPHS"); g && std::string(g) == "0") {
+        cuda_graphs_enabled_ = false;
+        TLLM_INFO("CUDA Graphs: decode graph capture/replay DISABLED (TLLM_CUDA_GRAPHS=0)");
+    } else {
         cuda_graphs_enabled_ = true;
-        TLLM_INFO("CUDA Graphs: decode graph capture/replay ENABLED (TLLM_CUDA_GRAPHS=1)");
+        TLLM_INFO("CUDA Graphs: decode graph capture/replay ENABLED (default; set TLLM_CUDA_GRAPHS=0 to disable)");
     }
 
     // TLLM-003: Allocate and precompute RoPE cos/sin half cache
