@@ -21,9 +21,10 @@ void gather_embeddings(const int *tokens, const half *embedding, half *output, i
 
 // 任务 3.2：KV append 的 device 写位置版本。把当前 step 的 K/V 写入 cache 的
 // *device_write_pos 位置（CUDA Graph 重放：host 更新 device 位置后重放即可，
-// 不像 host 计算的目标地址会被 graph 固化）。new_k/new_v 都是 [1, kv_heads*D]。
+// 不像 host 计算的目标地址会被 graph 固化）。new_k/new_v 都是 [num_tokens, kv_heads*D]；
+// 写 num_tokens 行（D2e 修复：prefill 多 token 时逐行写入，与 host 版语义一致）。
 void append_kv_at(const half *new_k, const half *new_v, half *dst_k, half *dst_v,
-                  const int *device_write_pos, int kv_heads, int head_dim,
+                  const int *device_write_pos, int num_tokens, int kv_heads, int head_dim,
                   cudaStream_t stream = 0);
 
 } // namespace kernels

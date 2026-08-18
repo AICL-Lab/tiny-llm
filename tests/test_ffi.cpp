@@ -193,3 +193,147 @@ TEST(ExecutionCommonTest, FinalNormAndComputeLogitsMatchesTwoStep) {
             << "no-norm logits[" << i << "] differs";
     }
 }
+
+// D2e：策略 1（分页 KV）与策略 2（连续 KV）逐 token 差分测试（门控真模型）。
+// 两个模式用不同句柄各自 load，不能共用同一句柄。
+TEST(FFITest, PagedKVStrategyMatchesContiguous) {
+    const char *path = model_path();
+    if (path == nullptr) {
+        GTEST_SKIP() << "set TLLM_GGUF_TEST_MODEL to a GGUF file to enable";
+    }
+
+    char err[256] = {0};
+    int prompt[] = {9707, 11, 1246, 525, 498, 30}; // "Hello, how are you?"
+    int positions[] = {0, 1, 2, 3, 4, 5};
+    int seq_lens[] = {6};
+    unsigned char pre[] = {1};
+    int seq_ids[] = {0};
+    int next = -1;
+
+    // ── 连续模式（策略 2）基线：prefill 6 token + decode 4 步 ──
+    TinyLlmConfig cfg2 = {0, 0, 0, 0, 0, 0, 16, 1, 0};
+    TinyLlmHandle *h2 = tinyllm_load(path, &cfg2, err, sizeof(err));
+    ASSERT_NE(h2, nullptr) << "load failed: " << err;
+    ASSERT_EQ(tinyllm_allocate_sequence(h2, 0, 64), 0);
+
+    std::vector<int> seq_contig;
+    ASSERT_EQ(tinyllm_step(h2, seq_ids, prompt, positions, seq_lens, nullptr, nullptr, pre, 1,
+                           &next, nullptr, 0),
+              0);
+    ASSERT_GE(next, 0);
+    seq_contig.push_back(next);
+    int pos = 6;
+    for (int i = 0; i < 4; ++i) {
+        int in = next;
+        int lens[] = {1};
+        unsigned char dec[] = {0};
+        ASSERT_EQ(tinyllm_step(h2, seq_ids, &in, &pos, lens, nullptr, nullptr, dec, 1, &next,
+                               nullptr, 0),
+                  0);
+        ASSERT_GE(next, 0);
+        seq_contig.push_back(next);
+        ++pos;
+    }
+    ASSERT_EQ(tinyllm_free_sequence(h2, 0), 0);
+    tinyllm_free(h2);
+
+    // ── 分页模式（策略 1）：block_size=16, max_num_blocks=8 ──
+    // prompt=6 < block_size=16 → num_blocks=1, block_table={0}
+    TinyLlmConfig cfg1 = {0, 0, 0, 0, 0, 0, 16, 1, 8};
+    TinyLlmHandle *h1 = tinyllm_load(path, &cfg1, err, sizeof(err));
+    ASSERT_NE(h1, nullptr) << "load failed: " << err;
+    ASSERT_EQ(tinyllm_allocate_sequence(h1, 0, 64), 0);
+
+    std::vector<int> seq_paged;
+    int bt[] = {0};
+    int nb = 1;
+    ASSERT_EQ(tinyllm_step(h1, seq_ids, prompt, positions, seq_lens, bt, &nb, pre, 1, &next,
+                           nullptr, 0),
+              0);
+    ASSERT_GE(next, 0);
+    seq_paged.push_back(next);
+    pos = 6;
+    for (int i = 0; i < 4; ++i) {
+        int in = next;
+        int lens[] = {1};
+        unsigned char dec[] = {0};
+        ASSERT_EQ(tinyllm_step(h1, seq_ids, &in, &pos, lens, bt, &nb, dec, 1, &next, nullptr, 0),
+                  0);
+        ASSERT_GE(next, 0);
+        seq_paged.push_back(next);
+        ++pos;
+    }
+    ASSERT_EQ(tinyllm_free_sequence(h1, 0), 0);
+    tinyllm_free(h1);
+
+    // 逐 token 完全一致
+    ASSERT_EQ(seq_contig.size(), seq_paged.size());
+    for (size_t i = 0; i < seq_contig.size(); ++i) {
+        EXPECT_EQ(seq_contig[i], seq_paged[i]) << "token " << i << " differs";
+    }
+
+    // ── 跨块用例：decode 到 position >= 16（nb 从 1 升到 2）──
+    // prompt 6 token 后，第 i 次 decode 的绝对位置 = 6 + i；pos=16 起需要 2 块。
+    const int decode_steps = 12; // 覆盖 pos 6..17，含跨块位置 16/17
+    std::vector<int> seq_contig_x, seq_paged_x;
+
+    TinyLlmHandle *h2b = tinyllm_load(path, &cfg2, err, sizeof(err));
+    ASSERT_NE(h2b, nullptr) << "load failed: " << err;
+    ASSERT_EQ(tinyllm_allocate_sequence(h2b, 0, 128), 0);
+    ASSERT_EQ(tinyllm_step(h2b, seq_ids, prompt, positions, seq_lens, nullptr, nullptr, pre, 1,
+                           &next, nullptr, 0),
+              0);
+    seq_contig_x.push_back(next);
+    pos = 6;
+    for (int i = 0; i < decode_steps; ++i) {
+        int in = next;
+        int lens[] = {1};
+        unsigned char dec[] = {0};
+        ASSERT_EQ(tinyllm_step(h2b, seq_ids, &in, &pos, lens, nullptr, nullptr, dec, 1, &next,
+                               nullptr, 0),
+                  0);
+        ASSERT_GE(next, 0);
+        seq_contig_x.push_back(next);
+        ++pos;
+    }
+    ASSERT_EQ(tinyllm_free_sequence(h2b, 0), 0);
+    tinyllm_free(h2b);
+
+    TinyLlmHandle *h1b = tinyllm_load(path, &cfg1, err, sizeof(err));
+    ASSERT_NE(h1b, nullptr) << "load failed: " << err;
+    ASSERT_EQ(tinyllm_allocate_sequence(h1b, 0, 128), 0);
+    ASSERT_EQ(tinyllm_step(h1b, seq_ids, prompt, positions, seq_lens, bt, &nb, pre, 1, &next,
+                           nullptr, 0),
+              0);
+    seq_paged_x.push_back(next);
+    int bt2[] = {0, 1};
+    int nb2 = 2;
+    pos = 6;
+    for (int i = 0; i < decode_steps; ++i) {
+        int in = next;
+        int lens[] = {1};
+        unsigned char dec[] = {0};
+        const int cur_pos = 6 + i;
+        // pos >= 16 需要 2 块；否则 1 块
+        if (cur_pos >= 16) {
+            ASSERT_EQ(tinyllm_step(h1b, seq_ids, &in, &pos, lens, bt2, &nb2, dec, 1, &next,
+                                   nullptr, 0),
+                      0);
+        } else {
+            ASSERT_EQ(tinyllm_step(h1b, seq_ids, &in, &pos, lens, bt, &nb, dec, 1, &next, nullptr,
+                                   0),
+                      0);
+        }
+        ASSERT_GE(next, 0);
+        seq_paged_x.push_back(next);
+        ++pos;
+    }
+    ASSERT_EQ(tinyllm_free_sequence(h1b, 0), 0);
+    tinyllm_free(h1b);
+
+    // 跨块用例逐 token 完全一致
+    ASSERT_EQ(seq_contig_x.size(), seq_paged_x.size());
+    for (size_t i = 0; i < seq_contig_x.size(); ++i) {
+        EXPECT_EQ(seq_contig_x[i], seq_paged_x[i]) << "cross-block token " << i << " differs";
+    }
+}

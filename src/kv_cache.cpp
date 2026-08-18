@@ -318,8 +318,8 @@ Result<void> KVCacheManager::appendKV(int seq_id, int layer_idx, const half *new
         return Result<void>::err("appendKV: failed to get cache pointers");
     }
 
-    kernels::append_kv_at(new_k, new_v, k_cache, v_cache, device_write_pos, config_.num_kv_heads,
-                          config_.head_dim, stream);
+    kernels::append_kv_at(new_k, new_v, k_cache, v_cache, device_write_pos, num_tokens,
+                          config_.num_kv_heads, config_.head_dim, stream);
     return Result<void>::ok();
 }
 
