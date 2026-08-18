@@ -33,6 +33,22 @@ struct LayerWorkspace {
     LayerWorkspace &operator=(const LayerWorkspace &) = delete;
 };
 
+// 分页 KV（策略 1）视图：一次 forwardPaged 需要的全部 paged KV 资源与几何。
+// pool 是"全局"（含全部层）指针，attentionPaged 内部按 layer_idx_ 计算本层偏移。
+struct PagedKVCacheView {
+    half *k_pool = nullptr;          // [L * max_num_blocks * block_size * kv_dim]
+    half *v_pool = nullptr;
+    const int *block_table = nullptr; // device int[visible_blocks]
+    half *k_scratch = nullptr;        // [max_visible_tokens * kv_dim]
+    half *v_scratch = nullptr;
+    int visible_blocks = 0;
+    int block_size = 0;
+    int max_num_blocks = 0;
+    int max_visible_tokens = 0;
+    int position = 0;              // 本步首 token 的绝对位置
+    const int *decode_len = nullptr; // decode 专用 device int；prefill 传 nullptr
+};
+
 // TransformerLayer implements a single transformer decoder layer
 // with W8A16 quantized weights and KV cache support
 class TransformerLayer {
@@ -67,6 +83,14 @@ class TransformerLayer {
                                 int seq_len, const int *rope_pos, const float *rope_cos,
                                 const float *rope_sin, cudaStream_t stream = 0);
 
+    // 分页 KV（策略 1）前向：与 runLayer 的差异只在 attention —— 走
+    // attentionPaged（scatter 写入 pool、gather 读回 scratch 后做 attention）。
+    // num_tokens == 1 且 kv.decode_len != nullptr 时为 decode（可见长度取
+    // kv.decode_len / kv.position+1）；否则为 prefill（可见长度 = num_tokens）。
+    Result<void> forwardPaged(half *hidden_states, const PagedKVCacheView &kv, int num_tokens,
+                              const int *rope_pos, const float *rope_cos, const float *rope_sin,
+                              cudaStream_t stream = 0);
+
     // Get layer index
     int getLayerIdx() const noexcept { return layer_idx_; }
 
@@ -78,6 +102,12 @@ class TransformerLayer {
                            int position, int num_tokens, const int *decode_len,
                            const int *rope_pos, const float *rope_cos, const float *rope_sin,
                            cudaStream_t stream);
+
+    // 分页 KV 版 attention：Q/K/V 投影与 RoPE 同 attention()，之后把 K/V 经
+    // block_table scatter 进 pool，再 gather 出可见区间到 scratch 做 attention。
+    Result<void> attentionPaged(const half *x, half *output, const PagedKVCacheView &kv,
+                                int num_tokens, const int *rope_pos, const float *rope_cos,
+                                const float *rope_sin, cudaStream_t stream);
 
     // Feed-forward network sublayer (SwiGLU)
     void feedForward(const half *x, half *output, int num_tokens, cudaStream_t stream);

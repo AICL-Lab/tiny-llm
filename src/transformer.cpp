@@ -2,6 +2,7 @@
 #include "attention.cuh"
 #include "rope.cuh"
 #include "elementwise.cuh"
+#include "paged_kv.cuh"
 #include "rmsnorm.cuh"
 #include "tiny_llm/cuda_utils.h"
 #include "tiny_llm/logger.h"
@@ -157,6 +158,56 @@ Result<void> TransformerLayer::forwardPrefill(half *hidden_states, KVCacheManage
                     rope_sin, stream);
 }
 
+Result<void> TransformerLayer::forwardPaged(half *hidden_states, const PagedKVCacheView &kv,
+                                              int num_tokens, const int *rope_pos,
+                                              const float *rope_cos, const float *rope_sin,
+                                              cudaStream_t stream) {
+    // Input validation
+    auto ptr_result = Validator::validateNotNull(hidden_states, "hidden_states");
+    if (ptr_result.isErr()) {
+        TLLM_ERROR("forwardPaged: {}", ptr_result.error());
+        return ptr_result;
+    }
+    if (num_tokens <= 0) {
+        TLLM_ERROR("forwardPaged: invalid num_tokens {}", num_tokens);
+        return Result<void>::err("forwardPaged: invalid num_tokens " + std::to_string(num_tokens));
+    }
+    // Paged KV 视图校验：指针非空、几何合法、位置不越界
+    if (kv.k_pool == nullptr || kv.v_pool == nullptr || kv.block_table == nullptr ||
+        kv.k_scratch == nullptr || kv.v_scratch == nullptr) {
+        TLLM_ERROR("forwardPaged: null paged KV pointer for layer {}", layer_idx_);
+        return Result<void>::err("forwardPaged: null paged KV pointer for layer " +
+                                 std::to_string(layer_idx_));
+    }
+    if (kv.visible_blocks <= 0 || kv.block_size <= 0 || kv.max_num_blocks <= 0 ||
+        kv.max_visible_tokens <= 0) {
+        TLLM_ERROR("forwardPaged: invalid paged KV geometry for layer {}", layer_idx_);
+        return Result<void>::err("forwardPaged: invalid paged KV geometry for layer " +
+                                 std::to_string(layer_idx_));
+    }
+    if (kv.position < 0 || kv.position + num_tokens > kv.max_visible_tokens) {
+        TLLM_ERROR("forwardPaged: position {} + num_tokens {} exceeds max_visible_tokens {}",
+                   kv.position, num_tokens, kv.max_visible_tokens);
+        return Result<void>::err("forwardPaged: position exceeds max_visible_tokens");
+    }
+
+    // Attention sublayer with residual: x = x + attention(rms_norm(x))
+    rmsNorm(hidden_states, weights_.rms_att_weight, ws_->norm_output, num_tokens, stream);
+    auto attn_result = attentionPaged(ws_->norm_output, ws_->attn_output, kv, num_tokens, rope_pos,
+                                      rope_cos, rope_sin, stream);
+    if (attn_result.isErr()) {
+        return attn_result;
+    }
+    kernels::add_inplace(hidden_states, ws_->attn_output, num_tokens * config_.hidden_dim, stream);
+
+    // FFN sublayer with residual: x = x + ffn(rms_norm(x))
+    rmsNorm(hidden_states, weights_.rms_ffn_weight, ws_->norm_output, num_tokens, stream);
+    feedForward(ws_->norm_output, ws_->ffn_output, num_tokens, stream);
+    kernels::add_inplace(hidden_states, ws_->ffn_output, num_tokens * config_.hidden_dim, stream);
+
+    return Result<void>::ok();
+}
+
 Result<void> TransformerLayer::runLayer(half *hidden_states, KVCacheManager &kv_cache,
                                           int seq_id, int position, int num_tokens,
                                           const int *decode_len, const int *rope_pos,
@@ -264,6 +315,87 @@ Result<void> TransformerLayer::attention(const half *x, half *output, KVCacheMan
     }
 
     // Output projection: 注意力输出在 attn_buf（独立缓冲，避免就地 matmul 覆盖输入）
+    kernels::w8a16_matmul(ws_->attn_buf, weights_.wo.data, weights_.wo.scales, weights_.wo.data_t,
+                          weights_.wo.scales_t, output, num_tokens, hidden_dim,
+                          num_heads * head_dim, group_size, stream);
+
+    return Result<void>::ok();
+}
+
+Result<void> TransformerLayer::attentionPaged(const half *x, half *output,
+                                                const PagedKVCacheView &kv, int num_tokens,
+                                                const int *rope_pos, const float *rope_cos,
+                                                const float *rope_sin, cudaStream_t stream) {
+    int hidden_dim = config_.hidden_dim;
+    int num_heads = config_.num_heads;
+    int num_kv_heads = config_.num_kv_heads;
+    int head_dim = config_.head_dim;
+    int group_size = weights_.wq.group_size;
+    int kv_dim = num_kv_heads * head_dim;
+
+    // Q/K/V projection（与 attention() 完全一致，含 w8a16 transposed 快路径）
+    kernels::w8a16_matmul(x, weights_.wq.data, weights_.wq.scales, weights_.wq.data_t,
+                          weights_.wq.scales_t, ws_->q_buf, num_tokens, num_heads * head_dim,
+                          hidden_dim, group_size, stream);
+    kernels::w8a16_matmul(x, weights_.wk.data, weights_.wk.scales, weights_.wk.data_t,
+                          weights_.wk.scales_t, ws_->k_buf, num_tokens, kv_dim, hidden_dim,
+                          group_size, stream);
+    kernels::w8a16_matmul(x, weights_.wv.data, weights_.wv.scales, weights_.wv.data_t,
+                          weights_.wv.scales_t, ws_->v_buf, num_tokens, kv_dim, hidden_dim,
+                          group_size, stream);
+
+    // Qwen2 系 attention bias（RoPE 之前加）
+    if (weights_.wq_bias) {
+        kernels::add_bias_inplace(ws_->q_buf, weights_.wq_bias, num_tokens, num_heads * head_dim,
+                                  stream);
+    }
+    if (weights_.wk_bias) {
+        kernels::add_bias_inplace(ws_->k_buf, weights_.wk_bias, num_tokens, kv_dim, stream);
+    }
+    if (weights_.wv_bias) {
+        kernels::add_bias_inplace(ws_->v_buf, weights_.wv_bias, num_tokens, kv_dim, stream);
+    }
+
+    // RoPE（起始位置由 device int 提供；decode 为绝对位置，prefill 为 0）
+    kernels::apply_rope_inplace(ws_->q_buf, ws_->k_buf, rope_cos, rope_sin, num_tokens, rope_pos,
+                                num_heads, num_kv_heads, head_dim, stream);
+
+    // 本层 pool 偏移：layer_idx_ * max_num_blocks * block_size * kv_dim
+    const size_t layer_stride = static_cast<size_t>(kv.max_num_blocks) *
+                                static_cast<size_t>(kv.block_size) * static_cast<size_t>(kv_dim);
+    half *k_pool_layer = kv.k_pool + layer_idx_ * layer_stride;
+    half *v_pool_layer = kv.v_pool + layer_idx_ * layer_stride;
+
+    // 把本步 K/V scatter 进 pool（允许一次额外显存往返，先正确后优化）
+    kernels::paged_scatter_blocks(ws_->k_buf, k_pool_layer, kv.block_table, num_tokens, kv.position,
+                                  kv.block_size, kv_dim, stream);
+    kernels::paged_scatter_blocks(ws_->v_buf, v_pool_layer, kv.block_table, num_tokens, kv.position,
+                                  kv.block_size, kv_dim, stream);
+
+    // 可见长度：prefill = num_tokens；decode（num_tokens==1 && decode_len）=
+    // kv.position + 1（与 *kv.decode_len 一致）。
+    const bool is_decode = (num_tokens == 1 && kv.decode_len != nullptr);
+    const int visible = is_decode ? (kv.position + 1) : num_tokens;
+
+    // 把可见区间 gather 到 scratch（连续布局供 attention kernel 使用）
+    kernels::paged_gather_blocks(kv.k_scratch, k_pool_layer, kv.block_table, visible,
+                                 kv.block_size, kv_dim, stream);
+    kernels::paged_gather_blocks(kv.v_scratch, v_pool_layer, kv.block_table, visible,
+                                 kv.block_size, kv_dim, stream);
+
+    // Attention
+    float scale = 1.0f / std::sqrt(static_cast<float>(head_dim));
+    if (is_decode) {
+        // decode：单 query 对已 gather 的可见 K/V；可见长度由 device int 提供
+        kernels::attention_decode(ws_->q_buf, kv.k_scratch, kv.v_scratch, ws_->attn_buf, scale,
+                                  num_heads, num_kv_heads, kv.decode_len, head_dim, stream);
+    } else {
+        // prefill：因果掩码全量注意力（gather 回读与 scatter 内容一致）
+        kernels::attention_prefill(ws_->q_buf, kv.k_scratch, kv.v_scratch, ws_->attn_buf, scale,
+                                   num_heads, num_kv_heads, num_tokens, head_dim, stream);
+    }
+
+    // Output projection
     kernels::w8a16_matmul(ws_->attn_buf, weights_.wo.data, weights_.wo.scales, weights_.wo.data_t,
                           weights_.wo.scales_t, output, num_tokens, hidden_dim,
                           num_heads * head_dim, group_size, stream);
