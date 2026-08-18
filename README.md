@@ -18,7 +18,7 @@
 
 Tiny-LLM 将仓库表面保持得尽量小：CUDA/C++17 内核、W8A16 量化、显式 KV Cache 管理，以及一条更容易审计和维护的精简运行时路径。
 
-在五仓学习路径中，本仓库只负责模型权重到 token 生成的运行时主线；CUDA/Triton kernel 学习和 Serving 调度保持在各自主仓。整体顺序见 [`cuda-kernel-academy/LEARNING_PATH.md`](https://github.com/AICL-Lab/cuda-kernel-academy/blob/master/LEARNING_PATH.md)。
+在五仓学习路径中，本仓库只负责模型权重到 token 生成的运行时主线；CUDA/Triton kernel 学习和 Serving 调度保持在各自主仓。整体顺序见 [`cuda-foundations/LEARNING_PATH.md`](https://github.com/AICL-Lab/cuda-foundations/blob/master/LEARNING_PATH.md)。
 
 ## 项目边界（IN / OUT）
 
