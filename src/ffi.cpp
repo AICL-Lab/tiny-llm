@@ -57,6 +57,7 @@ struct TinyLlmHandleImpl {
     bool  paged_kv = false;
     int   max_num_blocks = 0;
     int   max_visible_tokens = 0;
+    int   block_size = 0; // paged 模式下保存的分页块大小
     half *paged_k_pool = nullptr;    // [L * max_num_blocks * block_size * kv_dim]
     half *paged_v_pool = nullptr;
     half *paged_k_scratch = nullptr; // [max_visible_tokens * kv_dim]
@@ -201,6 +202,7 @@ TinyLlmHandle *tinyllm_load(const char *model_path, const TinyLlmConfig *config,
             h->paged_kv = true;
             h->max_num_blocks = config->max_num_blocks;
             h->max_visible_tokens = config->max_num_blocks * config->block_size;
+            h->block_size = config->block_size;
             const int kv_dim = h->config.num_kv_heads * h->config.head_dim;
             const size_t pool_elems = static_cast<size_t>(h->config.num_layers) *
                                       static_cast<size_t>(h->max_num_blocks) *
@@ -331,6 +333,7 @@ int tinyllm_step(TinyLlmHandle *handle, const int *seq_ids, const int *input_tok
     const int hidden = h->config.hidden_dim;
 
     int offset = 0;
+    int table_offset = 0; // 扁平化 block_tables 中前面序列块数之和（策略 1）
     for (int s = 0; s < num_sequences; ++s) {
         const int len = seq_lens[s];
         if (len <= 0) return TLLM_ERR;
@@ -343,13 +346,91 @@ int tinyllm_step(TinyLlmHandle *handle, const int *seq_ids, const int *input_tok
         offset += len;
 
         try {
-            if (std::getenv("TLLM_FFI_DEBUG")) {
+            if (std::getenv("TLLM_FFI_DEBUG") && !h->paged_kv) {
                 auto c = h->kv_cache->getCache(seq_id, 0);
                 fprintf(stderr, "  [ffi] seq %d hasSeq=%d cache0=%p kv_seq_len=%d\n", seq_id,
                         (int)h->kv_cache->hasSequence(seq_id), (void *)c.first,
                         h->kv_cache->getSeqLen(seq_id));
             }
-            if (is_prefill[s]) {
+            if (h->paged_kv) {
+                // ── 策略 1：分页 KV ──
+                // 前置校验：块表/计数非空，每序列块数合法且足以容纳本步。
+                if (block_tables == nullptr || num_blocks == nullptr) return TLLM_ERR;
+                const int nb = num_blocks[s];
+                if (nb <= 0 || nb > h->max_num_blocks) return TLLM_ERR;
+                const int block_size = h->block_size;
+                const int cur_pos = is_prefill[s] ? 0 : st.position;
+                const int need_blocks = is_prefill[s]
+                                            ? (len + block_size - 1) / block_size
+                                            : (cur_pos + 1 + block_size - 1) / block_size;
+                if (nb < need_blocks) return TLLM_ERR;
+
+                // 块表上传（逐序列，同一 stream 上顺序执行）
+                h->d_block_tables.copyFromHost(block_tables + table_offset,
+                                               static_cast<size_t>(nb), h->stream);
+                table_offset += nb;
+
+                // 构造视图
+                tiny_llm::PagedKVCacheView view;
+                view.k_pool = h->paged_k_pool;
+                view.v_pool = h->paged_v_pool;
+                view.block_table = h->d_block_tables.data();
+                view.k_scratch = h->paged_k_scratch;
+                view.v_scratch = h->paged_v_scratch;
+                view.visible_blocks = nb;
+                view.block_size = block_size;
+                view.max_num_blocks = h->max_num_blocks;
+                view.max_visible_tokens = h->max_visible_tokens;
+
+                if (is_prefill[s]) {
+                    // Prefill：从绝对位置 0 写入整个 prompt
+                    view.position = 0;
+                    view.decode_len = nullptr;
+                    const int zero_pos = 0;
+                    h->rope_pos.copyFromHost(&zero_pos, 1, h->stream);
+                    embed(h, toks, len, h->hidden_buf);
+                    int li = 0;
+                    for (auto &layer : h->layers) {
+                        auto r = layer->forwardPaged(h->hidden_buf, view, len, h->rope_pos.data(),
+                                                     h->rope_cos, h->rope_sin, h->stream);
+                        if (r.isErr()) {
+                            if (std::getenv("TLLM_FFI_DEBUG")) {
+                                fprintf(stderr, "  [ffi] paged layer %d err: %s\n", li,
+                                        r.error().c_str());
+                            }
+                            return TLLM_ERR;
+                        }
+                        ++li;
+                    }
+                    next_tokens[s] = sample_from_hidden(h, h->hidden_buf + (len - 1) * hidden);
+                    st.position = len;
+                } else {
+                    // Decode：单个新 token（绝对位置 = st.position）
+                    const int pos = st.position;
+                    const int visible = pos + 1;
+                    h->decode_len.copyFromHost(&visible, 1, h->stream);
+                    h->rope_pos.copyFromHost(&pos, 1, h->stream);
+                    embed(h, toks, 1, h->hidden_buf + static_cast<size_t>(pos) * hidden);
+                    half *token_state = h->hidden_buf + static_cast<size_t>(pos) * hidden;
+                    view.position = pos;
+                    view.decode_len = h->decode_len.data();
+                    int li = 0;
+                    for (auto &layer : h->layers) {
+                        auto r = layer->forwardPaged(token_state, view, 1, h->rope_pos.data(),
+                                                     h->rope_cos, h->rope_sin, h->stream);
+                        if (r.isErr()) {
+                            if (std::getenv("TLLM_FFI_DEBUG")) {
+                                fprintf(stderr, "  [ffi] paged decode layer %d err: %s\n", li,
+                                        r.error().c_str());
+                            }
+                            return TLLM_ERR;
+                        }
+                        ++li;
+                    }
+                    next_tokens[s] = sample_from_hidden(h, token_state);
+                    st.position = pos + 1;
+                }
+            } else if (is_prefill[s]) {
                 // Prefill：处理完整 prompt，输出最后一个 hidden 的下一 token
                 bool dbg = std::getenv("TLLM_FFI_DEBUG") != nullptr;
                 embed(h, toks, len, h->hidden_buf);
@@ -424,9 +505,9 @@ int tinyllm_step(TinyLlmHandle *handle, const int *seq_ids, const int *input_tok
         }
     }
 
-    (void)positions;   // 策略 2：位置由引擎内部跟踪
-    (void)block_tables; // 策略 2：连续 KV，忽略分页表
-    (void)num_blocks;   // 策略 2：连续 KV，忽略逐序列块计数（D2d 接入策略 1）
+    (void)positions;    // 策略 2：位置由引擎内部跟踪（策略 1 不使用 positions）
+    (void)block_tables; // 策略 2：连续 KV，忽略分页表（策略 1 已在循环内使用）
+    (void)num_blocks;   // 策略 2：连续 KV，忽略逐序列块计数（策略 1 已在循环内使用）
     return TLLM_OK;
 }
 
