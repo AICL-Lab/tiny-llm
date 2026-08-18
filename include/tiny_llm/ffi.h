@@ -6,6 +6,8 @@
 //   - KV 生命周期由本后端管理：
 //       策略 1（分页 KV，max_num_blocks > 0）：block_tables / num_blocks 生效
 //       策略 2（连续 KV，max_num_blocks == 0）：block_tables / num_blocks 忽略
+//   - 策略 1 已启用：paged-infer 默认走分页 KV（max_num_blocks = 引擎配置），
+//     `PAGED_INFER_TINY_LLM_STRATEGY=2` 可回退到策略 2。
 //
 // 数据布局约定：
 //   - seq_ids 显式给出每序列 id；input_tokens / positions 是扁平化数组
