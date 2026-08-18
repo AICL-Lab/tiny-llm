@@ -86,7 +86,7 @@ Tiny-LLM 将仓库表面保持得尽量小：CUDA/C++17 内核、W8A16 量化、
 > 首块反量化均与 Python `gguf` 参考实现一致（见 `tests/test_quantization.cpp`，
 > 设置环境变量 `TLLM_GGUF_TEST_MODEL` 可复现）。
 > CLI 提供 CPU-only 的 `tiny_llm_demo --inspect model.gguf` 查看配置与 tensor 摘要；
-> tokenizer 已实现并通过差分验证；端到端文本生成待 GPU 环境（见 [ROADMAP](ROADMAP.md)）。
+> tokenizer 已实现并通过差分验证；端到端文本生成已在 RTX 3060 上验证（见上方基准快照与 [ROADMAP](ROADMAP.md)）。
 
 > **GQA/MQA 映射验证**（任务 4.2）：
 > - 已验：Qwen2.5-0.5B **GQA 14→2**（真实模型端到端）。

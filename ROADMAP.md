@@ -63,13 +63,18 @@
 
 ## 阶段 4：工程完整度（面试加分项）
 
-- [ ] GQA/MQA 模型真实验证（num_kv_heads < num_heads）
+- [x] GQA 真实模型验证：Qwen2.5-0.5B **14→2** 端到端；kernel 级另验 Llama-3.2 风格
+      **32→8** 与 **MQA 16→1**（`tests/test_kernels.cu`）
+- [ ] 第二个真实 GGUF 端到端门控（设 `TLLM_GGUF_TEST_MODEL_2`，如 Llama-3.2-1B）
 - [ ] 长上下文 KV Cache 显存实测曲线
 - [ ] 失败路径审计：加载损坏文件、显存不足、超长输入的行为与测试
 - [x] 导出 C ABI（`ffi.h`/`ffi.cpp`：`tinyllm_load` / `tinyllm_step` / `tinyllm_allocate_sequence`
-      / `tinyllm_free_sequence` / `tinyllm_free`），供 paged-infer 调度层接入（里程碑 2 前置）
-- [ ] 与 [paged-infer](https://github.com/AICL-Lab/paged-infer) 的调度层对接（Rust 侧启用
-      `tiny-llm` feature + build.rs 链接 + `GPUExecutorTrait` 适配器，见其 ROADMAP 里程碑 3/4）
+      / `tinyllm_free_sequence` / `tinyllm_free`），供 paged-infer 调度层接入
+- [x] 与 [paged-infer](https://github.com/AICL-Lab/paged-infer) 的调度层对接：Rust `tiny-llm`
+      feature + build.rs 链接 + `TinyLlmExecutor`；分页 KV 策略 1 默认启用，3 并发 e2e
+      与 llama.cpp greedy 对齐（2026-08-18，`phase-2-e`）
+
+> **面试就绪冻结**（`phase-2-e`）：不再扩新功能。未勾选项记入「不做什么」直到明确解冻。
 
 ## 面试讲述要点（完成后自查）
 
