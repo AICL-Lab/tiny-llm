@@ -89,6 +89,13 @@ add_executable(tiny_llm_bench src/benchmark.cpp)
 target_include_directories(tiny_llm_bench PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/kernels)
 target_link_libraries(tiny_llm_bench PRIVATE tiny_llm)
 
+# ── kernel microbenchmark ────────────────────────────────────────
+# Decode-path kernel-level timing (replaces ncu/nsys on hosts where those
+# profilers are unavailable). See docs/performance/benchmark-methodology.md.
+add_executable(tiny_llm_kernel_bench src/kernel_bench.cpp)
+target_include_directories(tiny_llm_kernel_bench PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/kernels)
+target_link_libraries(tiny_llm_kernel_bench PRIVATE tiny_llm)
+
 # ── 测试 ─────────────────────────────────────────────────────────
 option(BUILD_TESTS "Build tests" ON)
 if(BUILD_TESTS)
