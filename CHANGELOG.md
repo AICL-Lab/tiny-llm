@@ -4,6 +4,9 @@ All notable tracked releases of Tiny-LLM are recorded here.
 
 ## Unreleased
 
+### Changed
+- 面向用户的 GitHub 链接统一为 `github.com/aicl-lab/...`（tokenizer 差分夹具原文不改）
+
 ### Added
 
 - gpt2 风格字节级 BPE tokenizer：从 GGUF 读取 tokens/merges/token_type，

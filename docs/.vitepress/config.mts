@@ -120,11 +120,11 @@ export default withMermaid(
       },
 
       socialLinks: [
-        { icon: 'github', link: 'https://github.com/AICL-Lab/tiny-llm' },
+        { icon: 'github', link: 'https://github.com/aicl-lab/tiny-llm' },
       ],
 
       editLink: {
-        pattern: 'https://github.com/AICL-Lab/tiny-llm/edit/master/docs/:path',
+        pattern: 'https://github.com/aicl-lab/tiny-llm/edit/master/docs/:path',
         text: '在 GitHub 上编辑此页',
       },
 

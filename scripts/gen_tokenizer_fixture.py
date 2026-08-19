@@ -45,7 +45,7 @@ CORPUS = [
     "trailing space here ",
     " leading space here",
     "<|im_start|>user\n你好<|im_end|>",
-    "url: https://github.com/AICL-Lab/tiny-llm/pull/42#issuecomment",
+    "url: https://github.com/aicl-lab/tiny-llm/pull/42#issuecomment",
     "path: /home/user/file.tar.gz; C:\\Users\\test",
     "math: x² + y² = z², ∑ᵢ aᵢ = 42",
 ]
