@@ -35,6 +35,34 @@ All notable tracked releases of Tiny-LLM are recorded here.
 - calculateSize 不再对未知量化类型按 FP16 估算（会导致静默错位读取），改为显式失败
 - 移除断言旧行为（"GGUF 运行时加载不支持"）的过时测试，改为验证真实的加载错误路径
 
+### Fixed（2026-08-21 bug 专项修复）
+
+- **add_bias_inplace kernel 越界写**：`add_bias_kernel` 增加 `idx >= rows*cols` 边界
+  检查（grid 按 ceil(total/256) 启动，尾块线程在非 256 倍数尺寸下会越界读写；
+  Qwen2 系 hidden=896 的 decode/奇数 token prefill 会触发）
+- **CUDA Graph H2D host 源指针固化（未定义行为）**：decodeStep 的 token_id /
+  decode_len / rope_pos 与 setAppendPos 的 H2D memcpy 源指针由栈/临时变量改为
+  引擎/KVCache 成员变量——graph capture 会固化 host 指针并在重放时读取当前值，
+  此前正确性依赖栈地址复用（未定义行为）
+- **CUDA Graph 捕获异常路径 stream 卡死**：capture 中抛 CudaException 时补充
+  `cudaStreamEndCapture` 清理，避免 stream 永久停在 capture 状态
+- **repetition_penalty 静默失效**：实现 llama.cpp 语义的重复惩罚（负 logit ×
+  penalty、正 logit ÷ penalty，作用于 prompt + 已生成 token），greedy 与各
+  采样策略统一生效；新增 `applyRepetitionPenalty` 公共静态辅助（供测试）
+- **重复 seq_id 分配泄漏**：`KVCacheManager::allocateSequence(seq_id, ...)` 与
+  FFI `tinyllm_allocate_sequence` 显式拒绝已存在的 seq_id，避免旧 slot 永久泄漏
+- **FFI 越界校验缺失**：prefill 长度 / decode 绝对位置增加 `max_seq_len` 边界
+  校验（hidden_buf 与 RoPE 表越界防护）；`logprobs_k` 增加 vocab_size 上限
+- **异常路径 GPU 资源泄漏**：`InferenceEngine` 构造函数与 `ModelLoader::loadGGUF` /
+  `loadBin` 增加 try/catch 清理（CUDA_CHECK 抛出时释放裸指针与已上传权重）
+- **GGUF head_count_kv 缺失静默错配**：MHA 老 GGUF 缺该键时显式回退 num_heads，
+  不再保持默认 32
+- **GQA/head_dim 整除校验**：`validateModelConfig` 校验 `num_heads % num_kv_heads`
+  与 `hidden_dim % num_heads`，畸形配置显式报错而非静默截断
+- **权重 tensor 维度防御**：`load_quantized` / lm_head 校验 `dimensions.size() >= 2`
+- **CLI `--max-tokens` 非法输入**：`std::stoi` 异常捕获 + 正值校验，不再直接 abort
+- 清理编译警告：loadGGUF 未用变量、attention() 未用 position、kernel_bench 未用 name
+
 ### Added
 
 - C ABI 执行后端（`include/tiny_llm/ffi.h` + `src/ffi.cpp`）：`tinyllm_load` /
@@ -44,6 +72,11 @@ All notable tracked releases of Tiny-LLM are recorded here.
 
 ### Tests
 
+- **repetition_penalty 单元测试**：llama.cpp 语义（正/负 logit、no-op、越界 id 忽略、
+  greedy 避开重复 token）
+- **重复 seq_id 拒绝测试**：KVCache 二次分配同一 id 返回错误且不消耗新 slot，
+  释放后可复用
+- **add_bias 非对齐尺寸测试**：rows*cols 非 256 倍数时结果正确且不越界
 - C ABI 端到端测试（TLLM_GGUF_TEST_MODEL 门控）：load/allocate/step/free 全流程 +
   非法参数错误处理
 - W8A16 大矩阵差分测试（M*N >= 4096 走 tiled 分支，与 reference 对齐）
