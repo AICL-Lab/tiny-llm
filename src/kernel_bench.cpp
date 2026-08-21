@@ -72,6 +72,7 @@ double bench(F &&f, int warmup, int iters) {
 // ---------------------------------------------------------------------------
 double benchW8A16(const char *name, const char *shape, int M, int N, int K, int group_size,
                   int warmup, int iters) {
+    (void)name; // 输出行仅使用 shape 列
     const int scale_rows = (K + group_size - 1) / group_size;
 
     std::vector<__half> h_input(static_cast<size_t>(M) * K, __float2half(0.5f));
@@ -119,6 +120,7 @@ double benchW8A16(const char *name, const char *shape, int M, int N, int K, int 
 // FP16 lm_head  (weight [K, N])
 // ---------------------------------------------------------------------------
 double benchFP16(const char *name, const char *shape, int M, int N, int K, int warmup, int iters) {
+    (void)name; // 输出行仅使用 shape 列
     std::vector<__half> h_input(static_cast<size_t>(M) * K, __float2half(0.5f));
     std::vector<__half> h_weight(static_cast<size_t>(K) * N, __float2half(0.5f));
     std::vector<__half> h_output(static_cast<size_t>(M) * N);

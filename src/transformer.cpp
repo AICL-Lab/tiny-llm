@@ -242,6 +242,7 @@ Result<void> TransformerLayer::attention(const half *x, half *output, KVCacheMan
     int num_kv_heads = config_.num_kv_heads;
     int head_dim = config_.head_dim;
     int group_size = weights_.wq.group_size;
+    (void)position; // 位置已由 device rope_pos / decode_len 间接提供（graph 重放前置）
 
     // Q projection: [num_tokens, hidden_dim] @ [hidden_dim, num_heads * head_dim]
     // 任务 C1：传转置布局（data_t/scales_t），M==1 decode 时走 coalesced 快路径。
