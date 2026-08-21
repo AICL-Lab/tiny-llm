@@ -88,7 +88,10 @@ class KVCacheManager {
     // Check if sequence exists
     bool hasSequence(int seq_id) const noexcept;
 
-    // Memory statistics
+    // Memory statistics。
+    // 注意计费口径：getUsedMemory 按"活跃 slot 数 × 单 slot 满额大小"计算
+    // （slot 内部按 max_len 预留，不按实际 seq_len 扣减），因此数值是活跃序列
+    // 的预留显存而非实际写入字节数；getFreeMemory = 池总量 - 已预留量。
     size_t getUsedMemory() const noexcept;
     size_t getTotalMemory() const noexcept;
     size_t getFreeMemory() const noexcept;
