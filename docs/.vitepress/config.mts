@@ -120,11 +120,11 @@ export default withMermaid(
       },
 
       socialLinks: [
-        { icon: 'github', link: 'https://github.com/aicl-lab/tiny-llm' },
+        { icon: 'github', link: 'https://github.com/open-infra-ai/tiny-llm' },
       ],
 
       editLink: {
-        pattern: 'https://github.com/aicl-lab/tiny-llm/edit/master/docs/:path',
+        pattern: 'https://github.com/open-infra-ai/tiny-llm/edit/master/docs/:path',
         text: '在 GitHub 上编辑此页',
       },
 
@@ -208,7 +208,7 @@ export default withMermaid(
 
 // Plugin: llmstxt for LLM-friendly documentation
 llmstxt({
-  domain: 'https://aicl-lab.github.io/tiny-llm',
+  domain: 'https://open-infra-ai.github.io/tiny-llm',
   title: 'Tiny-LLM 文档',
   description: '面向聚焦型 Transformer 工作负载的 CUDA 原生 C++ 推理引擎',
   sections: {

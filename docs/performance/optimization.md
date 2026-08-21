@@ -1,6 +1,6 @@
 # 优化
 
-本页区分**已实现的优化**与**计划中的优化**。计划项的落地顺序见 [ROADMAP](https://github.com/aicl-lab/tiny-llm/blob/master/ROADMAP.md)。
+本页区分**已实现的优化**与**计划中的优化**。计划项的落地顺序见 [ROADMAP](https://github.com/open-infra-ai/tiny-llm/blob/master/ROADMAP.md)。
 
 ## 已实现的优化
 
@@ -48,10 +48,10 @@
 | CUDA Graphs | 降低 decode 阶段 kernel launch 开销 | ✅ 已完成（默认开启） |
 | M==1 转置权重 GEMM 快路径 | 消解 decode GEMM 非 coalesced 访存 | ✅ 已完成（C1） |
 | Tensor Core WMMA（FP16/INT8） | GEMM 再提速（未做 `mma.sync`） | 待做 |
-| KV paged / FlashDecoding | attention 长序列显存与速度 | 待做（可复用 [cuflash-attn](https://github.com/aicl-lab/cuflash-attn) 的经验） |
+| KV paged / FlashDecoding | attention 长序列显存与速度 | 待做（可复用 [cuflash-attn](https://github.com/open-infra-ai/cuflash-attn) 的经验） |
 | fused kernel（rmsnorm/RoPE/QKV/bias） | 减少 kernel 数与中间显存 | 待做 |
 | KV Cache swapping/offload | 支持超出显存的并发序列 | 待做 |
-| 连续批处理 | 吞吐导向场景 | 待做（调度层设计见 [paged-infer](https://github.com/aicl-lab/paged-infer)） |
+| 连续批处理 | 吞吐导向场景 | 待做（调度层设计见 [paged-infer](https://github.com/open-infra-ai/paged-infer)） |
 
 > 注意：上表中的配置开关（如 CUDA Graphs 开关）**目前尚不存在于代码中**，实现前请勿在任何文档中引用。
 
