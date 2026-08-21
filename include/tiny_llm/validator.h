@@ -86,8 +86,11 @@ class Validator {
             return Result<void>::err("max_new_tokens must be positive: " +
                                      std::to_string(config.max_new_tokens));
         }
-        if (config.temperature <= 0.0f) {
-            return Result<void>::err("temperature must be positive: " +
+        // 修复：temperature 仅在 do_sample 模式下被读取（sample() 的 greedy
+        // 分支完全不用它），无条件校验会把 temperature=0 的合法 greedy 配置
+        // 拒之门外。
+        if (config.do_sample && config.temperature <= 0.0f) {
+            return Result<void>::err("temperature must be positive when do_sample is true: " +
                                      std::to_string(config.temperature));
         }
         if (config.top_k < 0) {
@@ -143,6 +146,12 @@ class Validator {
         }
         if (config.head_dim <= 0) {
             return Result<void>::err("head_dim must be positive: " +
+                                     std::to_string(config.head_dim));
+        }
+        // 修复：RoPE 的 half_d = head_dim/2 依赖偶数，奇数 head_dim 会静默
+        // 截断导致位置编码维度错位（cos/sin 频率对错配）。
+        if (config.head_dim % 2 != 0) {
+            return Result<void>::err("head_dim must be even for RoPE: " +
                                      std::to_string(config.head_dim));
         }
         if (config.max_seq_len <= 0) {
