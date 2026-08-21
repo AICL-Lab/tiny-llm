@@ -467,7 +467,11 @@ Result<ModelConfig> GGUFParser::extractModelConfig() const {
     get_arch_int("embedding_length", config.hidden_dim);
     get_arch_int("block_count", config.num_layers);
     get_arch_int("attention.head_count", config.num_heads);
-    get_arch_int("attention.head_count_kv", config.num_kv_heads);
+    // 修复：head_count_kv 缺失时（MHA 老 GGUF）显式回退 num_heads，
+    // 避免静默保持 ModelConfig 默认值 32 导致 wk/wv 维度错配。
+    if (!get_arch_int("attention.head_count_kv", config.num_kv_heads)) {
+        config.num_kv_heads = config.num_heads;
+    }
     get_arch_int("context_length", config.max_seq_len);
     get_arch_int("feed_forward_length", config.intermediate_dim);
     get_arch_float("attention.layer_norm_rms_epsilon", config.rms_norm_eps);

@@ -159,9 +159,7 @@ Result<ModelWeights> ModelLoader::loadGGUF(const std::string &path, ModelConfig 
         }
     };
 
-    const int hidden   = config.hidden_dim;
-    const int kv_dim   = config.num_kv_heads * config.head_dim;
-    const int inter    = config.intermediate_dim;
+    try {
     const int group_sz = 128;
 
     // 读取 tensor 原始数据并反量化为 FP16
@@ -210,6 +208,13 @@ Result<ModelWeights> ModelLoader::loadGGUF(const std::string &path, ModelConfig 
     // 反量化 -> 转置 -> 重量化 W8A16 -> 上传 GPU
     auto load_quantized = [&](const GGUFTensorInfo *tensor) -> Result<QuantizedWeight> {
         if (!tensor) return Result<QuantizedWeight>::err("Tensor not found");
+        // 修复：损坏/恶意 GGUF 的权重 tensor 不足 2 维时，直接下标访问
+        // dimensions[1] 是未定义行为，这里显式校验。
+        if (tensor->dimensions.size() < 2) {
+            return Result<QuantizedWeight>::err("Tensor " + tensor->name +
+                                                " has <2 dimensions (dims=" +
+                                                std::to_string(tensor->dimensions.size()) + ")");
+        }
 
         int in_f  = static_cast<int>(tensor->dimensions[0]);
         int out_f = static_cast<int>(tensor->dimensions[1]);
@@ -345,6 +350,11 @@ Result<ModelWeights> ModelLoader::loadGGUF(const std::string &path, ModelConfig 
         lm_t = emb;
         TLLM_INFO("Tied output embedding detected: lm_head uses token_embd.weight");
     }
+    if (lm_t->dimensions.size() < 2) {
+        cleanup_on_error();
+        return Result<ModelWeights>::err("LM head tensor " + lm_t->name +
+                                         " has <2 dimensions");
+    }
     auto lm_r = load_quantized(lm_t);
     if (lm_r.isErr()) { cleanup_on_error(); return Result<ModelWeights>::err("LM head: " + lm_r.error()); }
     weights.lm_head = lm_r.value();
@@ -373,6 +383,13 @@ Result<ModelWeights> ModelLoader::loadGGUF(const std::string &path, ModelConfig 
     success = true;
     return Result<ModelWeights>::ok(std::move(weights));
 
+    } catch (...) {
+        // 修复：CUDA_CHECK(cudaMalloc/cudaMemcpy) 抛异常时同样清理已上传
+        // 的 GPU 权重（原 cleanup_on_error 只在显式 isErr() 返回路径执行，
+        // 异常会直接穿透导致 GPU 内存泄漏）。
+        cleanup_on_error();
+        throw;
+    }
 }
 
 Result<ModelWeights> ModelLoader::loadBin(const std::string &path, const ModelConfig &config) {
@@ -431,6 +448,7 @@ Result<ModelWeights> ModelLoader::loadBin(const std::string &path, const ModelCo
         }
     };
 
+    try {
     // Read token embedding [vocab_size, hidden_dim] as FP16
     size_t            embed_size = static_cast<size_t>(config.vocab_size) * config.hidden_dim;
     std::vector<half> embed_host(embed_size);
@@ -562,6 +580,11 @@ Result<ModelWeights> ModelLoader::loadBin(const std::string &path, const ModelCo
 
     success = true;
     return Result<ModelWeights>::ok(std::move(weights));
+
+    } catch (...) {
+        cleanup_on_error();
+        throw;
+    }
 }
 
 Result<QuantizedWeight> ModelLoader::loadQuantizedTensor(std::ifstream &file, int rows, int cols,
