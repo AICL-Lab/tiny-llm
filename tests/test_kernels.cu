@@ -1,6 +1,7 @@
 #include "rmsnorm.cuh"
 #include "rope.cuh"
 #include "paged_kv.cuh"
+#include "elementwise.cuh"
 #include "tiny_llm/cuda_utils.h"
 #include <cmath>
 #include <cuda_fp16.h>
@@ -1566,5 +1567,33 @@ TEST(PagedKvTest, PagedLayersDoNotOverlap) {
             EXPECT_NEAR(__half2float(pool[layer_stride + i]), __half2float(src1[i]), 1e-2f)
                 << "layer1 token " << t << " dim " << c << " differs";
         }
+    }
+}
+
+// 修复验证：add_bias_inplace 在非 256 倍数尺寸下（尾块存在越界线程）结果正确
+// 且不越界。修复前 kernel 无条件读写 data[idx]，尾块 idx >= rows*cols 的
+// 线程是未定义行为。
+TEST(ElementwiseTest, AddBiasNonAlignedSizeCorrect) {
+    if (!hasCudaDevice()) GTEST_SKIP() << "No CUDA device available";
+    cudaSetDevice(0);
+
+    const int rows = 1, cols = 896; // total = 896 不是 256 倍数
+    std::vector<half> data(static_cast<size_t>(rows) * cols, __float2half(1.0f));
+    std::vector<half> bias(cols, __float2half(0.5f));
+
+    DeviceBuffer<half> d_data(static_cast<size_t>(rows) * cols);
+    DeviceBuffer<half> d_bias(cols);
+    d_data.copyFromHost(data.data(), data.size());
+    d_bias.copyFromHost(bias.data(), bias.size());
+
+    add_bias_inplace(d_data.data(), d_bias.data(), rows, cols);
+    cudaDeviceSynchronize();
+
+    std::vector<half> out(static_cast<size_t>(rows) * cols);
+    d_data.copyToHost(out.data(), out.size());
+    cudaDeviceSynchronize();
+
+    for (int i = 0; i < rows * cols; ++i) {
+        EXPECT_NEAR(__half2float(out[i]), 1.5f, 1e-6f) << "index " << i;
     }
 }

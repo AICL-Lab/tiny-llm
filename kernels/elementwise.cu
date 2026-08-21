@@ -41,8 +41,9 @@ __global__ void gather_embeddings_kernel(const int *tokens, const half *embeddin
         output[idx] = __float2half(0.0f);
     }
 }
-__global__ void add_bias_kernel(half *data, const half *bias, int cols) {
+__global__ void add_bias_kernel(half *data, const half *bias, int cols, int total) {
     int idx = blockIdx.x * blockDim.x + threadIdx.x;
+    if (idx >= total) return; // 尾块线程越界防护（grid 按 ceil(total/256) 启动）
     float b = __half2float(bias[idx % cols]);
     data[idx] = __float2half(__half2float(data[idx]) + b);
 }
@@ -52,7 +53,7 @@ void add_bias_inplace(half *data, const half *bias, int rows, int cols, cudaStre
     if (rows <= 0 || cols <= 0 || data == nullptr || bias == nullptr) return;
     int total = rows * cols;
     int block = 256;
-    add_bias_kernel<<<(total + block - 1) / block, block, 0, stream>>>(data, bias, cols);
+    add_bias_kernel<<<(total + block - 1) / block, block, 0, stream>>>(data, bias, cols, total);
 }
 
 void add_inplace(half *data, const half *add, int num_elements, cudaStream_t stream) {
