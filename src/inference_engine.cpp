@@ -35,7 +35,11 @@ std::mt19937 &samplingRng(unsigned seed) {
 // avoids the expensive std::discrete_distribution constructor.
 template <typename Probs, typename Indices>
 int sampleFromCdf(Probs &probs, Indices &indices, int count, std::mt19937 &gen) {
-    std::vector<float> cdf(count);
+    // 性能修复：decode 每 token 调用一次，此前每次都分配 count 个 float
+    // （Qwen 词表下 ~600KB）。thread_local 复用容量，resize 只增不缩，
+    // 与 samplingRng 的线程语义一致（每个采样线程独立缓冲）。
+    static thread_local std::vector<float> cdf;
+    cdf.resize(static_cast<size_t>(count));
     float sum = 0.0f;
     for (int i = 0; i < count; ++i) {
         sum += probs[i];
@@ -716,7 +720,8 @@ int InferenceEngine::sampleTemperature(const half *logits, int vocab_size, float
 
     // Sample from the distribution via CDF lookup.
     std::mt19937                    &gen = samplingRng(seed);
-    std::vector<int>                indices(vocab_size);
+    static thread_local std::vector<int> indices;
+    indices.resize(static_cast<size_t>(vocab_size));
     for (int i = 0; i < vocab_size; ++i) indices[i] = i;
     return sampleFromCdf(probs, indices, vocab_size, gen);
 }
@@ -755,9 +760,10 @@ int InferenceEngine::sampleTopK(const half *logits, int vocab_size, int k, float
 
     // Sample (CDF lookup; logit_pairs[sampled].second is the token id).
     std::mt19937     &gen = samplingRng(seed);
-    std::vector<int>  indices(k);
-    for (int i = 0; i < k; ++i) indices[i] = i;
-    int pick = sampleFromCdf(probs, indices, k, gen);
+    static thread_local std::vector<int> indices_k;
+    indices_k.resize(static_cast<size_t>(k));
+    for (int i = 0; i < k; ++i) indices_k[i] = i;
+    int pick = sampleFromCdf(probs, indices_k, k, gen);
     return logit_pairs[pick].second;
 }
 
@@ -812,9 +818,10 @@ int InferenceEngine::sampleTopP(const half *logits, int vocab_size, float p, flo
 
     // Sample (CDF lookup over the truncated top-p set).
     std::mt19937     &gen = samplingRng(seed);
-    std::vector<int>  indices(cutoff);
-    for (int i = 0; i < cutoff; ++i) indices[i] = i;
-    int pick = sampleFromCdf(probs, indices, cutoff, gen);
+    static thread_local std::vector<int> indices_p;
+    indices_p.resize(static_cast<size_t>(cutoff));
+    for (int i = 0; i < cutoff; ++i) indices_p[i] = i;
+    int pick = sampleFromCdf(probs, indices_p, cutoff, gen);
     return logit_pairs[pick].second;
 }
 
