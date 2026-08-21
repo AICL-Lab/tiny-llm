@@ -114,7 +114,10 @@ void apply_rope_inplace(half *q, half *k, const float *cos, const float *sin, in
 void apply_rope_inplace(half *q, half *k, const float *cos, const float *sin, int num_tokens,
                         int start_position, int num_q_heads, int num_kv_heads, int head_dim,
                         cudaStream_t stream) {
-    static DeviceBuffer<int> device_pos(1);
+    // thread_local：函数级 static 在多线程并发调用时有数据竞争（copyFromHost
+    // 与 kernel launch 共享同一 device 缓冲）。thread_local 保持"避免每次调用
+    // cudaMalloc"的初衷，同时每线程独立缓冲。
+    static thread_local DeviceBuffer<int> device_pos(1);
     device_pos.copyFromHost(&start_position, 1, stream);
     apply_rope_inplace(q, k, cos, sin, num_tokens, device_pos.data(), num_q_heads, num_kv_heads,
                        head_dim, stream);

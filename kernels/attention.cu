@@ -202,9 +202,10 @@ void attention_decode(const half *query, const half *k_cache, const half *v_cach
 void attention_decode(const half *query, const half *k_cache, const half *v_cache, half *output,
                       float scale, int num_q_heads, int num_kv_heads, int visible_len, int head_dim,
                       cudaStream_t stream) {
-    // 函数级 static：避免测试场景每次调用都 cudaMalloc。CUDA 上下文在
-    // 首次调用前已初始化。
-    static DeviceBuffer<int> device_len(1);
+    // 函数级 thread_local：避免测试场景每次调用都 cudaMalloc。CUDA 上下文在
+    // 首次调用前已初始化。用 thread_local 而非 plain static：多线程并发调用
+    // 旧签名封装时会竞争同一 device 缓冲。
+    static thread_local DeviceBuffer<int> device_len(1);
     device_len.copyFromHost(&visible_len, 1, stream);
     attention_decode(query, k_cache, v_cache, output, scale, num_q_heads, num_kv_heads,
                      device_len.data(), head_dim, stream);
