@@ -129,6 +129,18 @@ class Validator {
             return Result<void>::err("num_kv_heads must be positive: " +
                                      std::to_string(config.num_kv_heads));
         }
+        // 修复：GQA 映射与 head_dim 派生依赖整除，静默截断会导致 kv_head
+        // 映射错位/注意力维度错误，这里显式校验（畸形配置直接报错）。
+        if (config.num_heads % config.num_kv_heads != 0) {
+            return Result<void>::err("num_heads must be divisible by num_kv_heads: " +
+                                     std::to_string(config.num_heads) + " % " +
+                                     std::to_string(config.num_kv_heads) + " != 0");
+        }
+        if (config.hidden_dim % config.num_heads != 0) {
+            return Result<void>::err("hidden_dim must be divisible by num_heads: " +
+                                     std::to_string(config.hidden_dim) + " % " +
+                                     std::to_string(config.num_heads) + " != 0");
+        }
         if (config.head_dim <= 0) {
             return Result<void>::err("head_dim must be positive: " +
                                      std::to_string(config.head_dim));

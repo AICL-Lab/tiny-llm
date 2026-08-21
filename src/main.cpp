@@ -317,7 +317,16 @@ int main(int argc, char **argv) {
                 std::cerr << "--max-tokens requires a value" << std::endl;
                 return 1;
             }
-            max_tokens = std::stoi(argv[++i]);
+            try {
+                max_tokens = std::stoi(argv[++i]);
+            } catch (const std::exception &) {
+                std::cerr << "--max-tokens requires an integer, got: " << argv[i] << std::endl;
+                return 1;
+            }
+            if (max_tokens <= 0) {
+                std::cerr << "--max-tokens must be positive: " << max_tokens << std::endl;
+                return 1;
+            }
         } else if (arg == "--show-tokens") {
             show_tokens = true;
         } else if (arg == "--use-reference") {
