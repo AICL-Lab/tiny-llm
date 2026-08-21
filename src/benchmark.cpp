@@ -166,6 +166,15 @@ int runBenchmark(const BenchOptions &opt) {
     int                 last_generated = 0;
 
     const int total_runs = opt.warmup + opt.iters;
+
+    // 修复：首次 decodeStep 会执行一次性 CUDA Graph capture（direct execute +
+    // 同步 + capture 记录 + EndCapture），开销可达数 ms。若落在测量内（如
+    // --warmup 0 时第 0 轮 TTFT），启动开销会被计入 TTFT、decode = total −
+    // TTFT 被低估，TPOT 系统性偏低。采样循环前显式预热一次，保证所有
+    // 正式测量都走在 graph 重放路径上。
+    int warm_gen = 0;
+    timeGenerate(engine.get(), prompt_tokens, opt.max_tokens, &warm_gen);
+
     for (int i = 0; i < total_runs; ++i) {
         // TTFT：单 token generate 的墙钟 ≈ prefill + 第一次 logits。
         int gen1 = 0;
