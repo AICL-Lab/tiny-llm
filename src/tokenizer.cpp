@@ -37,7 +37,11 @@ std::vector<Cp> decodeCps(const std::string &s) {
             len = 2;
         if (i + len > s.size())
             len = s.size() - i; // 残缺尾部按字节处理
-        uint32_t cp = s[i];
+        // 修复：len==1（ASCII 或孤立 continuation byte 0x80-0xBF）时用
+        // 无符号字节值。此前 `uint32_t cp = s[i]` 在 char 为有符号时会把
+        // 0x80-0xBF 符号扩展成 0xFFFFFF80，导致后续 isLetter/预分词查表
+        // 错分类。len>=2 分支随后覆盖 cp，不受影响。
+        uint32_t cp = b;
         if (len == 2)
             cp = ((b & 0x1Fu) << 6) | (static_cast<uint8_t>(s[i + 1]) & 0x3Fu);
         else if (len == 3)
