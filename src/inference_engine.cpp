@@ -96,6 +96,7 @@ Result<std::unique_ptr<InferenceEngine>> InferenceEngine::load(const std::string
 
 InferenceEngine::InferenceEngine(const ModelConfig &config, ModelWeights &&weights)
     : config_(config), weights_(std::move(weights)) {
+    try {
 
     // Create CUDA stream
     CUDA_CHECK(cudaStreamCreate(&stream_));
@@ -158,6 +159,34 @@ InferenceEngine::InferenceEngine(const ModelConfig &config, ModelWeights &&weigh
     kernels::rope_precompute_cache(rope_cos_, rope_sin_, config_.max_seq_len, config_.head_dim,
                                    config_.rope_theta, stream_);
     CUDA_CHECK(cudaStreamSynchronize(stream_));
+
+    } catch (...) {
+        // 修复：构造中途抛异常（如 workspace OOM / CUDA_CHECK 失败）时，
+        // 清理已分配的裸指针 GPU 资源（workspace_/kv_cache_/layers_ 是 RAII
+        // 成员会自动析构），并释放已转移所有权的 weights，再重新抛出。
+        if (stream_) {
+            cudaStreamDestroy(stream_);
+            stream_ = nullptr;
+        }
+        if (hidden_states_) {
+            cudaFree(hidden_states_);
+            hidden_states_ = nullptr;
+        }
+        if (logits_) {
+            cudaFree(logits_);
+            logits_ = nullptr;
+        }
+        if (rope_cos_) {
+            cudaFree(rope_cos_);
+            rope_cos_ = nullptr;
+        }
+        if (rope_sin_) {
+            cudaFree(rope_sin_);
+            rope_sin_ = nullptr;
+        }
+        ModelLoader::freeWeights(weights_);
+        throw;
+    }
 }
 
 InferenceEngine::~InferenceEngine() {
