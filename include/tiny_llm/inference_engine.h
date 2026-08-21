@@ -13,14 +13,6 @@
 
 namespace tiny_llm {
 
-// Sampling strategies
-enum class SamplingStrategy {
-    GREEDY,      // argmax
-    TEMPERATURE, // temperature scaling + multinomial
-    TOP_K,       // top-k filtering
-    TOP_P        // nucleus sampling
-};
-
 // Inference engine for LLM text generation
 class InferenceEngine {
   public:

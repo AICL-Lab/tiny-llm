@@ -70,55 +70,8 @@ __device__ __forceinline__ float warp_softmax(float score, int valid_lanes) {
     // Normalize
     return exp_score / (sum_exp + 1e-6f);
 }
-
-// Block-level reduction using shared memory and warp shuffles
-template <int BLOCK_SIZE>
-__device__ __forceinline__ float block_reduce_sum(float val, float *shared_mem) {
-    int lane = threadIdx.x % 32;
-    int warp_id = threadIdx.x / 32;
-
-    // Warp-level reduction
-    val = warp_reduce_sum(val);
-
-    // Write warp results to shared memory
-    if (lane == 0) {
-        shared_mem[warp_id] = val;
-    }
-    __syncthreads();
-
-    // Final reduction in first warp
-    constexpr int NUM_WARPS = BLOCK_SIZE / 32;
-    if (warp_id == 0) {
-        val = (lane < NUM_WARPS) ? shared_mem[lane] : 0.0f;
-        val = warp_reduce_sum(val);
-    }
-
-    return val;
-}
-
-template <int BLOCK_SIZE>
-__device__ __forceinline__ float block_reduce_max(float val, float *shared_mem) {
-    int lane = threadIdx.x % 32;
-    int warp_id = threadIdx.x / 32;
-
-    // Warp-level reduction
-    val = warp_reduce_max(val);
-
-    // Write warp results to shared memory
-    if (lane == 0) {
-        shared_mem[warp_id] = val;
-    }
-    __syncthreads();
-
-    // Final reduction in first warp
-    constexpr int NUM_WARPS = BLOCK_SIZE / 32;
-    if (warp_id == 0) {
-        val = (lane < NUM_WARPS) ? shared_mem[lane] : -INFINITY;
-        val = warp_reduce_max(val);
-    }
-
-    return val;
-}
+// 注：模板版 block_reduce_sum/max 已删除——结果只落在 warp 0、不跨 warp 广播，
+// 属易误用陷阱；生产路径使用 attention.cu 中带广播的 block_reduce_*_dyn。
 
 } // namespace kernels
 } // namespace tiny_llm
