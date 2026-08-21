@@ -61,18 +61,30 @@ class InferenceEngine {
     static int sampleTopP(const half *logits, int vocab_size, float p, float temperature,
                           unsigned seed = 0);
 
+    // repetition penalty（llama.cpp 语义，public for testing）：
+    // 对 past_tokens 中已出现 token 的 logit 施加惩罚，负 logit × penalty、
+    // 正 logit ÷ penalty。penalty==1.0f 或 past_tokens 为空时为 no-op。
+    static void applyRepetitionPenalty(half *logits, const std::vector<int> &past_tokens,
+                                       float penalty, int vocab_size);
+
   private:
     // Prefill phase: process all prompt tokens
     Result<void> prefill(const std::vector<int> &tokens, int seq_id);
 
     // Decode phase: generate one token
-    Result<int> decodeStep(int seq_id, int position, int token_id, const GenerationConfig &config);
+    // past_tokens: 已生成 token 序列（含 prompt），供 repetition_penalty 使用。
+    Result<int> decodeStep(int seq_id, int position, int token_id, const GenerationConfig &config,
+                           const std::vector<int> &past_tokens);
 
     // Sample from a single hidden state
-    int sampleFromHidden(half *hidden_state, const GenerationConfig &config);
+    int sampleFromHidden(half *hidden_state, const GenerationConfig &config,
+                         const std::vector<int> &past_tokens);
 
     // Sample from logits based on config
-    int sample(const half *logits, const GenerationConfig &config);
+    // past_tokens: 已生成 token 序列，repetition_penalty != 1.0 时对其中
+    // 出现过的 token 的 logit 施加惩罚后再采样。
+    int sample(const half *logits, const GenerationConfig &config,
+               const std::vector<int> &past_tokens);
 
     // Embedding lookup
     void embedTokens(const int *tokens, int num_tokens, half *output);
@@ -120,7 +132,7 @@ class InferenceEngine {
     Result<void> runDecodeDevicePath(half *token_state, int seq_id, int position);
 
     // 任务 3.2：从 logits_ 采样（sync + D2H + sample，graph 不覆盖）。
-    int sampleFromLogits(const GenerationConfig &config);
+    int sampleFromLogits(const GenerationConfig &config, const std::vector<int> &past_tokens);
 
     // TLLM-003: RoPE cos/sin half cache (FP32)
     float *rope_cos_ = nullptr;

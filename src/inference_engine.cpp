@@ -291,11 +291,14 @@ Result<std::vector<int>> InferenceEngine::generate(const std::vector<int> &promp
     int  position = static_cast<int>(prompt_tokens.size());
     int  prev_token = prompt_tokens.empty() ? config_.bos_token_id : prompt_tokens.back();
     int  generated = 0;
+    // repetition_penalty 依赖"已见 token"集合（prompt + 已生成）
+    std::vector<int> past_tokens = prompt_tokens;
 
     if (!prompt_tokens.empty() && position > 0 && generated < config.max_new_tokens) {
         half *last_hidden = hidden_states_ + (position - 1) * config_.hidden_dim;
-        int   next_token = sampleFromHidden(last_hidden, config);
+        int   next_token = sampleFromHidden(last_hidden, config, past_tokens);
         output_tokens.push_back(next_token);
+        past_tokens.push_back(next_token);
         ++generated;
 
         if (next_token == config_.eos_token_id) {
@@ -320,7 +323,7 @@ Result<std::vector<int>> InferenceEngine::generate(const std::vector<int> &promp
     }
 
     while (generated < config.max_new_tokens && position < config_.max_seq_len) {
-        auto decode_result = decodeStep(seq_id, position, prev_token, config);
+        auto decode_result = decodeStep(seq_id, position, prev_token, config, past_tokens);
         if (decode_result.isErr()) {
             TLLM_ERROR("generate: decodeStep failed at position {}: {}", position,
                        decode_result.error());
@@ -329,6 +332,7 @@ Result<std::vector<int>> InferenceEngine::generate(const std::vector<int> &promp
         }
         int next_token = decode_result.value();
         output_tokens.push_back(next_token);
+        past_tokens.push_back(next_token);
         ++generated;
 
         // Check for EOS
@@ -415,7 +419,8 @@ Result<void> InferenceEngine::prefill(const std::vector<int> &tokens, int seq_id
 }
 
 Result<int> InferenceEngine::decodeStep(int seq_id, int position, int token_id,
-                                          const GenerationConfig &config) {
+                                          const GenerationConfig &config,
+                                          const std::vector<int> &past_tokens) {
     // 任务 3.2：decode 固定使用 hidden_states_ 的最后一行（不随 position 变），
     // 使 graph 捕获的地址可无更新重放。该行只在单次 decode step 内使用，
     // prefill 行（0..num_tokens-1）不受影响。
@@ -506,7 +511,7 @@ Result<int> InferenceEngine::decodeStep(int seq_id, int position, int token_id,
         return Result<int>::err(advance_result.error());
     }
 
-    return Result<int>::ok(sampleFromLogits(config));
+    return Result<int>::ok(sampleFromLogits(config, past_tokens));
 }
 
 // 任务 3.2：decode 的确定性 device 序列 —— graph 捕获与直接执行共用。
@@ -532,20 +537,22 @@ Result<void> InferenceEngine::runDecodeDevicePath(half *token_state, int seq_id,
 }
 
 // 任务 3.2：从 logits_ 采样（graph 不覆盖的 host 侧部分）。
-int InferenceEngine::sampleFromLogits(const GenerationConfig &config) {
+int InferenceEngine::sampleFromLogits(const GenerationConfig &config,
+                                      const std::vector<int> &past_tokens) {
     CUDA_CHECK(cudaStreamSynchronize(stream_));
 
     std::vector<half> h_logits(config_.vocab_size);
     CUDA_CHECK(cudaMemcpy(h_logits.data(), logits_, config_.vocab_size * sizeof(half),
                           cudaMemcpyDeviceToHost));
 
-    return sample(h_logits.data(), config);
+    return sample(h_logits.data(), config, past_tokens);
 }
 
-int InferenceEngine::sampleFromHidden(half *hidden_state, const GenerationConfig &config) {
+int InferenceEngine::sampleFromHidden(half *hidden_state, const GenerationConfig &config,
+                                      const std::vector<int> &past_tokens) {
     // 任务 4.3：final norm + lm_head 走共享 helper（与 FFI 路径一致）
     finalNormAndComputeLogits(hidden_state, weights_, config_, logits_, stream_);
-    return sampleFromLogits(config);
+    return sampleFromLogits(config, past_tokens);
 }
 
 void InferenceEngine::embedTokens(const int *tokens, int num_tokens, half *output) {
@@ -577,20 +584,46 @@ void InferenceEngine::finalNorm(const half *input, half *output, int num_tokens)
     }
 }
 
-int InferenceEngine::sample(const half *logits, const GenerationConfig &config) {
+void InferenceEngine::applyRepetitionPenalty(half *logits, const std::vector<int> &past_tokens,
+                                            float penalty, int vocab_size) {
+    if (penalty == 1.0f || past_tokens.empty() || logits == nullptr || vocab_size <= 0) {
+        return;
+    }
+    for (int id : past_tokens) {
+        if (id < 0 || id >= vocab_size) continue;
+        float v = __half2float(logits[id]);
+        v = (v < 0.0f) ? v * penalty : v / penalty;
+        logits[id] = __float2half(v);
+    }
+}
+
+int InferenceEngine::sample(const half *logits, const GenerationConfig &config,
+                            const std::vector<int> &past_tokens) {
+    // repetition_penalty（llama.cpp 语义）：对"已见 token"的 logit 施加惩罚，
+    // 负 logit 乘 penalty、正 logit 除 penalty，再走采样分发。penalty==1.0
+    // 或无可查历史时零开销直通。
+    const half *effective = logits;
+    std::vector<half> penalized;
+    if (config.repetition_penalty != 1.0f && !past_tokens.empty()) {
+        penalized.assign(logits, logits + config_.vocab_size);
+        applyRepetitionPenalty(penalized.data(), past_tokens, config.repetition_penalty,
+                               config_.vocab_size);
+        effective = penalized.data();
+    }
+
     if (!config.do_sample) {
-        return sampleGreedy(logits, config_.vocab_size);
+        return sampleGreedy(effective, config_.vocab_size);
     }
 
     if (config.top_p < 1.0f) {
-        return sampleTopP(logits, config_.vocab_size, config.top_p, config.temperature);
+        return sampleTopP(effective, config_.vocab_size, config.top_p, config.temperature);
     }
 
     if (config.top_k > 0) {
-        return sampleTopK(logits, config_.vocab_size, config.top_k, config.temperature);
+        return sampleTopK(effective, config_.vocab_size, config.top_k, config.temperature);
     }
 
-    return sampleTemperature(logits, config_.vocab_size, config.temperature);
+    return sampleTemperature(effective, config_.vocab_size, config.temperature);
 }
 
 // Greedy sampling: return argmax

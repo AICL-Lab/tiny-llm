@@ -628,3 +628,46 @@ RC_GTEST_FIXTURE_PROP(SamplingPropertyTest, TopPSamplingValidRange,
     RC_ASSERT(result < vocab_size);
 }
 #endif
+
+// 修复验证：repetition_penalty 逻辑（applyRepetitionPenalty，llama.cpp 语义）。
+// 正 logit 除以 penalty、负 logit 乘以 penalty；penalty==1.0 或空历史为 no-op。
+TEST(RepetitionPenaltyTest, AppliesLlamaSemantics) {
+    // 正 logit：token 0 在历史中，penalty=2.0 → 1.0/2 = 0.5
+    std::vector<half> logits = {__float2half(1.0f), __float2half(1.0f)};
+    InferenceEngine::applyRepetitionPenalty(logits.data(), {0}, 2.0f, 2);
+    EXPECT_NEAR(__half2float(logits[0]), 0.5f, 1e-6f);
+    EXPECT_NEAR(__half2float(logits[1]), 1.0f, 1e-6f);
+
+    // 负 logit：token 0 在历史中，penalty=2.0 → -1.0*2 = -2.0
+    std::vector<half> neg = {__float2half(-1.0f), __float2half(-1.0f)};
+    InferenceEngine::applyRepetitionPenalty(neg.data(), {0}, 2.0f, 2);
+    EXPECT_NEAR(__half2float(neg[0]), -2.0f, 1e-6f);
+    EXPECT_NEAR(__half2float(neg[1]), -1.0f, 1e-6f);
+
+    // penalty == 1.0 → no-op
+    std::vector<half> same = {__float2half(0.25f), __float2half(0.75f)};
+    InferenceEngine::applyRepetitionPenalty(same.data(), {0}, 1.0f, 2);
+    EXPECT_NEAR(__half2float(same[0]), 0.25f, 1e-6f);
+    EXPECT_NEAR(__half2float(same[1]), 0.75f, 1e-6f);
+
+    // 空历史 → no-op
+    std::vector<half> none = {__float2half(0.25f), __float2half(0.75f)};
+    InferenceEngine::applyRepetitionPenalty(none.data(), {}, 2.0f, 2);
+    EXPECT_NEAR(__half2float(none[0]), 0.25f, 1e-6f);
+
+    // 越界 token id 被忽略
+    std::vector<half> oob = {__float2half(0.25f), __float2half(0.75f)};
+    InferenceEngine::applyRepetitionPenalty(oob.data(), {5, -1, 100}, 2.0f, 2);
+    EXPECT_NEAR(__half2float(oob[0]), 0.25f, 1e-6f);
+    EXPECT_NEAR(__half2float(oob[1]), 0.75f, 1e-6f);
+}
+
+// 修复验证：惩罚后 greedy 选择会避开历史 token（功能端到端语义）。
+TEST(RepetitionPenaltyTest, AffectsGreedySelection) {
+    // 两个 token logit 相等，token 0 在历史中 → 惩罚后 token 1 胜出
+    std::vector<half> logits = {__float2half(1.0f), __float2half(1.0f)};
+    std::vector<half> penalized = logits;
+    InferenceEngine::applyRepetitionPenalty(penalized.data(), {0}, 2.0f, 2);
+    int pick = InferenceEngine::sampleGreedy(penalized.data(), 2);
+    EXPECT_EQ(pick, 1) << "重复 token 应被惩罚降低概率";
+}
