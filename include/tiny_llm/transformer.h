@@ -61,9 +61,8 @@ class TransformerLayer {
     TransformerLayer(const TransformerLayer &) = delete;
     TransformerLayer &operator=(const TransformerLayer &) = delete;
 
-    // Move constructible
-    TransformerLayer(TransformerLayer &&other) noexcept;
-    TransformerLayer &operator=(TransformerLayer &&other) noexcept;
+    // 不可移动：weights_/config_ 为 const 引用成员（见 transformer.cpp 说明），
+    // 调用方一律用 unique_ptr 持有。
 
     // Forward pass for single token (decode phase)
     // hidden_states: [batch_size, hidden_dim] - input and output

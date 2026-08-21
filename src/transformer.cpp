@@ -103,20 +103,9 @@ TransformerLayer::TransformerLayer(int layer_idx, const TransformerWeights &weig
 
 TransformerLayer::~TransformerLayer() {} // workspace 由引擎统一管理
 
-TransformerLayer::TransformerLayer(TransformerLayer &&other) noexcept
-    : layer_idx_(other.layer_idx_), weights_(other.weights_), config_(other.config_),
-      ws_(other.ws_) {
-    other.ws_ = nullptr;
-}
-
-TransformerLayer &TransformerLayer::operator=(TransformerLayer &&other) noexcept {
-    if (this != &other) {
-        layer_idx_ = other.layer_idx_;
-        ws_ = other.ws_;
-        other.ws_ = nullptr;
-    }
-    return *this;
-}
+// 注意：本类不可复制也不可移动——weights_/config_ 是 const 引用成员，移动语义
+// 无法重绑定它们（旧版移动赋值只更新 layer_idx_/ws_，会静默产生指向错误权重
+// 的对象）。所有调用方均以 unique_ptr 持有（make_unique 原地构造），无需移动。
 
 Result<void> TransformerLayer::forward(half *hidden_states, KVCacheManager &kv_cache,
                                          int seq_id, int position, const int *decode_len,
