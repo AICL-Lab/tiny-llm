@@ -255,6 +255,22 @@ int runBenchmark(const BenchOptions &opt) {
 
 int main(int argc, char **argv) {
     BenchOptions opt;
+    // 修复：std::stoi 对非数字输入抛 std::invalid_argument、超范围抛
+    // std::out_of_range，未捕获会直接 abort。统一在此解析并校验。
+    auto parsePositive = [](const char *raw, const char *opt_name, int minimum,
+                            int *out) -> bool {
+        try {
+            *out = std::stoi(raw);
+        } catch (const std::exception &) {
+            std::cerr << opt_name << " requires an integer, got: " << raw << std::endl;
+            return false;
+        }
+        if (*out < minimum) {
+            std::cerr << opt_name << " must be >= " << minimum << ": " << *out << std::endl;
+            return false;
+        }
+        return true;
+    };
     for (int i = 1; i < argc; ++i) {
         std::string arg = argv[i];
         if (arg == "-h" || arg == "--help") {
@@ -271,19 +287,19 @@ int main(int argc, char **argv) {
                 std::cerr << "--max-tokens requires a value" << std::endl;
                 return 1;
             }
-            opt.max_tokens = std::stoi(argv[++i]);
+            if (!parsePositive(argv[++i], "--max-tokens", 1, &opt.max_tokens)) return 1;
         } else if (arg == "--warmup") {
             if (i + 1 >= argc) {
                 std::cerr << "--warmup requires a value" << std::endl;
                 return 1;
             }
-            opt.warmup = std::stoi(argv[++i]);
+            if (!parsePositive(argv[++i], "--warmup", 0, &opt.warmup)) return 1;
         } else if (arg == "--iters") {
             if (i + 1 >= argc) {
                 std::cerr << "--iters requires a value" << std::endl;
                 return 1;
             }
-            opt.iters = std::stoi(argv[++i]);
+            if (!parsePositive(argv[++i], "--iters", 1, &opt.iters)) return 1;
         } else if (arg == "--json") {
             opt.json = true;
         } else if (arg == "--graphs") {
