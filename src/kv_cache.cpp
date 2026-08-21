@@ -97,6 +97,12 @@ Result<int> KVCacheManager::allocateSequence(int max_len) {
 }
 
 Result<int> KVCacheManager::allocateSequence(int seq_id, int max_len) {
+    // 修复：重复分配同一 seq_id 会覆盖 seq_to_slot_ 映射，旧 slot 永久泄漏
+    // （active=true 但失去引用，无法 release）。显式拒绝重复分配。
+    if (seq_to_slot_.find(seq_id) != seq_to_slot_.end()) {
+        return Result<int>::err("Sequence already allocated: " + std::to_string(seq_id));
+    }
+
     // Validate max_len
     if (max_len <= 0 || max_len > config_.max_seq_len) {
         return Result<int>::err("Invalid max_len: " + std::to_string(max_len) + " (must be 1-" +

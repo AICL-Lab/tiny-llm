@@ -466,4 +466,21 @@ RC_GTEST_FIXTURE_PROP(KVCachePropertyTest, ExhaustionInvariant, ()) {
   auto result2 = cache->allocateSequence(64);
   RC_ASSERT(result2.isOk());
 }
+// 修复验证：同一 seq_id 未释放时二次分配必须被拒绝（避免 slot 泄漏）。
+TEST_F(KVCacheTest, DuplicateSeqIdRejected) {
+    auto config = createConfig();
+    auto cache = createCache(config);
+    ASSERT_NE(cache, nullptr);
+
+    auto r1 = cache->allocateSequence(42, 64);
+    ASSERT_TRUE(r1.isOk()) << r1.error();
+    auto r2 = cache->allocateSequence(42, 64);
+    EXPECT_TRUE(r2.isErr()) << "duplicate seq_id allocation must be rejected";
+    EXPECT_EQ(cache->getActiveSequenceCount(), 1) << "no new slot should be consumed";
+
+    // 释放后可以重新分配同一 id
+    ASSERT_TRUE(cache->releaseSequence(42).isOk());
+    auto r3 = cache->allocateSequence(42, 64);
+    EXPECT_TRUE(r3.isOk()) << r3.error();
+}
 #endif

@@ -272,6 +272,13 @@ int tinyllm_allocate_sequence(TinyLlmHandle *handle, int seq_id, int num_tokens)
     try {
         if (h->paged_kv) {
             // 策略 1：分页 KV 由调用方管理块表；这里只登记序列。
+            // 修复：重复分配同一 seq_id 会覆盖登记并泄漏旧序列状态，显式拒绝。
+            if (h->sequences.count(seq_id) != 0) {
+                if (std::getenv("TLLM_FFI_DEBUG")) {
+                    fprintf(stderr, "  [ffi] allocate_sequence(%d) already allocated\n", seq_id);
+                }
+                return TLLM_ERR;
+            }
             SeqState st;
             st.allocated = true;
             h->sequences[seq_id] = st;
@@ -332,6 +339,12 @@ int tinyllm_step(TinyLlmHandle *handle, const int *seq_ids, const int *input_tok
     auto *h = reinterpret_cast<TinyLlmHandleImpl *>(handle);
     const int hidden = h->config.hidden_dim;
 
+    // 修复：logprobs_k 必须 <= vocab_size，否则 compute_logprobs 的 top-k
+    // 缓冲区语义越界（外部接口防御）。
+    if (logprobs_k > h->config.vocab_size) {
+        return TLLM_ERR;
+    }
+
     int offset = 0;
     int table_offset = 0; // 扁平化 block_tables 中前面序列块数之和（策略 1）
     for (int s = 0; s < num_sequences; ++s) {
@@ -383,6 +396,9 @@ int tinyllm_step(TinyLlmHandle *handle, const int *seq_ids, const int *input_tok
                 view.max_visible_tokens = h->max_visible_tokens;
 
                 if (is_prefill[s]) {
+                    // 修复：prefill 长度必须 <= max_seq_len，否则 hidden_buf /
+                    // RoPE 表越界（hidden_buf 按 max_seq_len 分配）。
+                    if (len > h->config.max_seq_len) return TLLM_ERR;
                     // Prefill：从绝对位置 0 写入整个 prompt
                     view.position = 0;
                     view.decode_len = nullptr;
@@ -407,6 +423,9 @@ int tinyllm_step(TinyLlmHandle *handle, const int *seq_ids, const int *input_tok
                 } else {
                     // Decode：单个新 token（绝对位置 = st.position）
                     const int pos = st.position;
+                    // 修复：绝对位置必须 < max_seq_len，否则 hidden_buf 写入
+                    // 与 RoPE cos/sin 表读取越界。
+                    if (pos >= h->config.max_seq_len) return TLLM_ERR;
                     const int visible = pos + 1;
                     h->decode_len.copyFromHost(&visible, 1, h->stream);
                     h->rope_pos.copyFromHost(&pos, 1, h->stream);
@@ -432,6 +451,8 @@ int tinyllm_step(TinyLlmHandle *handle, const int *seq_ids, const int *input_tok
                 }
             } else if (is_prefill[s]) {
                 // Prefill：处理完整 prompt，输出最后一个 hidden 的下一 token
+                // 修复：prefill 长度必须 <= max_seq_len（hidden_buf 越界防护）。
+                if (len > h->config.max_seq_len) return TLLM_ERR;
                 bool dbg = std::getenv("TLLM_FFI_DEBUG") != nullptr;
                 embed(h, toks, len, h->hidden_buf);
                 if (dbg) {
@@ -477,6 +498,8 @@ int tinyllm_step(TinyLlmHandle *handle, const int *seq_ids, const int *input_tok
             } else {
                 // Decode：单个新 token（绝对位置由引擎跟踪，与 KV 写入一致）
                 const int pos = st.position;
+                // 修复：绝对位置必须 < max_seq_len（hidden_buf / RoPE 表越界防护）。
+                if (pos >= h->config.max_seq_len) return TLLM_ERR;
                 embed(h, toks, 1, h->hidden_buf + static_cast<size_t>(pos) * hidden);
                 half *token_state = h->hidden_buf + static_cast<size_t>(pos) * hidden;
                 // 任务 3.1/3.2：把 appendKV 后的可见长度、RoPE 位置与
