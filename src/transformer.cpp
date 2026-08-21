@@ -22,15 +22,37 @@ void LayerWorkspace::allocate(const ModelConfig &config) {
     size_t kv_size = static_cast<size_t>(max_tokens) * config.num_kv_heads * config.head_dim;
     size_t ffn_size = static_cast<size_t>(max_tokens) * config.intermediate_dim;
 
-    CUDA_CHECK(cudaMalloc(&norm_output, hidden_size * sizeof(half)));
-    CUDA_CHECK(cudaMalloc(&q_buf, qkv_size * sizeof(half)));
-    CUDA_CHECK(cudaMalloc(&k_buf, kv_size * sizeof(half)));
-    CUDA_CHECK(cudaMalloc(&v_buf, kv_size * sizeof(half)));
-    CUDA_CHECK(cudaMalloc(&attn_output, hidden_size * sizeof(half)));
-    CUDA_CHECK(cudaMalloc(&attn_buf, hidden_size * sizeof(half)));
-    CUDA_CHECK(cudaMalloc(&ffn_gate, ffn_size * sizeof(half)));
-    CUDA_CHECK(cudaMalloc(&ffn_up, ffn_size * sizeof(half)));
-    CUDA_CHECK(cudaMalloc(&ffn_output, hidden_size * sizeof(half)));
+    try {
+        CUDA_CHECK(cudaMalloc(&norm_output, hidden_size * sizeof(half)));
+        CUDA_CHECK(cudaMalloc(&q_buf, qkv_size * sizeof(half)));
+        CUDA_CHECK(cudaMalloc(&k_buf, kv_size * sizeof(half)));
+        CUDA_CHECK(cudaMalloc(&v_buf, kv_size * sizeof(half)));
+        CUDA_CHECK(cudaMalloc(&attn_output, hidden_size * sizeof(half)));
+        CUDA_CHECK(cudaMalloc(&attn_buf, hidden_size * sizeof(half)));
+        CUDA_CHECK(cudaMalloc(&ffn_gate, ffn_size * sizeof(half)));
+        CUDA_CHECK(cudaMalloc(&ffn_up, ffn_size * sizeof(half)));
+        CUDA_CHECK(cudaMalloc(&ffn_output, hidden_size * sizeof(half)));
+    } catch (...) {
+        // 修复：中途任一 cudaMalloc 失败时释放已分配指针再重抛。allocated
+        // 尚未置位，析构路径的 free() 会因早退检查跳过，必须在此手动清理，
+        // 否则已分配的 GPU 内存随异常永久泄漏。
+        auto cleanup = [](half *&ptr) {
+            if (ptr) {
+                cudaFree(ptr);
+                ptr = nullptr;
+            }
+        };
+        cleanup(norm_output);
+        cleanup(q_buf);
+        cleanup(k_buf);
+        cleanup(v_buf);
+        cleanup(attn_output);
+        cleanup(attn_buf);
+        cleanup(ffn_gate);
+        cleanup(ffn_up);
+        cleanup(ffn_output);
+        throw;
+    }
 
     if (std::getenv("TLLM_DEBUG_ZERO")) {
         cudaMemset(norm_output, 0, hidden_size * sizeof(half));
