@@ -240,6 +240,15 @@ TinyLlmHandle *tinyllm_load(const char *model_path, const TinyLlmConfig *config,
                 i, h->weights.layers[i], h->config, &h->workspace));
         }
 
+        // 任务 3.1/3.2：decode 可见长度与 RoPE 位置（device int，graph 前置）
+        h->decode_len = tiny_llm::DeviceBuffer<int>(1);
+        h->rope_pos = tiny_llm::DeviceBuffer<int>(1);
+        // 修复（跨流数据竞争）：先创建工作流，RoPE 预计算在其上 launch 并同步。
+        // 此前预计算在 cudaStreamCreate 之前执行（h->stream 尚为默认流 0），
+        // 而末尾 sync 的是新流，等于从未等待预计算完成——首次推理可能读到
+        // 未写完的 cos/sin 表。
+        CUDA_CHECK(cudaStreamCreate(&h->stream));
+
         // RoPE cache + hidden/logits 缓冲
         int half_d = h->config.head_dim / 2;
         CUDA_CHECK(cudaMalloc(&h->rope_cos,
@@ -253,10 +262,6 @@ TinyLlmHandle *tinyllm_load(const char *model_path, const TinyLlmConfig *config,
                                                   h->config.hidden_dim * sizeof(half)));
         CUDA_CHECK(cudaMalloc(&h->logits_buf,
                               static_cast<size_t>(h->config.vocab_size) * sizeof(half)));
-        // 任务 3.1/3.2：decode 可见长度与 RoPE 位置（device int，graph 前置）
-        h->decode_len = tiny_llm::DeviceBuffer<int>(1);
-        h->rope_pos = tiny_llm::DeviceBuffer<int>(1);
-        CUDA_CHECK(cudaStreamCreate(&h->stream));
         CUDA_CHECK(cudaStreamSynchronize(h->stream));
 
         return reinterpret_cast<TinyLlmHandle *>(h.release());

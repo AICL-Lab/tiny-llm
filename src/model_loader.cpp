@@ -380,6 +380,12 @@ Result<ModelWeights> ModelLoader::loadGGUF(const std::string &path, ModelConfig 
     kernels::transpose_fp16(weights.lm_head_fp16, weights.lm_head_fp16_t, hidden_f, vocab_f,
                             /*stream=*/0);
 
+    // 修复（跨流数据竞争）：上面的 transpose kernel 在默认流上异步执行，而推理
+    // kernel 在引擎私有 stream 上消费 data_t/scales_t/lm_head_fp16_t。加载完成
+    // 与首次使用之间没有其他跨流同步点，必须在此显式等待默认流排空，否则理论上
+    // 首次 decode 可读到未写完的转置权重。
+    CUDA_CHECK(cudaStreamSynchronize(0));
+
     success = true;
     return Result<ModelWeights>::ok(std::move(weights));
 
@@ -578,6 +584,10 @@ Result<ModelWeights> ModelLoader::loadBin(const std::string &path, const ModelCo
     }
     weights.lm_head = lm_result.value();
 
+    // 修复（跨流数据竞争）：loadQuantizedTensor 内的 transpose 在默认流异步执行，
+    // 返回前显式等待，保证调用方拿到句柄时转置权重已就绪。
+    CUDA_CHECK(cudaStreamSynchronize(0));
+
     success = true;
     return Result<ModelWeights>::ok(std::move(weights));
 
@@ -626,6 +636,10 @@ Result<QuantizedWeight> ModelLoader::loadQuantizedTensor(std::ifstream &file, in
     CUDA_CHECK(cudaMalloc(&qw.scales_t, scale_size * sizeof(half)));
     kernels::transpose_int8(qw.data, qw.data_t, qw.rows, qw.cols, /*stream=*/0);
     kernels::transpose_scales(qw.scales, qw.scales_t, qw.scaleRows(), qw.cols, /*stream=*/0);
+
+    // 修复（跨流数据竞争）：本方法是公开 API，调用方可能在任意 stream 上消费
+    // data_t/scales_t；返回前等待默认流，保证转置副本已就绪。
+    CUDA_CHECK(cudaStreamSynchronize(0));
 
     return Result<QuantizedWeight>::ok(qw);
 }
