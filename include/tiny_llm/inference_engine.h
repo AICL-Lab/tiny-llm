@@ -118,6 +118,12 @@ class InferenceEngine {
     // rope_pos_: RoPE 起始绝对位置（device int，graph 重放前置）。
     DeviceBuffer<int> graph_token_;
     DeviceBuffer<int> rope_pos_;
+    // 修复：上述 H2D 拷贝的 host 源缓冲（成员变量，稳定地址）。CUDA Graph
+    // capture 会固化 H2D memcpy 的 host 指针并在每次重放时读取当前值；若用
+    // 栈/临时变量地址则依赖栈地址复用（未定义行为）。改为成员后重放稳定。
+    int graph_token_host_ = 0;
+    int decode_len_host_ = 0;
+    int rope_pos_host_ = 0;
 
     // 任务 3.2 / C2：CUDA Graph 状态。默认开启 decode graph 捕获/重放；
     // 环境变量 TLLM_CUDA_GRAPHS=0 显式关闭（opt-out）。捕获失败自动回退

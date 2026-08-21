@@ -432,10 +432,15 @@ Result<int> InferenceEngine::decodeStep(int seq_id, int position, int token_id,
     //  - decode_len_ : appendKV 后的可见长度 = getSeqLen + 1（attention）
     //  - rope_pos_   : 本 token 绝对位置（RoPE）
     //  - append_pos_ : append 写位置 = 当前可见长度（KV cache）
-    graph_token_.copyFromHost(&token_id, 1, stream_);
-    const int decode_len = kv_cache_->getSeqLen(seq_id) + 1;
-    decode_len_.copyFromHost(&decode_len, 1, stream_);
-    rope_pos_.copyFromHost(&position, 1, stream_);
+    // 修复：H2D 源一律用成员变量（稳定地址）。CUDA Graph capture 会固化
+    // host 指针并在重放时读取当前值；栈/临时变量地址在函数返回后失效，
+    // 重放正确性此前依赖栈地址复用（未定义行为）。
+    graph_token_host_ = token_id;
+    graph_token_.copyFromHost(&graph_token_host_, 1, stream_);
+    decode_len_host_ = kv_cache_->getSeqLen(seq_id) + 1;
+    decode_len_.copyFromHost(&decode_len_host_, 1, stream_);
+    rope_pos_host_ = position;
+    rope_pos_.copyFromHost(&rope_pos_host_, 1, stream_);
     kv_cache_->setAppendPos(kv_cache_->getSeqLen(seq_id), stream_);
 
     if (cuda_graphs_enabled_ && graph_captured_) {
@@ -473,6 +478,13 @@ Result<int> InferenceEngine::decodeStep(int seq_id, int position, int token_id,
             }
         } catch (const CudaException &e) {
             TLLM_WARN("CUDA Graphs: capture threw ({}), falling back", e.what());
+            // 修复：capture 开始后任何 CUDA 异常都必须结束 capture，否则
+            // stream 会永久停在 capture 状态，后续所有提交持续报错。
+            cudaError_t end_err = cudaStreamEndCapture(stream_, &decode_graph_);
+            if (end_err != cudaSuccess) {
+                TLLM_WARN("CUDA Graphs: cleanup cudaStreamEndCapture after throw: {}",
+                          cudaGetErrorString(end_err));
+            }
             if (decode_graph_) {
                 cudaGraphDestroy(decode_graph_);
                 decode_graph_ = nullptr;

@@ -127,6 +127,10 @@ class KVCacheManager {
 
     // 任务 3.2：append 写位置（device int，CUDA Graph 重放前置）
     DeviceBuffer<int> append_pos_;
+    // 修复：setAppendPos 的 host 源缓冲（成员变量，稳定地址）。CUDA Graph
+    // capture 会固化 H2D memcpy 的 host 指针并在重放时读取，若用栈/临时
+    // 变量地址则依赖栈地址复用（未定义行为）。改为成员变量后重放稳定。
+    int append_pos_host_ = 0;
 };
 
 } // namespace tiny_llm

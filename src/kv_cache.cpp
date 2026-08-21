@@ -268,7 +268,10 @@ Result<void> KVCacheManager::appendKV(int seq_id, int layer_idx, const half *new
 
 void KVCacheManager::setAppendPos(int pos, cudaStream_t stream) {
     if (append_pos_.data() == nullptr) return;
-    append_pos_.copyFromHost(&pos, 1, stream);
+    // 修复：用成员变量 append_pos_host_ 作为 H2D 源（graph capture 会固化
+    // 该指针并在重放时读取当前值；形参 &pos 是栈地址，重放时不可靠）。
+    append_pos_host_ = pos;
+    append_pos_.copyFromHost(&append_pos_host_, 1, stream);
 }
 
 // 任务 3.2：device 写位置版本的 appendKV。
