@@ -1486,9 +1486,9 @@ TEST(PagedKvTest, PagedScatterGatherRoundTrip) {
     d_table.copyFromHost(block_table.data(), block_table.size());
 
     kernels::paged_scatter_blocks(d_src.data(), d_pool.data(), d_table.data(), num_tokens,
-                                  /*position=*/0, block_size, chunk_dim);
+                                  /*position=*/0, block_size, chunk_dim, pool_blocks);
     kernels::paged_gather_blocks(d_dst.data(), d_pool.data(), d_table.data(), num_tokens,
-                                 block_size, chunk_dim);
+                                 block_size, chunk_dim, pool_blocks);
     cudaDeviceSynchronize();
 
     std::vector<half> got(src.size());
@@ -1519,9 +1519,9 @@ TEST(PagedKvTest, PagedGatherPartialVisibility) {
     d_table.copyFromHost(block_table.data(), block_table.size());
 
     kernels::paged_scatter_blocks(d_src.data(), d_pool.data(), d_table.data(), num_tokens, 0,
-                                  block_size, chunk_dim);
+                                  block_size, chunk_dim, pool_blocks);
     kernels::paged_gather_blocks(d_dst.data(), d_pool.data(), d_table.data(), visible_tokens,
-                                 block_size, chunk_dim);
+                                 block_size, chunk_dim, pool_blocks);
     cudaDeviceSynchronize();
 
     // CPU 参考：直接取 src 前 visible_tokens 行
@@ -1555,7 +1555,7 @@ TEST(PagedKvTest, PagedScatterWritesAtAbsolutePosition) {
     d_table.copyFromHost(block_table.data(), block_table.size());
 
     kernels::paged_scatter_blocks(d_src.data(), d_pool.data(), d_table.data(), num_tokens,
-                                  position, block_size, chunk_dim);
+                                  position, block_size, chunk_dim, pool_blocks);
     cudaDeviceSynchronize();
 
     // 期望落在 block_table[1]=5 块的第 4 行（块内 offset = 20 - 1*16 = 4）
@@ -1566,6 +1566,55 @@ TEST(PagedKvTest, PagedScatterWritesAtAbsolutePosition) {
     for (int c = 0; c < chunk_dim; ++c) {
         EXPECT_NEAR(__half2float(pool[expected_base + c]), __half2float(src[c]), 1e-2f)
             << "row 4 of block 5, dim " << c << " differs";
+    }
+}
+
+// P2-19 回归：块表含越界 id 时，scatter 必须跳过写入、gather 写 0，
+// 绝不能越界访存（illegal address 会毒化整个 CUDA 上下文）。
+TEST(PagedKvTest, InvalidBlockIdIsGuardedNotDereferenced) {
+    if (!hasCudaDevice()) GTEST_SKIP() << "No CUDA device available";
+    const int block_size = 16;
+    const int chunk_dim = 64;
+    const int num_tokens = 8;
+    const int pool_blocks = 4;
+
+    const std::vector<half> src = randomFp16(static_cast<size_t>(num_tokens) * chunk_dim, 31);
+    DeviceBuffer<half> d_src(src.size());
+    d_src.copyFromHost(src.data(), src.size());
+
+    // 块表全部越界：负值与 == max_num_blocks
+    const std::vector<int> bad_table = {-1, pool_blocks};
+    DeviceBuffer<int>      d_table(bad_table.size());
+    d_table.copyFromHost(bad_table.data(), bad_table.size());
+
+    // scatter：pool 预填哨兵值，越界 id 不得改动任何槽位
+    DeviceBuffer<half> d_pool(static_cast<size_t>(pool_blocks) * block_size * chunk_dim);
+    const size_t pool_elems = static_cast<size_t>(pool_blocks) * block_size * chunk_dim;
+    std::vector<half>  sentinel(pool_elems, __float2half(7.0f));
+    d_pool.copyFromHost(sentinel.data(), sentinel.size());
+    kernels::paged_scatter_blocks(d_src.data(), d_pool.data(), d_table.data(), num_tokens,
+                                  /*position=*/0, block_size, chunk_dim, pool_blocks);
+    cudaError_t err = cudaDeviceSynchronize();
+    ASSERT_EQ(err, cudaSuccess) << "scatter with bad table must not fault: "
+                                << cudaGetErrorString(err);
+    std::vector<half> pool_after(pool_elems);
+    d_pool.copyToHost(pool_after.data(), pool_after.size());
+    for (size_t i = 0; i < pool_after.size(); ++i) {
+        ASSERT_EQ(__half2float(pool_after[i]), 7.0f)
+            << "pool slot " << i << " was written via invalid block id";
+    }
+
+    // gather：越界 id 对应行写 0，且不得触发 illegal address
+    DeviceBuffer<half> d_dst(static_cast<size_t>(num_tokens) * chunk_dim);
+    kernels::paged_gather_blocks(d_dst.data(), d_pool.data(), d_table.data(), num_tokens,
+                                 block_size, chunk_dim, pool_blocks);
+    err = cudaDeviceSynchronize();
+    ASSERT_EQ(err, cudaSuccess) << "gather with bad table must not fault: "
+                                << cudaGetErrorString(err);
+    std::vector<half> dst(num_tokens * chunk_dim);
+    d_dst.copyToHost(dst.data(), dst.size());
+    for (size_t i = 0; i < dst.size(); ++i) {
+        ASSERT_EQ(__half2float(dst[i]), 0.0f) << "dst[" << i << "] should be zero-filled";
     }
 }
 
@@ -1593,9 +1642,9 @@ TEST(PagedKvTest, PagedLayersDoNotOverlap) {
 
     // 层 0 写 block 0、层 1 写 block 0（不同 layer 偏移）
     kernels::paged_scatter_blocks(d_src0.data(), d_pool.data(), d_table.data(), num_tokens, 0,
-                                  block_size, chunk_dim);
+                                  block_size, chunk_dim, pool_blocks);
     kernels::paged_scatter_blocks(d_src1.data(), d_pool.data() + layer_stride, d_table.data(),
-                                  num_tokens, 0, block_size, chunk_dim);
+                                  num_tokens, 0, block_size, chunk_dim, pool_blocks);
     cudaDeviceSynchronize();
 
     std::vector<half> pool(static_cast<size_t>(num_layers) * layer_stride);

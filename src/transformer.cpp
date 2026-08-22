@@ -382,9 +382,9 @@ Result<void> TransformerLayer::attentionPaged(const half *x, half *output,
 
     // 把本步 K/V scatter 进 pool（允许一次额外显存往返，先正确后优化）
     kernels::paged_scatter_blocks(ws_->k_buf, k_pool_layer, kv.block_table, num_tokens, kv.position,
-                                  kv.block_size, kv_dim, stream);
+                                  kv.block_size, kv_dim, kv.max_num_blocks, stream);
     kernels::paged_scatter_blocks(ws_->v_buf, v_pool_layer, kv.block_table, num_tokens, kv.position,
-                                  kv.block_size, kv_dim, stream);
+                                  kv.block_size, kv_dim, kv.max_num_blocks, stream);
 
     // 可见长度：prefill = num_tokens；decode（num_tokens==1 && decode_len）=
     // kv.position + 1（与 *kv.decode_len 一致）。
@@ -393,9 +393,9 @@ Result<void> TransformerLayer::attentionPaged(const half *x, half *output,
 
     // 把可见区间 gather 到 scratch（连续布局供 attention kernel 使用）
     kernels::paged_gather_blocks(kv.k_scratch, k_pool_layer, kv.block_table, visible,
-                                 kv.block_size, kv_dim, stream);
+                                 kv.block_size, kv_dim, kv.max_num_blocks, stream);
     kernels::paged_gather_blocks(kv.v_scratch, v_pool_layer, kv.block_table, visible,
-                                 kv.block_size, kv_dim, stream);
+                                 kv.block_size, kv_dim, kv.max_num_blocks, stream);
 
     // Attention
     float scale = 1.0f / std::sqrt(static_cast<float>(head_dim));
