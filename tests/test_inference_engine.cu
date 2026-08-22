@@ -671,3 +671,18 @@ TEST(RepetitionPenaltyTest, AffectsGreedySelection) {
     int pick = InferenceEngine::sampleGreedy(penalized.data(), 2);
     EXPECT_EQ(pick, 1) << "重复 token 应被惩罚降低概率";
 }
+
+TEST_F(InferenceEngineTest, TopKTopPSamplingRespectsTopK) {
+    // logits 前 4 个接近（softmax 后概率不可忽略）：只做 top_p 会采到 2/3，
+    // top_k=2 必须把采样范围限制在 {0,1}。
+    const float vals[] = {3.0f, 2.9f, 2.8f, 2.7f, 1.0f, 0.5f, 0.0f, -1.0f};
+    std::vector<half> logits;
+    for (float v : vals) logits.push_back(__float2half(v));
+    const int vocab = static_cast<int>(logits.size());
+
+    for (int i = 0; i < 200; ++i) {
+        int r = InferenceEngine::sampleTopKTopP(logits.data(), vocab, 2, 0.95f, 1.0f, i);
+        EXPECT_GE(r, 0);
+        EXPECT_LT(r, 2) << "sampled outside top-k at iter " << i;
+    }
+}

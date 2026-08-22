@@ -303,15 +303,17 @@ Result<ModelWeights> ModelLoader::loadGGUF(const std::string &path, ModelConfig 
         };
 
         // Qwen2 系 attention 带 bias（Llama 系无此 tensor，缺失时保持 nullptr）
-        auto load_bias = [&](const char *name) -> half * {
+        // R12: tensor 存在但加载失败（IO/内存错误）必须报错——静默降级为
+        // nullptr 会让推理带着缺失的 bias 跑出错误数值。
+        auto load_bias = [&](const char *name) -> Result<half *> {
             auto *t = find_l({name});
-            if (!t) return nullptr;
+            if (!t) return Result<half *>::ok(nullptr);
             auto r = load_fp16(t);
             if (r.isErr()) {
-                TLLM_WARN("layer {} bias {} load failed: {}", layer, name, r.error());
-                return nullptr;
+                return Result<half *>::err("layer " + std::to_string(layer) + " bias " + name +
+                                           " load failed: " + r.error());
             }
-            return r.value();
+            return Result<half *>::ok(r.value());
         };
 
         if (auto r = load_qw(lw.wq, {"attn_q.weight"}); r.isErr()) { cleanup_on_error(); return Result<ModelWeights>::err(r.error()); }
@@ -323,9 +325,15 @@ Result<ModelWeights> ModelLoader::loadGGUF(const std::string &path, ModelConfig 
         if (auto r = load_qw(lw.w3, {"ffn_up.weight"}); r.isErr()) { cleanup_on_error(); return Result<ModelWeights>::err(r.error()); }
 
         // Attention bias（Qwen2 系）
-        lw.wq_bias = load_bias("attn_q.bias");
-        lw.wk_bias = load_bias("attn_k.bias");
-        lw.wv_bias = load_bias("attn_v.bias");
+        auto bq = load_bias("attn_q.bias");
+        if (bq.isErr()) { cleanup_on_error(); return Result<ModelWeights>::err(bq.error()); }
+        lw.wq_bias = bq.value();
+        auto bk = load_bias("attn_k.bias");
+        if (bk.isErr()) { cleanup_on_error(); return Result<ModelWeights>::err(bk.error()); }
+        lw.wk_bias = bk.value();
+        auto bv = load_bias("attn_v.bias");
+        if (bv.isErr()) { cleanup_on_error(); return Result<ModelWeights>::err(bv.error()); }
+        lw.wv_bias = bv.value();
 
         // RMSNorm 权重 (FP16)
         auto att_r = load_fp16(find_l({"attn_norm.weight"}));

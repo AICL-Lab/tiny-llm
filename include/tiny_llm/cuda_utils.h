@@ -183,12 +183,20 @@ class DeviceBuffer {
     size_t   size() const { return count_; }
     size_t   bytes() const { return count_ * sizeof(T); }
 
+    // R8: 超过分配容量的拷贝直接抛异常（越界写 device 内存属于严重错误，
+    // 截断会静默产生坏数据）。
     void copyFromHost(const T *host_data, size_t count, cudaStream_t stream = 0) {
+        if (count > count_) {
+            throw CudaException(cudaErrorInvalidValue, __FILE__, __LINE__);
+        }
         CUDA_CHECK(
             cudaMemcpyAsync(data_, host_data, count * sizeof(T), cudaMemcpyHostToDevice, stream));
     }
 
     void copyToHost(T *host_data, size_t count, cudaStream_t stream = 0) const {
+        if (count > count_) {
+            throw CudaException(cudaErrorInvalidValue, __FILE__, __LINE__);
+        }
         CUDA_CHECK(
             cudaMemcpyAsync(host_data, data_, count * sizeof(T), cudaMemcpyDeviceToHost, stream));
     }

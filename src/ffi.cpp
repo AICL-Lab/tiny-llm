@@ -404,6 +404,9 @@ int tinyllm_step(TinyLlmHandle *handle, const int *seq_ids, const int *input_tok
                     // 修复：prefill 长度必须 <= max_seq_len，否则 hidden_buf /
                     // RoPE 表越界（hidden_buf 按 max_seq_len 分配）。
                     if (len > h->config.max_seq_len) return TLLM_ERR;
+                    // R5: 不支持对同一序列二次 prefill（KV 从位置 0 重写覆盖
+                    // 旧上下文、current_len 双倍累加会静默错乱），显式拒绝。
+                    if (st.position != 0) return TLLM_ERR;
                     // Prefill：从绝对位置 0 写入整个 prompt
                     view.position = 0;
                     view.decode_len = nullptr;
@@ -458,6 +461,9 @@ int tinyllm_step(TinyLlmHandle *handle, const int *seq_ids, const int *input_tok
                 // Prefill：处理完整 prompt，输出最后一个 hidden 的下一 token
                 // 修复：prefill 长度必须 <= max_seq_len（hidden_buf 越界防护）。
                 if (len > h->config.max_seq_len) return TLLM_ERR;
+                // R5: 不支持对同一序列二次 prefill（KV 从位置 0 重写覆盖旧
+                // 上下文、advanceSeqLen 累加后 decode 错乱），显式拒绝。
+                if (st.position != 0) return TLLM_ERR;
                 bool dbg = std::getenv("TLLM_FFI_DEBUG") != nullptr;
                 embed(h, toks, len, h->hidden_buf);
                 if (dbg) {

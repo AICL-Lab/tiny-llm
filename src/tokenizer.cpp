@@ -470,10 +470,14 @@ Result<TokenizerData> loadTokenizerData(const GGUFMetadata &md) {
         d.merges = std::move(r.value());
     if (auto r = md.get<std::vector<int32_t>>("tokenizer.ggml.token_type"); r.isOk())
         d.token_types.assign(r.value().begin(), r.value().end());
-    d.bos_token_id = static_cast<int>(md.getOr<uint32_t>("tokenizer.ggml.bos_token_id", 0));
-    d.eos_token_id = static_cast<int>(md.getOr<uint32_t>("tokenizer.ggml.eos_token_id", 0));
-    d.padding_token_id =
-        static_cast<int>(md.getOr<uint32_t>("tokenizer.ggml.padding_token_id", 0));
+    // R2: 特殊 token id 缺失时必须保持 -1（无效值），不能用 0 兜底——
+    // 0 是合法 token id，add_bos=true 会向序列注入错误的 token。
+    if (auto r = md.get<uint32_t>("tokenizer.ggml.bos_token_id"); r.isOk())
+        d.bos_token_id = static_cast<int>(r.value());
+    if (auto r = md.get<uint32_t>("tokenizer.ggml.eos_token_id"); r.isOk())
+        d.eos_token_id = static_cast<int>(r.value());
+    if (auto r = md.get<uint32_t>("tokenizer.ggml.padding_token_id"); r.isOk())
+        d.padding_token_id = static_cast<int>(r.value());
     d.add_bos_token = md.getOr<bool>("tokenizer.ggml.add_bos_token", false);
     if (d.tokens.empty())
         return Result<TokenizerData>::err("tokenizer.ggml.tokens not found in GGUF metadata");

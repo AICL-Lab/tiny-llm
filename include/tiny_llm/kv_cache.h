@@ -77,6 +77,10 @@ class KVCacheManager {
     // append 写位置（device int）指针，供 appendKV 使用。
     const int *appendPosDevicePtr() const { return append_pos_.data(); }
 
+    // 校验序列剩余容量能否容纳 num_tokens 个新 token（host 侧，CUDA Graph
+    // 重放路径不经过 forward 校验时由调用方显式调用）。
+    Result<void> validateAppendSpace(int seq_id, int num_tokens) const noexcept;
+
     // Advance sequence length after all layers have appended.
     // Call exactly ONCE per logical step, after all layers' appendKV calls.
     // Returns error if sequence not found or invalid num_tokens.

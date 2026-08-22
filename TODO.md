@@ -56,3 +56,43 @@ ctest --test-dir build --output-on-failure --timeout 300
   改 scale=0 反而在量化循环引入除零风险。
 
 若未来做 kernel 优化专项，可重新评估 tiled GEMM 的寄存器压力（ncu 数据可用后）。
+
+---
+
+## 任务 T3（可选）：2026-08-22 全仓复核后明确不修的项
+
+以下三项经再次核实**明确不修**，留档防止重复排查：
+
+- **repetition penalty 在 fp16 上施加**（`inference_engine.cpp` 采样路径）：
+  logits 本就是 fp16，惩罚值经 float 计算后写回 half 的往返误差 <0.1%，对采样
+  分布影响可忽略；修复需将 `penalized` 缓冲及 `sampleGreedy/Temperature/TopK/TopP`
+  全族改为 float，重构面大、收益微、回归风险高。触发条件：logits 改 fp32 输出或
+  追求与 llama.cpp 逐位对齐时再评估。
+- **`tinyllm_load` 对 GGUF 二次解析**（`src/ffi.cpp`）：`parser.parse()` 已提取
+  config，`loadGGUF` 内部又完整 parse 一次，属纯启动性能浪费；修复需给
+  `ModelLoader::loadGGUF` 增加"接受已 parse 的 parser"重载，接口侵入大。触发条件：
+  大模型（>10GB GGUF）启动延迟成为瓶颈时再优化。
+- **`samplingRng(seed≠0)` 逐 token 重播种**（`inference_engine.cpp:samplingRng`）：
+  `seed != 0` 时每 token 用同一随机序列（每步采样退化）；但当前所有调用方均传默认
+  `seed=0`（一次性初始化、跨步演进），实际行为无害。触发条件：新增显式固定 seed
+  采样的调用方（如可复现采样）前，应改为"仅在首次/显式 reset 时播种"。
+
+---
+
+## 任务 T3（可选）：2026-08-22 全仓复核后明确不修的项
+
+以下三项经再次核实**明确不修**，留档防止重复排查：
+
+- **repetition penalty 在 fp16 上施加**（`inference_engine.cpp` 采样路径）：
+  logits 本就是 fp16，惩罚值经 float 计算后写回 half 的往返误差 <0.1%，对采样
+  分布影响可忽略；修复需将 `penalized` 缓冲及 `sampleGreedy/Temperature/TopK/TopP`
+  全族改为 float，重构面大、收益微、回归风险高。触发条件：logits 改 fp32 输出或
+  追求与 llama.cpp 逐位对齐时再评估。
+- **`tinyllm_load` 对 GGUF 二次解析**（`src/ffi.cpp`）：`parser.parse()` 已提取
+  config，`loadGGUF` 内部又完整 parse 一次，属纯启动性能浪费；修复需给
+  `ModelLoader::loadGGUF` 增加"接受已 parse 的 parser"重载，接口侵入大。触发条件：
+  大模型（>10GB GGUF）启动延迟成为瓶颈时再优化。
+- **`samplingRng(seed≠0)` 逐 token 重播种**（`inference_engine.cpp:samplingRng`）：
+  `seed != 0` 时每 token 用同一随机序列（每步采样退化）；但当前所有调用方均传默认
+  `seed=0`（一次性初始化、跨步演进），实际行为无害。触发条件：新增显式固定 seed
+  采样的调用方（如可复现采样）前，应改为"仅在首次/显式 reset 时播种"。

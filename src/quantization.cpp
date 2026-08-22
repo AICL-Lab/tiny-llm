@@ -234,7 +234,6 @@ quantizeF16ToW8A16(const half *f16_data, int rows, int cols, int group_size) {
         for (int g = 0; g < scale_rows; ++g) {
             int group_start = g * group_size;
             int group_end = std::min(group_start + group_size, rows);
-            int actual_group_size = group_end - group_start;
 
             // Find max absolute value in group
             float max_abs = 0.0f;
@@ -244,9 +243,12 @@ quantizeF16ToW8A16(const half *f16_data, int rows, int cols, int group_size) {
             }
 
             // Calculate scale (avoid division by zero)
+            // R7: 极小/零组保持 scale >= fp16 最小正常数，而非钳到 1.0——
+            // 后者会把整组量化为 round(v/1.0)=0，静默丢失量级信息。
+            constexpr float kHalfMinNormal = 6.1035156e-5f; // 2^-14
             float scale = max_abs / 127.0f;
-            if (scale < 1e-10f) {
-                scale = 1.0f; // Avoid division by zero for all-zero groups
+            if (scale < kHalfMinNormal) {
+                scale = kHalfMinNormal; // fp16 可表示且非零
             }
 
             scales[static_cast<size_t>(g) * cols + c] = __float2half(scale);

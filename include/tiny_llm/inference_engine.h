@@ -52,6 +52,10 @@ class InferenceEngine {
                           unsigned seed = 0);
     static int sampleTopP(const half *logits, int vocab_size, float p, float temperature,
                           unsigned seed = 0);
+    // top-k + top-p 组合采样：先按 logit 截断到 top-k 候选，再在候选内做
+    // nucleus 截断（llama.cpp 语义，与仅 top_p 或仅 top_k 互不干扰）。
+    static int sampleTopKTopP(const half *logits, int vocab_size, int k, float p, float temperature,
+                              unsigned seed = 0);
 
     // repetition penalty（llama.cpp 语义，public for testing）：
     // 对 past_tokens 中已出现 token 的 logit 施加惩罚，负 logit × penalty、

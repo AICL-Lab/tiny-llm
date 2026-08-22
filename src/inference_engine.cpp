@@ -130,7 +130,7 @@ InferenceEngine::InferenceEngine(const ModelConfig &config, ModelWeights &&weigh
     }
 
     // Allocate buffers
-    size_t hidden_size = config_.max_seq_len * config_.hidden_dim * sizeof(half);
+    size_t hidden_size = static_cast<size_t>(config_.max_seq_len) * config_.hidden_dim * sizeof(half);
     size_t logits_size = config_.vocab_size * sizeof(half);
 
     CUDA_CHECK(cudaMalloc(&hidden_states_, hidden_size));
@@ -322,17 +322,17 @@ Result<std::vector<int>> InferenceEngine::generate(const std::vector<int> &promp
     // Decode phase
     auto decode_start = std::chrono::high_resolution_clock::now();
     int  position = static_cast<int>(prompt_tokens.size());
-    int  prev_token = prompt_tokens.empty() ? config_.bos_token_id : prompt_tokens.back();
+    // prompt_tokens 已在上方校验非空，直接取末位 token 作为首个 decode 输入。
+    int  prev_token = prompt_tokens.back();
     int  generated = 0;
     // repetition_penalty 依赖"已见 token"集合（prompt + 已生成）
     std::vector<int> past_tokens = prompt_tokens;
 
-    if (!prompt_tokens.empty() && position > 0 && generated < config.max_new_tokens) {
+    // 首 token：直接采样自 prefill 最后一个 hidden（KV 已含完整 prompt）。
+    // R6: EOS 不写入 output_tokens，避免解码文本尾部出现特殊标记。
+    if (generated < config.max_new_tokens) {
         half *last_hidden = hidden_states_ + (position - 1) * config_.hidden_dim;
         int   next_token = sampleFromHidden(last_hidden, config, past_tokens);
-        output_tokens.push_back(next_token);
-        past_tokens.push_back(next_token);
-        ++generated;
 
         if (next_token == config_.eos_token_id) {
             CUDA_CHECK(cudaStreamSynchronize(stream_));
@@ -352,6 +352,10 @@ Result<std::vector<int>> InferenceEngine::generate(const std::vector<int> &promp
             }
             return Result<std::vector<int>>::ok(output_tokens);
         }
+
+        output_tokens.push_back(next_token);
+        past_tokens.push_back(next_token);
+        ++generated;
         prev_token = next_token;
     }
 
@@ -364,13 +368,13 @@ Result<std::vector<int>> InferenceEngine::generate(const std::vector<int> &promp
             return Result<std::vector<int>>::err("Decode failed: " + decode_result.error());
         }
         int next_token = decode_result.value();
+
+        // R6: EOS 不写入输出（llama.cpp 语义）
+        if (next_token == config_.eos_token_id) break;
+
         output_tokens.push_back(next_token);
         past_tokens.push_back(next_token);
         ++generated;
-
-        // Check for EOS
-        if (next_token == config_.eos_token_id) break;
-
         prev_token = next_token;
         ++position;
     }
@@ -478,6 +482,13 @@ Result<int> InferenceEngine::decodeStep(int seq_id, int position, int token_id,
 
     if (cuda_graphs_enabled_ && graph_captured_) {
         // 已捕获：重放 graph（第 2 步起）。
+        // R11: 重放不经过 forward 的 host 校验路径，这里补齐容量检查，
+        // 防止 future 调用方超长上下文时 append_kv_at 越界写 KV 池。
+        auto space_result = kv_cache_->validateAppendSpace(seq_id, 1);
+        if (space_result.isErr()) {
+            TLLM_ERROR("decodeStep: {}", space_result.error());
+            return Result<int>::err("decodeStep: " + space_result.error());
+        }
         CUDA_CHECK(cudaGraphLaunch(decode_graph_exec_, stream_));
     } else if (cuda_graphs_enabled_ && !graph_captured_) {
         // 第一次 decode：先直接执行并同步，再在 capture 区内记录一次
@@ -660,6 +671,13 @@ int InferenceEngine::sample(const half *logits, const GenerationConfig &config,
         return sampleGreedy(effective, config_.vocab_size);
     }
 
+    // R14: top_k 与 top_p 同时配置时组合生效（llama.cpp 语义）：
+    // 先按 logit 截断到 top-k，再在候选内做 nucleus。
+    if (config.top_k > 0 && config.top_p < 1.0f) {
+        return sampleTopKTopP(effective, config_.vocab_size, config.top_k, config.top_p,
+                              config.temperature);
+    }
+
     if (config.top_p < 1.0f) {
         return sampleTopP(effective, config_.vocab_size, config.top_p, config.temperature);
     }
@@ -822,6 +840,57 @@ int InferenceEngine::sampleTopP(const half *logits, int vocab_size, float p, flo
     indices_p.resize(static_cast<size_t>(cutoff));
     for (int i = 0; i < cutoff; ++i) indices_p[i] = i;
     int pick = sampleFromCdf(probs, indices_p, cutoff, gen);
+    return logit_pairs[pick].second;
+}
+
+// top-k + top-p 组合采样：先按 logit 排序截断到前 k 个，再在候选内按
+// 累计概率做 nucleus 截断（llama.cpp 同时启用 top_k/top_p 时的语义）。
+int InferenceEngine::sampleTopKTopP(const half *logits, int vocab_size, int k, float p,
+                                    float temperature, unsigned seed) {
+    if (!logits || vocab_size <= 0) {
+        return 0;
+    }
+    temperature = std::max(temperature, 1e-5f);
+    k = std::max(1, std::min(k, vocab_size));
+    p = std::min(std::max(p, 1e-5f), 1.0f);
+
+    std::vector<std::pair<float, int>> logit_pairs(vocab_size);
+    for (int i = 0; i < vocab_size; ++i) {
+        logit_pairs[i] = {__half2float(logits[i]), i};
+    }
+    std::sort(logit_pairs.begin(), logit_pairs.end(),
+              [](const auto &a, const auto &b) { return a.first > b.first; });
+
+    // 候选集 = 前 k 个
+    const int n = k;
+    float     max_logit = logit_pairs[0].first;
+    std::vector<float> probs(static_cast<size_t>(n));
+    float sum = 0.0f;
+    for (int i = 0; i < n; ++i) {
+        probs[i] = std::exp((logit_pairs[i].first - max_logit) / temperature);
+        sum += probs[i];
+    }
+    for (int i = 0; i < n; ++i) probs[i] /= sum;
+
+    // 在 top-k 内做 nucleus 截断
+    float cumsum = 0.0f;
+    int   cutoff = n;
+    for (int i = 0; i < n; ++i) {
+        cumsum += probs[i];
+        if (cumsum >= p) {
+            cutoff = i + 1;
+            break;
+        }
+    }
+    float top_p_sum = 0.0f;
+    for (int i = 0; i < cutoff; ++i) top_p_sum += probs[i];
+    for (int i = 0; i < cutoff; ++i) probs[i] /= top_p_sum;
+
+    std::mt19937     &gen = samplingRng(seed);
+    static thread_local std::vector<int> indices_kp;
+    indices_kp.resize(static_cast<size_t>(cutoff));
+    for (int i = 0; i < cutoff; ++i) indices_kp[i] = i;
+    int pick = sampleFromCdf(probs, indices_kp, cutoff, gen);
     return logit_pairs[pick].second;
 }
 

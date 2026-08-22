@@ -5,17 +5,21 @@
 #include <spdlog/sinks/rotating_file_sink.h>
 #include <spdlog/sinks/stdout_color_sinks.h>
 
+#include <mutex>
 #include <vector>
 
 namespace tiny_llm {
 
 std::shared_ptr<spdlog::logger> Logger::logger_ = nullptr;
-bool                            Logger::initialized_ = false;
+std::atomic<bool>               Logger::initialized_{false};
 
-void Logger::init(LogLevel level, const std::string &log_file, bool async) {
-    if (initialized_) {
-        return;
-    }
+namespace {
+std::mutex g_logger_mutex;
+}
+
+// 实际初始化（调用方须持有 g_logger_mutex）。内部不使用 TLLM_* 宏——
+// 它们会调用 get() 再次加锁，造成锁内重入死锁。
+void Logger::initLocked(LogLevel level, const std::string &log_file, bool async) {
 
     std::vector<spdlog::sink_ptr> sinks;
 
@@ -54,25 +58,42 @@ void Logger::init(LogLevel level, const std::string &log_file, bool async) {
     spdlog::register_logger(logger_);
     spdlog::set_default_logger(logger_);
 
-    initialized_ = true;
-
-    TLLM_DEBUG("Logger initialized: level={}, async={}, file={}", static_cast<int>(level), async,
-               log_file.empty() ? "(console only)" : log_file);
-}
-
-void Logger::shutdown() {
-    if (initialized_) {
-        TLLM_DEBUG("Logger shutting down");
-        spdlog::shutdown();
-        logger_ = nullptr;
-        initialized_ = false;
+    if (logger_) {
+        logger_->debug("Logger initialized: level={}, async={}, file={}", static_cast<int>(level),
+                       async, log_file.empty() ? "(console only)" : log_file);
     }
 }
 
+void Logger::init(LogLevel level, const std::string &log_file, bool async) {
+    std::lock_guard<std::mutex> lock(g_logger_mutex);
+    if (initialized_.load(std::memory_order_relaxed)) {
+        return;
+    }
+    initLocked(level, log_file, async);
+    initialized_.store(true, std::memory_order_release);
+}
+
+void Logger::shutdown() {
+    std::lock_guard<std::mutex> lock(g_logger_mutex);
+    if (!initialized_.load(std::memory_order_relaxed)) {
+        return;
+    }
+    if (logger_) {
+        logger_->debug("Logger shutting down");
+    }
+    spdlog::shutdown();
+    logger_ = nullptr;
+    initialized_.store(false, std::memory_order_release);
+}
+
 std::shared_ptr<spdlog::logger> Logger::get() {
-    if (!initialized_) {
-        // Auto-initialize with defaults if not already done
-        init();
+    if (!initialized_.load(std::memory_order_acquire)) {
+        // double-checked locking：未初始化时加锁补齐
+        std::lock_guard<std::mutex> lock(g_logger_mutex);
+        if (!initialized_.load(std::memory_order_relaxed)) {
+            initLocked(LogLevel::INFO, "", false);
+            initialized_.store(true, std::memory_order_release);
+        }
     }
     return logger_;
 }
@@ -89,5 +110,7 @@ void Logger::flush() {
         logger_->flush();
     }
 }
+
+bool Logger::isInitialized() { return initialized_.load(std::memory_order_acquire); }
 
 } // namespace tiny_llm

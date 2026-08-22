@@ -1,5 +1,6 @@
 #pragma once
 
+#include <atomic>
 #include <memory>
 #include <string>
 
@@ -82,11 +83,15 @@ class Logger {
      * @brief Check if logger is initialized
      * @return true if initialized, false otherwise
      */
-    static bool isInitialized() { return initialized_; }
+    static bool isInitialized();
 
   private:
+    // 实际初始化（调用方须持有 g_logger_mutex）。内部不使用 TLLM_* 宏——
+    // 它们会调用 get() 再次加锁，造成锁内重入死锁。
+    static void initLocked(LogLevel level, const std::string &log_file, bool async);
+
     static std::shared_ptr<spdlog::logger> logger_;
-    static bool                            initialized_;
+    static std::atomic<bool>               initialized_;
 };
 
 } // namespace tiny_llm

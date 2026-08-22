@@ -365,6 +365,24 @@ Result<void> KVCacheManager::advanceSeqLen(int seq_id, int num_tokens) {
     return Result<void>::ok();
 }
 
+Result<void> KVCacheManager::validateAppendSpace(int seq_id, int num_tokens) const noexcept {
+    if (num_tokens <= 0) {
+        return Result<void>::err("validateAppendSpace: num_tokens must be positive: " +
+                                 std::to_string(num_tokens));
+    }
+    auto it = seq_to_slot_.find(seq_id);
+    if (it == seq_to_slot_.end()) {
+        return Result<void>::err("Sequence not found: " + std::to_string(seq_id));
+    }
+    const auto &slot = slots_[it->second];
+    if (slot.current_len + num_tokens > slot.max_len) {
+        return Result<void>::err("KV cache overflow: current=" + std::to_string(slot.current_len) +
+                                 ", append=" + std::to_string(num_tokens) +
+                                 ", max=" + std::to_string(slot.max_len));
+    }
+    return Result<void>::ok();
+}
+
 int KVCacheManager::getSeqLen(int seq_id) const noexcept {
     auto it = seq_to_slot_.find(seq_id);
     if (it == seq_to_slot_.end()) {

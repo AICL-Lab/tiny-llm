@@ -280,3 +280,17 @@ TEST_F(GGUFRealModelTest, WeightW8A16RoundTripPreservesValues) {
     EXPECT_LT(static_cast<double>(bad_count) / (static_cast<double>(in_f) * out_f), 1e-4)
         << "bad_count=" << bad_count;
 }
+
+// R7: 组内仅有极小非零值时，scale 不应被钳到 1.0f（那会把整组量化成 0）。
+// 应保持一个可表示的非零 scale（≥ fp16 最小正常数），保留量级信息。
+TEST(W8A16Quantize, TinyNonZeroGroupKeepsNonUnitScale) {
+    std::vector<half> data(128, __float2half(0.0f));
+    data[0] = __float2half(1e-9f);
+    auto r = quantizeF16ToW8A16(data.data(), 128, 1, 128);
+    ASSERT_TRUE(r.isOk());
+    const auto &pair = r.value();
+    ASSERT_EQ(pair.second.size(), 1u);
+    const float scale = __half2float(pair.second[0]);
+    EXPECT_NE(scale, 1.0f) << "scale should not be clamped to 1.0 for tiny groups";
+    EXPECT_GT(scale, 0.0f) << "scale must stay representable in fp16";
+}

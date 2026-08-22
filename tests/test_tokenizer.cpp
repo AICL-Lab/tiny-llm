@@ -181,3 +181,15 @@ TEST_F(TokenizerRealModel, RoundTripDecode) {
         EXPECT_EQ(dec, std::string(c.text)) << "round-trip failed for: " << c.text;
     }
 }
+
+// R2: GGUF 缺失 bos/eos/pad 键时，loadTokenizerData 应保持 TokenizerData 默认值 -1
+//（此前 getOr 默认 0 会把合法的 token id 0 误用作特殊 token）。
+TEST(Tokenizer, MissingSpecialIdsDefaultToMinusOne) {
+    GGUFMetadata md;
+    md.kv["tokenizer.ggml.tokens"] = std::vector<std::string>{"a", "b"};
+    auto r = loadTokenizerData(md);
+    ASSERT_TRUE(r.isOk()) << r.error();
+    EXPECT_EQ(r.value().bos_token_id, -1);
+    EXPECT_EQ(r.value().eos_token_id, -1);
+    EXPECT_EQ(r.value().padding_token_id, -1);
+}
