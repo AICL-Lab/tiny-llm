@@ -63,6 +63,19 @@ Result<void> GGUFParser::parse() {
 
     TLLM_DEBUG("Parsed {} metadata entries", metadata_.kv.size());
 
+    // R3: 读取 general.alignment（GGUF 规范，未指定默认 32，必须是 2 的幂）
+    if (auto it = metadata_.kv.find("general.alignment"); it != metadata_.kv.end()) {
+        if (const auto *v = std::get_if<uint32_t>(&it->second)) {
+            const uint64_t a = *v;
+            if (a != 0 && (a & (a - 1)) == 0) {
+                alignment_ = a;
+                TLLM_INFO("GGUF general.alignment = {}", alignment_);
+            } else {
+                TLLM_WARN("Ignoring invalid general.alignment {} (must be a power of 2)", a);
+            }
+        }
+    }
+
     // Parse tensor info
     auto tensor_result = parseTensorInfo(file);
     if (tensor_result.isErr()) {
@@ -95,8 +108,13 @@ Result<void> GGUFParser::parseHeader(std::ifstream &file) {
                                  std::to_string(header_.magic));
     }
 
-    // Support GGUF version 2 and 3
-    if (header_.version < 2 || header_.version > 3) {
+    // 只支持 v2/v3：v1 布局虽与 v2 相同，但 llama.cpp 已弃用 v1（格式内容
+    // 未标准化），继续解析对未知文件存在静默错读风险，这里显式拒绝。
+    if (header_.version < 2) {
+        return Result<void>::err("GGUF version 1 is no longer supported (please use v2/v3): " +
+                                 std::to_string(header_.version));
+    }
+    if (header_.version > 3) {
         TLLM_WARN("GGUF version {} may not be fully supported", header_.version);
     }
 
@@ -185,6 +203,14 @@ Result<GGUFTensorInfo> GGUFParser::readTensorInfoEntry(std::ifstream &file) {
     file.read(reinterpret_cast<char *>(&n_dims), 4);
     if (!file) {
         return Result<GGUFTensorInfo>::err("Failed to read tensor n_dims");
+    }
+    // 健壮性：GGUF 张量至多 4 维（GGML_MAX_DIMS）。n_dims 文件可控，
+    // 无上界时恶意值（如 0xFFFFFFFF）会让 resize 尝试 ~32GB 分配，
+    // bad_alloc 未被捕获即 abort。与 llama.cpp#26366/#26978 同类的
+    // 解析器健壮性问题，先于分配拒绝。
+    if (n_dims > 4) {
+        return Result<GGUFTensorInfo>::err("Tensor n_dims " + std::to_string(n_dims) +
+                                           " exceeds GGML_MAX_DIMS(4)");
     }
 
     // Read dimensions
@@ -375,6 +401,11 @@ Result<GGUFValue> GGUFParser::readArray(std::ifstream &file) {
         return Result<GGUFValue>::ok(GGUFValue{arr});
     }
     default:
+        // R10: 数组元素类型为 ARRAY（嵌套数组）——GGUFValue 无法表示，
+        // 且递归解析会随恶意文件深度增长，显式拒绝。
+        if (elem_type == GGUFType::ARRAY) {
+            return Result<GGUFValue>::err("Nested arrays are not supported (array element type ARRAY)");
+        }
         // Skip unsupported array types
         TLLM_WARN("Unsupported array element type: {}, skipping {} elements",
                   static_cast<uint32_t>(elem_type), count);
@@ -417,7 +448,7 @@ Result<std::string> GGUFParser::readString(std::ifstream &file) {
 }
 
 uint64_t GGUFParser::alignOffset(uint64_t offset) const {
-    return (offset + ALIGNMENT - 1) & ~(ALIGNMENT - 1);
+    return (offset + alignment_ - 1) & ~(alignment_ - 1);
 }
 
 Result<ModelConfig> GGUFParser::extractModelConfig() const {
@@ -546,6 +577,13 @@ Result<std::vector<uint8_t>> GGUFParser::readTensorData(const GGUFTensorInfo &te
         return Result<std::vector<uint8_t>>::err("Failed to open file: " + path_);
     }
 
+    // 溢出守卫：tensor.offset 文件可控（64 位），data_offset_ + tensor.offset
+    // 回绕后 seekg 会落到错误偏移读到垃圾数据（静默损坏，比崩溃更糟）。
+    // 与 llama.cpp#26978（GGML_PAD 回绕）同类的尺寸/偏移溢出问题。
+    if (tensor.offset > UINT64_MAX - data_offset_) {
+        return Result<std::vector<uint8_t>>::err("Tensor data offset overflows for: " +
+                                                 tensor.name);
+    }
     uint64_t read_offset = data_offset_ + tensor.offset;
     file.seekg(read_offset);
 

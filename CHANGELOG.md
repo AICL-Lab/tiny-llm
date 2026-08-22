@@ -4,6 +4,15 @@ All notable tracked releases of Tiny-LLM are recorded here.
 
 ## Unreleased
 
+### Fixed
+- GGUF 解析器健壮性加固（审计 llama.cpp#26366/#26978 同类问题时发现并修复）：
+  - `readTensorInfoEntry`：`n_dims` 原无上限，文件可控的恶意值（如 0xFFFFFFFF）
+    会使 `dimensions.resize` 尝试 ~32GB 分配，未捕获的 bad_alloc 直接 abort；
+    现按 GGML_MAX_DIMS(4) 拒绝
+  - `readTensorData`：`data_offset_ + tensor.offset` 无溢出检查，64 位回绕后
+    seek 到错误偏移读垃圾数据（静默损坏）；现相加前拒绝
+  - 两个字节级构造的回归测试（`test_gguf_parser.cpp`）；全量 192 测试通过
+
 ### Changed
 - 面向用户的 GitHub 链接统一为 `github.com/open-infra-ai/...`（tokenizer 差分夹具原文不改）
 - 默认 CUDA 架构加入 sm_70（`CMAKE_CUDA_ARCHITECTURES` 非新版本路径下为 `70 75 80 86 89`）
