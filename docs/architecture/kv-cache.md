@@ -197,6 +197,54 @@ cache.advanceSeqLen(seq_id, num_tokens);
 
 ---
 
+## Paged KV Cache (Strategy 1)
+
+The contiguous `KVCacheManager` above serves single-engine generation. The
+**paged KV path** (strategy 1) serves the serving control plane
+(`paged-infer`) through the C ABI: instead of reserving `max_seq_len` per
+sequence, KV is stored in a shared pool of fixed-size blocks referenced by
+per-sequence block tables, so memory is allocated only for visible tokens.
+
+### Pool layout
+
+```
+k_pool / v_pool: [num_layers * max_num_blocks * block_size * kv_dim] half
+block_table:     device int[visible_blocks]  (physical block ids)
+k_scratch / v_scratch: [max_visible_tokens * kv_dim]  (gather target)
+```
+
+The pool is indexed as `pool[(layer * max_num_blocks + block_id) * block_size + within] * kv_dim`
+for the K/V of one head group; callers pass the layer-offset base pointer.
+
+### PagedKVCacheView
+
+`PagedKVCacheView` (see `include/tiny_llm/transformer.h`) bundles the per-step
+state: pool pointers, the flat block table, scratch buffers, `block_size`,
+`max_num_blocks`, the absolute `position` of the step's first token, and an
+optional device `decode_len` (decode-only; `nullptr` for prefill).
+
+### Scatter / gather kernels
+
+- `paged_scatter_blocks` writes the step's K/V from contiguous
+  `[num_tokens, kv_dim]` buffers into the pool via the block table.
+- `paged_gather_blocks` reads the visible range `[visible_tokens, kv_dim]`
+  back into scratch for the attention kernel.
+- Both take `max_num_blocks` and **guard the block-id range**: ids outside
+  `[0, max_num_blocks)` are skipped on scatter and written as 0 on gather,
+  so a corrupt block table can no longer cause illegal-address faults that
+  poison the whole CUDA context.
+
+### C ABI integration
+
+The paged pool is allocated inside `ffi.cpp` (`paged_k_pool` / `paged_v_pool`
+via `cudaMalloc`). `forwardPaged` dispatches on `max_num_blocks`: strategy 1
+(>0, block tables honored) vs strategy 2 (== 0, contiguous KV). The contract
+is dual-sourced with `paged-infer/src/tiny_llm_ffi.rs` (repr(C) layout guard
+tests) and differentially tested in `tests/test_ffi.cpp` (strategy 1 vs 2,
+token-by-token) and `paged-infer/tests/tiny_llm_backend.rs`.
+
+---
+
 ## Memory Management
 
 ### Pre-allocation Strategy
