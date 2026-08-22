@@ -9,6 +9,7 @@
 #include <cstdlib>
 #include <optional>
 #include <string>
+#include <vector>
 
 using namespace tiny_llm;
 
@@ -58,6 +59,36 @@ TEST(Tokenizer, ByteEncodingTable) {
     for (uint32_t b = 0; b < 256; ++b)
         EXPECT_EQ(unicodeToByte(t[b]), static_cast<int>(b));
     EXPECT_EQ(unicodeToByte(0xDEADBEEF), -1);
+}
+
+// 畸形 UTF-8 必须按"逐字节回退"解码（与 HF GPT-2 byte-level 语义一致）：
+// leader 后跟非 continuation 字节时，leader 单独成码点，后续字节重新开始。
+// 此前实现会把 leader+非continuation 拼成伪码点（如 \xC2\x41 -> U+0141），
+// 导致预分词切分点与 HF 不一致。
+TEST(Tokenizer, DecodeUtf8CodepointsFallsBackPerByteOnInvalidContinuation) {
+    auto cps = [](const std::string &s) {
+        std::vector<uint32_t> v;
+        for (uint32_t cp : decodeUtf8Codepoints(s))
+            v.push_back(cp);
+        return v;
+    };
+
+    // 合法序列不受影响
+    EXPECT_EQ(cps("A\xC3\xA9z"), (std::vector<uint32_t>{'A', 0xE9, 'z'}));
+    EXPECT_EQ(cps("\xE4\xB8\xAD"), (std::vector<uint32_t>{0x4E2D}));
+    EXPECT_EQ(cps("\xF0\x9F\x98\x80"), (std::vector<uint32_t>{0x1F600}));
+
+    // leader + 非 continuation：逐字节回退
+    EXPECT_EQ(cps("\xC2\x41"), (std::vector<uint32_t>{0xC2, 'A'}));
+    EXPECT_EQ(cps("\xE0\x41y"), (std::vector<uint32_t>{0xE0, 'A', 'y'}));
+    EXPECT_EQ(cps("\xF0\x28\x8C\x28"), (std::vector<uint32_t>{0xF0, '(', 0x8C, '('}));
+
+    // 截断尾部：残缺 leader 按单字节处理
+    EXPECT_EQ(cps("a\xE0"), (std::vector<uint32_t>{'a', 0xE0}));
+    EXPECT_EQ(cps("\xC3"), (std::vector<uint32_t>{0xC3}));
+
+    // 孤立 continuation 字节保持单字节
+    EXPECT_EQ(cps("\x80\xBF"), (std::vector<uint32_t>{0x80, 0xBF}));
 }
 
 // 最小合成词表验证 encode 流水线（特殊 token 隔离 -> 预分词 -> 字节编码 -> BPE）

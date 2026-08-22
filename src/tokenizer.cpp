@@ -35,8 +35,21 @@ std::vector<Cp> decodeCps(const std::string &s) {
             len = 3;
         else if (b >= 0xC0)
             len = 2;
+        // continuation 校验：多字节序列的后续字节必须都是 0x80-0xBF，
+        // 否则 leader 单独按单字节回退（与 HF GPT-2 byte-level 的逐字节
+        // 语义一致）。此前 leader+非continuation 会被拼成伪码点（如
+        // \xC2\x41 -> U+0141），导致预分词切分点与 HF 不一致。
+        auto isContinuation = [&](size_t k) {
+            return k < s.size() && (static_cast<uint8_t>(s[k]) & 0xC0) == 0x80;
+        };
+        for (size_t k = 1; k < len; ++k) {
+            if (!isContinuation(i + k)) {
+                len = 1;
+                break;
+            }
+        }
         if (i + len > s.size())
-            len = s.size() - i; // 残缺尾部按字节处理
+            len = 1; // 残缺尾部：leader 单独成字节，剩余字节由后续迭代处理
         // 修复：len==1（ASCII 或孤立 continuation byte 0x80-0xBF）时用
         // 无符号字节值。此前 `uint32_t cp = s[i]` 在 char 为有符号时会把
         // 0x80-0xBF 符号扩展成 0xFFFFFF80，导致后续 isLetter/预分词查表
@@ -166,6 +179,14 @@ int unicodeToByte(uint32_t cp) {
     if (cp >= inverseByteTable().size())
         return -1;
     return inverseByteTable()[cp];
+}
+
+std::vector<uint32_t> decodeUtf8Codepoints(const std::string &s) {
+    std::vector<uint32_t> out;
+    out.reserve(s.size());
+    for (const Cp &c : decodeCps(s))
+        out.push_back(c.cp);
+    return out;
 }
 
 // ── 构建 ──────────────────────────────────────────────────────

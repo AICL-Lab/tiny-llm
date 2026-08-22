@@ -81,5 +81,7 @@ Result<TokenizerData> loadTokenizerData(const GGUFMetadata &md);
 const uint32_t *byteToUnicodeTable();
 // 逆映射：unicode 码点 -> byte，无效返回 -1
 int unicodeToByte(uint32_t cp);
+// 按 UTF-8 解码码点；非法 continuation/截断尾部按单字节回退（诊断与测试用）
+std::vector<uint32_t> decodeUtf8Codepoints(const std::string &s);
 
 } // namespace tiny_llm
