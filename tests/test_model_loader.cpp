@@ -497,6 +497,51 @@ TEST_F(GGUFHeaderTest, ValidHeaderTruncatedMetadata) {
         << "unexpected error message: " << result.error();
 }
 
+// 恶意/损坏 GGUF：tensor_count / metadata_kv_count 为天文数字时，parse()
+// 必须返回结构化错误，而不是 reserve() 抛 length_error/bad_alloc 穿透。
+TEST_F(GGUFHeaderTest, HugeEntryCountsFailCleanlyWithoutThrowing) {
+    for (uint64_t huge : {uint64_t(1) << 40, std::numeric_limits<uint64_t>::max()}) {
+        TempFile file(".gguf");
+        std::vector<uint8_t> bytes;
+        appendValue(bytes, GGUF_MAGIC);
+        appendValue(bytes, uint32_t(3));
+        appendValue(bytes, huge);       // tensor_count
+        appendValue(bytes, uint64_t(0)); // metadata_kv_count
+        file.writeBytes(bytes);
+
+        GGUFParser parser(file.path());
+        EXPECT_NO_THROW({
+            auto result = parser.parse();
+            EXPECT_TRUE(result.isErr())
+                << "tensor_count=" << huge << " must be rejected";
+            if (result.isErr()) {
+                EXPECT_TRUE(result.error().find("count") != std::string::npos ||
+                            result.error().find("limit") != std::string::npos ||
+                            result.error().find("Failed") != std::string::npos)
+                    << "unexpected error message: " << result.error();
+            }
+        });
+    }
+}
+
+// metadata_kv_count 同理：超大计数必须被上界校验拒绝（而非逐条读到流死）。
+TEST_F(GGUFHeaderTest, HugeMetadataCountFailsCleanlyWithoutThrowing) {
+    TempFile file(".gguf");
+    std::vector<uint8_t> bytes;
+    appendValue(bytes, GGUF_MAGIC);
+    appendValue(bytes, uint32_t(3));
+    appendValue(bytes, uint64_t(0));  // tensor_count
+    appendValue(bytes, uint64_t(1) << 40); // metadata_kv_count
+    appendString(bytes, "general.architecture"); // 一条残缺 entry 后截断
+    file.writeBytes(bytes);
+
+    GGUFParser parser(file.path());
+    EXPECT_NO_THROW({
+        auto result = parser.parse();
+        EXPECT_TRUE(result.isErr());
+    });
+}
+
 TEST_F(GGUFHeaderTest, ValidHeader) {
     TempFile file(".gguf");
 

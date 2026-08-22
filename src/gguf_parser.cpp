@@ -100,6 +100,22 @@ Result<void> GGUFParser::parseHeader(std::ifstream &file) {
         TLLM_WARN("GGUF version {} may not be fully supported", header_.version);
     }
 
+    // 上界校验：损坏/恶意文件的计数是攻击者可控的 uint64，直接
+    // tensors_.reserve(tensor_count) 会抛 length_error/bad_alloc 穿透 parse()，
+    // 逐条循环 metadata_kv_count 则白耗 IO。1M 对真实模型绰绰有余
+    // （Qwen2.5-0.5B 约 300 个张量 + 数十元数据）。
+    constexpr uint64_t MAX_GGUF_ENTRY_COUNT = uint64_t(1) << 20;
+    if (header_.tensor_count > MAX_GGUF_ENTRY_COUNT) {
+        return Result<void>::err("GGUF tensor_count exceeds sanity limit (" +
+                                 std::to_string(MAX_GGUF_ENTRY_COUNT) + "): " +
+                                 std::to_string(header_.tensor_count));
+    }
+    if (header_.metadata_kv_count > MAX_GGUF_ENTRY_COUNT) {
+        return Result<void>::err("GGUF metadata_kv_count exceeds sanity limit (" +
+                                 std::to_string(MAX_GGUF_ENTRY_COUNT) + "): " +
+                                 std::to_string(header_.metadata_kv_count));
+    }
+
     return Result<void>::ok();
 }
 
