@@ -1,4 +1,5 @@
 #include "attention.cuh"
+#include "transpose_weights.cuh"
 #include "tiny_llm/cuda_utils.h"
 #include "tiny_llm/kv_cache.h"
 #include "tiny_llm/transformer.h"
@@ -132,6 +133,122 @@ TEST_F(TransformerTest, AttentionDecodeVsPrefillSingleToken) {
         }
     }
     EXPECT_TRUE(has_nonzero);
+}
+
+// P1-8 回归：各投影必须用自身 group_size 反量化。构造 wk.group_size=8、
+// 其余=32 的权重，one-hot 输入命中 wk 第 2 组 scale；若误用 wq 的 gs=32，
+// K 会取第 0 组 scale（差 3 倍），缓存内容与 CPU 参考明显不符。
+TEST_F(TransformerTest, KeyProjectionUsesItsOwnGroupSize) {
+    // 配置：hidden=32, 1 head, head_dim=32, intermediate=16
+    ModelConfig config;
+    config.vocab_size = 32;
+    config.hidden_dim = 32;
+    config.num_layers = 1;
+    config.num_heads = 1;
+    config.num_kv_heads = 1;
+    config.head_dim = 32;
+    config.intermediate_dim = 16;
+    config.max_seq_len = 8;
+    config.rope_theta = 10000.0f;
+    config.rms_norm_eps = 1e-5f;
+
+    auto makeQW = [&](int rows, int cols, int group_size, float scaleBase) -> QuantizedWeight {
+        QuantizedWeight qw;
+        qw.rows = rows;
+        qw.cols = cols;
+        qw.group_size = group_size;
+        const int srows = (rows + group_size - 1) / group_size;
+
+        std::vector<int8_t> h_data(static_cast<size_t>(rows) * cols, 127);
+        std::vector<half>   h_scales(static_cast<size_t>(srows) * cols);
+        for (int g = 0; g < srows; ++g)
+            for (int c = 0; c < cols; ++c)
+                h_scales[static_cast<size_t>(g) * cols + c] =
+                    __float2half(scaleBase * static_cast<float>(g + 1));
+
+        CUDA_CHECK(cudaMalloc(&qw.data, h_data.size()));
+        CUDA_CHECK(cudaMalloc(&qw.scales, h_scales.size() * sizeof(half)));
+        CUDA_CHECK(cudaMemcpy(qw.data, h_data.data(), h_data.size(), cudaMemcpyHostToDevice));
+        CUDA_CHECK(cudaMemcpy(qw.scales, h_scales.data(), h_scales.size() * sizeof(half),
+                              cudaMemcpyHostToDevice));
+        CUDA_CHECK(cudaMalloc(&qw.data_t, h_data.size()));
+        CUDA_CHECK(cudaMalloc(&qw.scales_t, h_scales.size() * sizeof(half)));
+        kernels::transpose_int8(qw.data, qw.data_t, rows, cols, 0);
+        kernels::transpose_scales(qw.scales, qw.scales_t, srows, cols, 0);
+        return qw;
+    };
+
+    TransformerWeights lw;
+    lw.wq = makeQW(32, 32, 32, 0.01f);
+    lw.wk = makeQW(32, 32, 8, 0.01f); // 关键：gs=8，scaleRows=4
+    lw.wv = makeQW(32, 32, 32, 0.01f);
+    lw.wo = makeQW(32, 32, 32, 0.01f);
+    lw.w1 = makeQW(32, 16, 32, 0.01f);
+    lw.w2 = makeQW(16, 32, 32, 0.01f);
+    lw.w3 = makeQW(32, 16, 32, 0.01f);
+
+    // norm 权重全 1：rmsNorm 输出 = 归一化输入
+    std::vector<half> ones(32, __float2half(1.0f));
+    CUDA_CHECK(cudaMalloc(&lw.rms_att_weight, ones.size() * sizeof(half)));
+    CUDA_CHECK(cudaMalloc(&lw.rms_ffn_weight, ones.size() * sizeof(half)));
+    CUDA_CHECK(cudaMemcpy(lw.rms_att_weight, ones.data(), ones.size() * sizeof(half),
+                          cudaMemcpyHostToDevice));
+    CUDA_CHECK(cudaMemcpy(lw.rms_ffn_weight, ones.data(), ones.size() * sizeof(half),
+                          cudaMemcpyHostToDevice));
+
+    LayerWorkspace ws;
+    ws.allocate(config);
+    TransformerLayer layer(0, lw, config, &ws);
+
+    KVCacheConfig kv_config;
+    kv_config.num_layers = 1;
+    kv_config.num_kv_heads = 1;
+    kv_config.head_dim = 32;
+    kv_config.max_seq_len = 8;
+    kv_config.max_batch_size = 1;
+    auto cache_r = KVCacheManager::create(kv_config);
+    ASSERT_TRUE(cache_r.isOk()) << cache_r.error();
+    auto cache = std::move(cache_r.value());
+    auto seq_r = cache->allocateSequence(8);
+    ASSERT_TRUE(seq_r.isOk());
+    int seq_id = seq_r.value();
+
+    // RoPE 恒等：cos=1, sin=0
+    DeviceBuffer<float> d_cos(16), d_sin(16);
+    std::vector<float> ones_f(16, 1.0f), zeros_f(16, 0.0f);
+    d_cos.copyFromHost(ones_f.data(), 16);
+    d_sin.copyFromHost(zeros_f.data(), 16);
+    DeviceBuffer<int> d_pos(1);
+    int zero = 0;
+    d_pos.copyFromHost(&zero, 1);
+
+    // 输入 one-hot e_16（命中 wk 第 2 组 scale）
+    std::vector<half> h_hidden(32, __float2half(0.0f));
+    h_hidden[16] = __float2half(4.0f);
+    DeviceBuffer<half> d_hidden(32);
+    d_hidden.copyFromHost(h_hidden.data(), 32);
+
+    cudaDeviceSynchronize();
+    auto r = layer.forwardPrefill(d_hidden.data(), *cache, seq_id, 1, d_pos.data(), d_cos.data(),
+                                  d_sin.data(), 0);
+    ASSERT_TRUE(r.isOk()) << r.error();
+    cudaDeviceSynchronize();
+
+    // 读回缓存的 K（pos 0），与 CPU 参考比较：
+    // x_norm = e16 * sqrt(32)/4；K[c] = x_norm[16] * 127 * scales[2][c]
+    auto [k_cache, v_cache] = cache->getCache(seq_id, 0);
+    ASSERT_NE(k_cache, nullptr);
+    std::vector<half> h_k(32);
+    CUDA_CHECK(cudaMemcpy(h_k.data(), k_cache, 32 * sizeof(half), cudaMemcpyDeviceToHost));
+
+    // rmsNorm: y = x/sqrt(mean(x^2)+eps)；x=e16 值 4 → mean=16/32=0.5
+    const float x_norm16 = 4.0f / std::sqrt(0.5f + config.rms_norm_eps);
+    const float expected_scale = 0.01f * 3.0f; // 第 2 组（g=2）→ (2+1)*0.01
+    for (int c = 0; c < 32; ++c) {
+        float expected = x_norm16 * 127.0f * expected_scale;
+        EXPECT_NEAR(__half2float(h_k[c]), expected, 5e-2f)
+            << "dim " << c << " (若得到 ~1/3 值说明用了第 0 组 scale)";
+    }
 }
 
 // Unit test: KV Cache append and retrieve
