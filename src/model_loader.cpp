@@ -242,7 +242,9 @@ Result<ModelWeights> ModelLoader::loadGGUF(const std::string &path, ModelConfig 
                               cudaMemcpyHostToDevice));
 
         // 任务 C1：构建 [cols, rows] 转置副本，供 M==1 decode 快路径使用。
-        CUDA_CHECK(cudaMalloc(&qw.data_t, qw.weightElements()));
+        // data_t 是 int8 数组：元素数==字节数，但显式写 sizeof(int8_t) 表明
+        // 单位是字节，避免未来换量化元素类型时踩坑。
+        CUDA_CHECK(cudaMalloc(&qw.data_t, qw.weightElements() * sizeof(int8_t)));
         CUDA_CHECK(cudaMalloc(&qw.scales_t, qw.scaleElements() * sizeof(half)));
         kernels::transpose_int8(qw.data, qw.data_t, qw.rows, qw.cols, /*stream=*/0);
         kernels::transpose_scales(qw.scales, qw.scales_t, qw.scaleRows(), qw.cols, /*stream=*/0);

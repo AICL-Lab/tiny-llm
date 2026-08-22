@@ -5,7 +5,10 @@ All notable tracked releases of Tiny-LLM are recorded here.
 ## Unreleased
 
 ### Changed
-- 面向用户的 GitHub 链接统一为 `github.com/aicl-lab/...`（tokenizer 差分夹具原文不改）
+- 面向用户的 GitHub 链接统一为 `github.com/open-infra-ai/...`（tokenizer 差分夹具原文不改）
+- 默认 CUDA 架构加入 sm_70（`CMAKE_CUDA_ARCHITECTURES` 非新版本路径下为 `70 75 80 86 89`）
+- `model_loader` 中 `data_t` 显式 `* sizeof(int8_t)`（显式以字节为单位的语义，避免换量化元素类型时踩坑）
+- 消除 `quantizeF16ToW8A16` 中冗余的 `static_cast<half>(scale)`
 
 ### Added
 
@@ -25,6 +28,19 @@ All notable tracked releases of Tiny-LLM are recorded here.
 
 ### Fixed
 
+- **各投影使用自身 group_size 反量化**：attention/attentionPaged/feedForward 不再复用
+  `wq`/`w1` 的 group_size，K/V/输出与 gate/up/down 各按各自张量的 group_size 索引 scale
+  （异构/重量化场景下原实现 scale 行号整体错位）
+- **softmax 改为 O(1) 共享内存**：旧实现按 `(seq_len+32)*4B` 缓存 exp 值，
+  seq_len ≈ 12K 即超 48KB 动态共享内存上限导致 launch 失败；现三遍法（max → sum → 重算 exp），
+  任意 seq_len 正确
+- **paged 块 id 值域防护**：`paged_scatter/gather_blocks` 增加 `max_num_blocks` 参数，
+  越界块 id 跳过写入（scatter）/写 0（gather），坏块表不再造成越界访存毒化 CUDA 上下文
+- **GGUF 计数上界校验**：`tensor_count`/`metadata_kv_count` 超 `1<<20` 直接报错，
+  损坏/恶意文件的巨大计数不再穿透 `parse()` 抛 `length_error`/`bad_alloc`
+- **UTF-8 continuation 校验**：多字节序列后续字节必须为 0x80–0xBF，否则 leader 按单字节
+  回退（与 HF GPT-2 byte-level 语义一致）；残缺尾部逐字节处理；新增 `decodeUtf8Codepoints`
+  诊断接口
 - **Qwen2 attention bias 缺失（GPU 端到端乱码根因）**：加载并应用 attn_q/k/v.bias，
   补齐 Qwen2 系 q/k/v 投影的 bias 项；修复后输出与 llama.cpp 前 14 token 完全一致
 - **共享层工作区（OOM 修复）**：中间激活缓冲改为所有层复用（LayerWorkspace），

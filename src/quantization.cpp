@@ -249,7 +249,7 @@ quantizeF16ToW8A16(const half *f16_data, int rows, int cols, int group_size) {
                 scale = 1.0f; // Avoid division by zero for all-zero groups
             }
 
-            scales[static_cast<size_t>(g) * cols + c] = __float2half(static_cast<half>(scale));
+            scales[static_cast<size_t>(g) * cols + c] = __float2half(scale);
 
             // Quantize values
             for (int r = group_start; r < group_end; ++r) {
