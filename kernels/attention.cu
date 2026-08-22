@@ -373,6 +373,10 @@ void get_attention_weights(const half *query, const half *key, half *__restrict_
 }
 
 // Simple softmax kernel
+// 修复：共享内存 O(1)。旧实现把每个元素的 exp 值缓存在动态共享内存里
+// （(seq_len+32)*4B），seq_len 超过 ~12K 就超过 48KB 默认上限导致 launch
+// 失败。现改为三遍法：求 max -> 求 sum（不缓存，第三遍重算 exp）-> 写出，
+// 共享内存只占 warp 归一槽位（32 float）与两个标量。
 __global__ void softmax_kernel(const half *__restrict__ input, half *__restrict__ output,
                                int seq_len) {
     int row = blockIdx.x;
@@ -382,8 +386,11 @@ __global__ void softmax_kernel(const half *__restrict__ input, half *__restrict_
     const half *x = input + row * seq_len;
     half       *y = output + row * seq_len;
 
-    extern __shared__ float shared[];
+    __shared__ float warp_buf[32];
+    __shared__ float global_max;
+    __shared__ float global_sum;
 
+    // Pass 1: 行最大值
     float max_val = -FLT_MAX;
     for (int i = tid; i < seq_len; i += block_size) {
         max_val = fmaxf(max_val, __half2float(x[i]));
@@ -392,41 +399,37 @@ __global__ void softmax_kernel(const half *__restrict__ input, half *__restrict_
 
     int lane = tid % 32;
     int warp_id = tid / 32;
-    if (lane == 0) shared[warp_id] = max_val;
+    if (lane == 0) warp_buf[warp_id] = max_val;
     __syncthreads();
 
     int num_warps = (block_size + 31) / 32;
     if (warp_id == 0) {
-        max_val = (lane < num_warps) ? shared[lane] : -FLT_MAX;
+        max_val = (lane < num_warps) ? warp_buf[lane] : -FLT_MAX;
         max_val = warp_reduce_max(max_val);
+        if (lane == 0) global_max = max_val;
     }
-    __shared__ float global_max;
-    if (tid == 0) global_max = max_val;
     __syncthreads();
 
+    // Pass 2: exp 和（exp 值不缓存）
     float sum = 0.0f;
     for (int i = tid; i < seq_len; i += block_size) {
-        float ev = expf(__half2float(x[i]) - global_max);
-        shared[i] = ev;
-        sum += ev;
+        sum += expf(__half2float(x[i]) - global_max);
     }
-    __syncthreads();
-
     sum = warp_reduce_sum(sum);
-    if (lane == 0) shared[seq_len + warp_id] = sum;
+    if (lane == 0) warp_buf[warp_id] = sum;
     __syncthreads();
 
     if (warp_id == 0) {
-        sum = (lane < num_warps) ? shared[seq_len + lane] : 0.0f;
+        sum = (lane < num_warps) ? warp_buf[lane] : 0.0f;
         sum = warp_reduce_sum(sum);
+        if (lane == 0) global_sum = sum;
     }
-    __shared__ float global_sum;
-    if (tid == 0) global_sum = sum;
     __syncthreads();
 
+    // Pass 3: 重算 exp 并写出
     float inv_sum = 1.0f / (global_sum + 1e-6f);
     for (int i = tid; i < seq_len; i += block_size) {
-        y[i] = __float2half(shared[i] * inv_sum);
+        y[i] = __float2half(expf(__half2float(x[i]) - global_max) * inv_sum);
     }
 }
 
@@ -434,9 +437,7 @@ void softmax(const half *input, half *output, int batch_size, int seq_len, cudaS
     if (batch_size <= 0 || seq_len <= 0) return;
 
     int block_size = 256;
-    size_t shared_size = (seq_len + 32) * sizeof(float);
-
-    softmax_kernel<<<batch_size, block_size, shared_size, stream>>>(input, output, seq_len);
+    softmax_kernel<<<batch_size, block_size, 0, stream>>>(input, output, seq_len);
 }
 
 } // namespace kernels

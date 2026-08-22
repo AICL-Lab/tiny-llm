@@ -641,6 +641,50 @@ TEST_F(AttentionTest, PrefillLayoutMatchesCpuReference) {
     }
 }
 
+// P1-6 回归：softmax 必须不受 48KB 动态共享内存默认上限约束。
+// 旧实现按 (seq_len+32)*4B 申请动态共享内存，seq_len≈12K 即超限导致
+// launch 失败（invalid argument），输出为垃圾值。O(1) 共享内存实现
+// 应对任意 seq_len 正确完成。
+TEST_F(AttentionTest, SoftmaxHandlesSeqLenBeyondSharedMemoryLimit) {
+    int batch_size = 2;
+    int seq_len = 20000; // (20000+32)*4B ≈ 80KB > 48KB 默认上限
+
+    auto input = randomFP16(batch_size * seq_len, 2.0f, 777);
+
+    DeviceBuffer<half> d_input(batch_size * seq_len);
+    DeviceBuffer<half> d_output(batch_size * seq_len);
+    d_input.copyFromHost(input.data(), input.size());
+
+    EXPECT_NO_THROW({
+        softmax(d_input.data(), d_output.data(), batch_size, seq_len);
+        cudaError_t err = cudaDeviceSynchronize();
+        EXPECT_EQ(err, cudaSuccess) << "softmax launch failed: "
+                                    << cudaGetErrorString(err);
+    });
+
+    std::vector<half> output(batch_size * seq_len);
+    d_output.copyToHost(output.data(), output.size());
+    cudaDeviceSynchronize();
+
+    // 每行和为 1，且最大 logit 位置对应最大概率
+    for (int b = 0; b < batch_size; ++b) {
+        float   sum = 0.0f;
+        int     argmax_out = 0;
+        int     argmax_in = 0;
+        for (int i = 0; i < seq_len; ++i) {
+            float v = __half2float(output[b * seq_len + i]);
+            sum += v;
+            if (v > __half2float(output[b * seq_len + argmax_out]))
+                argmax_out = i;
+            if (__half2float(input[b * seq_len + i]) >
+                __half2float(input[b * seq_len + argmax_in]))
+                argmax_in = i;
+        }
+        EXPECT_NEAR(sum, 1.0f, 0.01f) << "row " << b << " sum: " << sum;
+        EXPECT_EQ(argmax_out, argmax_in) << "row " << b;
+    }
+}
+
 TEST_F(AttentionTest, SoftmaxSumsToOne) {
     int batch_size = 4;
     int seq_len = 16;
