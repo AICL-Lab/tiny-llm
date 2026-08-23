@@ -15,6 +15,8 @@ All notable tracked releases of Tiny-LLM are recorded here.
   或请求输出但传空缓冲区。新增双序列 stride 与首尾 canary 回归测试。
 - Unicode 类别表生成器固定并校验 Unicode 15.0.0，生成文件标注不再错误声称 15.1；
   生成区间用 clang-format guard 保持确定性，格式 CI 明确豁免只读 tokenizer fixture。
+- 按 CI 使用的 clang-format 18 统一 FFI、benchmark JSON 输出与模型权重结构体排版，
+  消除本机缺少同版本格式器时未被发现的远端 Format 门禁失败。
 - GGUF 解析器健壮性加固（审计 llama.cpp#26366/#26978 同类问题时发现并修复）：
   - `readTensorInfoEntry`：`n_dims` 原无上限，文件可控的恶意值（如 0xFFFFFFFF）
     会使 `dimensions.resize` 尝试 ~32GB 分配，未捕获的 bad_alloc 直接 abort；

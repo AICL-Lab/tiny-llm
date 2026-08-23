@@ -253,17 +253,14 @@ int runBenchmark(const BenchOptions &opt) {
     const bool        has_tpot = !tpot_ms.empty();
 
     if (opt.json) {
-        std::cout << "{"
-                  << "\"schema_version\":2,"
-                  << "\"model\":\"" << jsonEscape(opt.model_path) << "\","
-                  << "\"gpu\":{\"name\":\"" << jsonEscape(device_prop.name)
+        std::cout << "{" << "\"schema_version\":2," << "\"model\":\"" << jsonEscape(opt.model_path)
+                  << "\"," << "\"gpu\":{\"name\":\"" << jsonEscape(device_prop.name)
                   << "\",\"total_memory_mib\":" << device_prop.totalGlobalMem / (1024 * 1024)
                   << ",\"cuda_driver_version\":" << driver_version
                   << ",\"cuda_runtime_version\":" << runtime_version << "},"
                   << "\"benchmark\":{\"prompt_tokens\":" << prompt_tokens.size()
                   << ",\"max_tokens\":" << opt.max_tokens << ",\"warmup\":" << opt.warmup
-                  << ",\"iterations\":" << opt.iters << "},"
-                  << "\"cuda_graphs\":{\"enabled\":"
+                  << ",\"iterations\":" << opt.iters << "}," << "\"cuda_graphs\":{\"enabled\":"
                   << (engine->cudaGraphsEnabled() ? "true" : "false")
                   << ",\"captured\":" << (engine->cudaGraphCaptured() ? "true" : "false") << "},"
                   << "\"generated_tokens\":" << last_generated << ","

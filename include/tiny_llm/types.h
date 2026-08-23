@@ -104,8 +104,8 @@ struct ModelWeights {
     // Output
     half           *final_norm_weight = nullptr; // [hidden_dim]
     QuantizedWeight lm_head;                     // [hidden_dim, vocab_size]（W8A16）
-    half           *lm_head_fp16 = nullptr; // [hidden_dim, vocab_size]（可选，logits 精度优先）
-    half           *lm_head_fp16_t =
+    half *lm_head_fp16 = nullptr; // [hidden_dim, vocab_size]（可选，logits 精度优先）
+    half *lm_head_fp16_t =
         nullptr; // [vocab_size, hidden_dim]（lm_head_fp16 的转置，M==1 decode 快路径）
 };
 

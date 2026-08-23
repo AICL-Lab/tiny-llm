@@ -44,13 +44,13 @@ struct TinyLlmHandleImpl {
     tiny_llm::LayerWorkspace                                 workspace;
     float                                                   *rope_cos = nullptr;
     float                                                   *rope_sin = nullptr;
-    half                             *hidden_buf = nullptr; // [max_seq_len * hidden]
-    half                             *logits_buf = nullptr; // [vocab_size]
-    cudaStream_t                      stream = 0;
-    int                               max_batch_size = 1;
-    tiny_llm::DeviceBuffer<int>       d_tokens;   // token ids 上传缓冲（gather 需 device 指针）
-    tiny_llm::DeviceBuffer<int>       decode_len; // 任务 3.1：decode 可见 KV 长度 (device int)
-    tiny_llm::DeviceBuffer<int>       rope_pos;   // 任务 3.2：RoPE 起始位置 (device int)
+    half                       *hidden_buf = nullptr; // [max_seq_len * hidden]
+    half                       *logits_buf = nullptr; // [vocab_size]
+    cudaStream_t                stream = 0;
+    int                         max_batch_size = 1;
+    tiny_llm::DeviceBuffer<int> d_tokens;   // token ids 上传缓冲（gather 需 device 指针）
+    tiny_llm::DeviceBuffer<int> decode_len; // 任务 3.1：decode 可见 KV 长度 (device int)
+    tiny_llm::DeviceBuffer<int> rope_pos;   // 任务 3.2：RoPE 起始位置 (device int)
     std::unordered_map<int, SeqState> sequences;
 
     // ── 分页 KV（策略 1，max_num_blocks > 0）──
@@ -539,7 +539,7 @@ int tinyllm_step(TinyLlmHandle *handle, const int *seq_ids, const int *input_tok
 
     (void)positions;    // 策略 2：位置由引擎内部跟踪（策略 1 不使用 positions）
     (void)block_tables; // 策略 2：连续 KV，忽略分页表（策略 1 已在循环内使用）
-    (void)num_blocks;   // 策略 2：连续 KV，忽略逐序列块计数（策略 1 已在循环内使用）
+    (void)num_blocks; // 策略 2：连续 KV，忽略逐序列块计数（策略 1 已在循环内使用）
     return TLLM_OK;
 }
 
