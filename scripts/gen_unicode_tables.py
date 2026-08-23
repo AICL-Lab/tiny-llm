@@ -8,6 +8,7 @@ import unicodedata
 from pathlib import Path
 
 OUT = Path("include/tiny_llm/unicode_tables.h")
+EXPECTED_UNICODE_VERSION = "15.0.0"
 
 
 def compact_ranges(cps):
@@ -48,6 +49,12 @@ WHITE_SPACE = [
 
 
 def main():
+    if unicodedata.unidata_version != EXPECTED_UNICODE_VERSION:
+        raise RuntimeError(
+            "Unicode database version mismatch: expected "
+            f"{EXPECTED_UNICODE_VERSION}, got {unicodedata.unidata_version}"
+        )
+
     letters = compact_ranges(cat_set("L"))
     numbers = compact_ranges(cat_set("N"))
     ws = WHITE_SPACE
@@ -58,7 +65,7 @@ def main():
         ws_lines.append("    " + ", ".join(ws_cells[i:i + 8]) + ",")
 
     OUT.write_text(
-        "// 由脚本从 Unicode 15.1 类别数据生成的紧凑区间表（tokenizer 预分词用）。\n"
+        f"// 由脚本从 Unicode {EXPECTED_UNICODE_VERSION} 类别数据生成的紧凑区间表（tokenizer 预分词用）。\n"
         "// 重新生成方式见 scripts/gen_unicode_tables.py。\n"
         "#pragma once\n\n"
         "#include <cstdint>\n\n"
@@ -68,6 +75,7 @@ def main():
         "    uint32_t last; // inclusive\n"
         "};\n\n"
         "// \\p{L} = Lu | Ll | Lt | Lm | Lo\n"
+        "// clang-format off\n"
         "inline constexpr CodepointRange kLetterRanges[] = {\n"
         f"{fmt_ranges(letters)}\n"
         "};\n\n"
@@ -79,6 +87,7 @@ def main():
         "inline constexpr uint32_t kWhitespace[] = {\n"
         + "\n".join(ws_lines)
         + "\n};\n\n"
+        "// clang-format on\n\n"
         "} // namespace tiny_llm\n",
         encoding="utf-8",
     )

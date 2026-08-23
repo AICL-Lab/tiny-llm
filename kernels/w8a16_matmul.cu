@@ -1,6 +1,6 @@
 #include "tiny_llm/cuda_utils.h"
-#include "warp_utils.cuh"
 #include "w8a16_matmul.cuh"
+#include "warp_utils.cuh"
 
 namespace tiny_llm {
 namespace kernels {
@@ -75,14 +75,14 @@ void fp16_matmul_reference(const half *input, const half *weight, half *output, 
 // as w8a16_matmul_m1_kernel; this keeps the fp16 lm_head path from becoming
 // the decode bottleneck for large vocabularies.
 __global__ void fp16_matmul_m1_kernel(const half *__restrict__ input,
-                                      const half *__restrict__ weight,
-                                      half *__restrict__ output, int N, int K) {
+                                      const half *__restrict__ weight, half *__restrict__ output,
+                                      int N, int K) {
     const int warps_per_block = blockDim.x / 32;
     const int col = blockIdx.x * warps_per_block + (threadIdx.x / 32);
     if (col >= N) return;
 
     const int lane = threadIdx.x & 31;
-    float sum = 0.0f;
+    float     sum = 0.0f;
 
     for (int k = lane; k < K; k += 32) {
         float a = __half2float(input[k]);
@@ -107,7 +107,7 @@ __global__ void fp16_matmul_m1_transposed_kernel(const half *__restrict__ input,
     if (col >= N) return;
 
     const int lane = threadIdx.x & 31;
-    float sum = 0.0f;
+    float     sum = 0.0f;
 
     for (int k = lane; k < K; k += 32) {
         float a = __half2float(input[k]);
@@ -134,11 +134,11 @@ void fp16_matmul(const half *input, const half *weight, const half *weight_t, ha
 
     if (M == 1) {
         constexpr int WARPS_PER_BLOCK = 4; // 128 threads
-        dim3 block(WARPS_PER_BLOCK * 32);
-        dim3 grid((N + WARPS_PER_BLOCK - 1) / WARPS_PER_BLOCK);
+        dim3          block(WARPS_PER_BLOCK * 32);
+        dim3          grid((N + WARPS_PER_BLOCK - 1) / WARPS_PER_BLOCK);
         if (weight_t != nullptr) {
-            fp16_matmul_m1_transposed_kernel<<<grid, block, 0, stream>>>(input, weight_t, output,
-                                                                          N, K);
+            fp16_matmul_m1_transposed_kernel<<<grid, block, 0, stream>>>(input, weight_t, output, N,
+                                                                         K);
         } else {
             fp16_matmul_m1_kernel<<<grid, block, 0, stream>>>(input, weight, output, N, K);
         }
@@ -304,14 +304,14 @@ __global__ void w8a16_matmul_tiled_kernel(const half *__restrict__ input,
 // the [1, K] @ [K, N] shape that dominates autoregressive decode.
 __global__ void w8a16_matmul_m1_kernel(const half *__restrict__ input,
                                        const int8_t *__restrict__ weight,
-                                       const half *__restrict__ scales,
-                                       half *__restrict__ output, int N, int K, int group_size) {
+                                       const half *__restrict__ scales, half *__restrict__ output,
+                                       int N, int K, int group_size) {
     const int warps_per_block = blockDim.x / 32;
     const int col = blockIdx.x * warps_per_block + (threadIdx.x / 32);
     if (col >= N) return;
 
     const int lane = threadIdx.x & 31;
-    float sum = 0.0f;
+    float     sum = 0.0f;
 
     for (int k = lane; k < K; k += 32) {
         float a = __half2float(input[k]);
@@ -329,16 +329,17 @@ __global__ void w8a16_matmul_m1_kernel(const half *__restrict__ input,
 // M==1 decode 快路径（转置权重布局 [N, K]）：lane 沿 K 连续读
 // weight_t[col*K + k]，跨 lane 地址 stride=1，完全 coalesced；
 // 对比旧 kernel 的 weight[k*N + col] 跨 lane stride=N×2B（非 coalesced）。
-__global__ void w8a16_matmul_m1_transposed_kernel(
-    const half *__restrict__ input, const int8_t *__restrict__ weight_t,
-    const half *__restrict__ scales_t, half *__restrict__ output, int N, int K,
-    int group_size) {
+__global__ void w8a16_matmul_m1_transposed_kernel(const half *__restrict__ input,
+                                                  const int8_t *__restrict__ weight_t,
+                                                  const half *__restrict__ scales_t,
+                                                  half *__restrict__ output, int N, int K,
+                                                  int group_size) {
     const int warps_per_block = blockDim.x / 32;
     const int col = blockIdx.x * warps_per_block + (threadIdx.x / 32);
     if (col >= N) return;
 
     const int lane = threadIdx.x & 31;
-    float sum = 0.0f;
+    float     sum = 0.0f;
     const int scale_rows = (K + group_size - 1) / group_size;
 
     for (int k = lane; k < K; k += 32) {
@@ -356,8 +357,8 @@ __global__ void w8a16_matmul_m1_transposed_kernel(
 
 void w8a16_matmul(const half *input, const int8_t *weight, const half *scales, half *output, int M,
                   int N, int K, int group_size, cudaStream_t stream) {
-    w8a16_matmul(input, weight, scales, /*weight_t=*/nullptr, /*scales_t=*/nullptr, output, M, N,
-                 K, group_size, stream);
+    w8a16_matmul(input, weight, scales, /*weight_t=*/nullptr, /*scales_t=*/nullptr, output, M, N, K,
+                 group_size, stream);
 }
 
 void w8a16_matmul(const half *input, const int8_t *weight, const half *scales,
@@ -375,14 +376,14 @@ void w8a16_matmul(const half *input, const int8_t *weight, const half *scales,
     // Autoregressive decode fast path: [1, K] @ [K, N].
     if (M == 1) {
         constexpr int WARPS_PER_BLOCK = 4; // 128 threads
-        dim3 block(WARPS_PER_BLOCK * 32);
-        dim3 grid((N + WARPS_PER_BLOCK - 1) / WARPS_PER_BLOCK);
+        dim3          block(WARPS_PER_BLOCK * 32);
+        dim3          grid((N + WARPS_PER_BLOCK - 1) / WARPS_PER_BLOCK);
         if (weight_t != nullptr && scales_t != nullptr) {
-            w8a16_matmul_m1_transposed_kernel<<<grid, block, 0, stream>>>(
-                input, weight_t, scales_t, output, N, K, group_size);
+            w8a16_matmul_m1_transposed_kernel<<<grid, block, 0, stream>>>(input, weight_t, scales_t,
+                                                                          output, N, K, group_size);
         } else {
-            w8a16_matmul_m1_kernel<<<grid, block, 0, stream>>>(input, weight, scales, output, N,
-                                                               K, group_size);
+            w8a16_matmul_m1_kernel<<<grid, block, 0, stream>>>(input, weight, scales, output, N, K,
+                                                               group_size);
         }
         return;
     }

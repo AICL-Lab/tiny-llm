@@ -8,11 +8,10 @@ namespace {
 // 把连续 [num_tokens, chunk_dim] 的 src 按块表散布到 pool。
 // 绝对位置 = position + t；块内偏移 = abs % block_size；
 // pool 传入的是"本层"指针（调用方负责 layer 偏移）。
-__global__ void paged_scatter_blocks_kernel(const half *__restrict__ src,
-                                            half *__restrict__ pool,
-                                            const int *__restrict__ block_table,
-                                            int num_tokens, int position, int block_size,
-                                            int chunk_dim, int max_num_blocks) {
+__global__ void paged_scatter_blocks_kernel(const half *__restrict__ src, half *__restrict__ pool,
+                                            const int *__restrict__ block_table, int num_tokens,
+                                            int position, int block_size, int chunk_dim,
+                                            int max_num_blocks) {
     int idx = blockIdx.x * blockDim.x + threadIdx.x;
     int total = num_tokens * chunk_dim;
     if (idx >= total) return;
@@ -28,11 +27,9 @@ __global__ void paged_scatter_blocks_kernel(const half *__restrict__ src,
 }
 
 // 从块表把 [visible_tokens, chunk_dim] 连续读回 dst。
-__global__ void paged_gather_blocks_kernel(half *__restrict__ dst,
-                                           const half *__restrict__ pool,
-                                           const int *__restrict__ block_table,
-                                           int visible_tokens, int block_size, int chunk_dim,
-                                           int max_num_blocks) {
+__global__ void paged_gather_blocks_kernel(half *__restrict__ dst, const half *__restrict__ pool,
+                                           const int *__restrict__ block_table, int visible_tokens,
+                                           int block_size, int chunk_dim, int max_num_blocks) {
     int idx = blockIdx.x * blockDim.x + threadIdx.x;
     int total = visible_tokens * chunk_dim;
     if (idx >= total) return;
@@ -61,14 +58,12 @@ void paged_scatter_blocks(const half *src, half *pool, const int *block_table, i
     const int total = num_tokens * chunk_dim;
     const int block = 256;
     const int grid = (total + block - 1) / block;
-    paged_scatter_blocks_kernel<<<grid, block, 0, stream>>>(src, pool, block_table, num_tokens,
-                                                            position, block_size, chunk_dim,
-                                                            max_num_blocks);
+    paged_scatter_blocks_kernel<<<grid, block, 0, stream>>>(
+        src, pool, block_table, num_tokens, position, block_size, chunk_dim, max_num_blocks);
 }
 
 void paged_gather_blocks(half *dst, const half *pool, const int *block_table, int visible_tokens,
-                         int block_size, int chunk_dim, int max_num_blocks,
-                         cudaStream_t stream) {
+                         int block_size, int chunk_dim, int max_num_blocks, cudaStream_t stream) {
     if (dst == nullptr || pool == nullptr || block_table == nullptr || visible_tokens <= 0 ||
         block_size <= 0 || chunk_dim <= 0 || max_num_blocks <= 0) {
         return;
@@ -77,8 +72,7 @@ void paged_gather_blocks(half *dst, const half *pool, const int *block_table, in
     const int block = 256;
     const int grid = (total + block - 1) / block;
     paged_gather_blocks_kernel<<<grid, block, 0, stream>>>(dst, pool, block_table, visible_tokens,
-                                                           block_size, chunk_dim,
-                                                           max_num_blocks);
+                                                           block_size, chunk_dim, max_num_blocks);
 }
 
 } // namespace kernels

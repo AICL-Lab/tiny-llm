@@ -5,8 +5,8 @@
 
 namespace tiny_llm {
 
-void finalNormAndComputeLogits(half *hidden, const ModelWeights &weights,
-                               const ModelConfig &config, half *logits, cudaStream_t stream) {
+void finalNormAndComputeLogits(half *hidden, const ModelWeights &weights, const ModelConfig &config,
+                               half *logits, cudaStream_t stream) {
     // final norm（就地，与 InferenceEngine::finalNorm 一致）
     if (weights.final_norm_weight) {
         kernels::rmsnorm_inplace(hidden, weights.final_norm_weight, 1, config.hidden_dim,

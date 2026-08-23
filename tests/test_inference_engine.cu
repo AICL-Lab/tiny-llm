@@ -3,9 +3,9 @@
 #include "tiny_llm/inference_engine.h"
 #include <algorithm>
 #include <cmath>
+#include <cstdlib>
 #include <cuda_fp16.h>
 #include <cuda_runtime.h>
-#include <cstdlib>
 #include <gtest/gtest.h>
 #include <random>
 // #include <rapidcheck.h>
@@ -442,7 +442,7 @@ TEST_F(InferenceEngineTest, CudaGraphsGenerateMatchesNonGraph) {
     const auto &config = config_result.value();
 
     // 与 FFI 门控测试相同的 prompt（token ids 由 llama.cpp tokenizer 给出）
-    const std::vector<int> prompt = {9707, 11, 1246, 525, 498, 30};
+    const std::vector<int>     prompt = {9707, 11, 1246, 525, 498, 30};
     tiny_llm::GenerationConfig gen_config;
     gen_config.max_new_tokens = 16;
     gen_config.do_sample = false; // greedy
@@ -455,6 +455,7 @@ TEST_F(InferenceEngineTest, CudaGraphsGenerateMatchesNonGraph) {
     ASSERT_TRUE(engine_off.isOk()) << engine_off.error();
     auto tokens_off = engine_off.value()->generate(prompt, gen_config);
     ASSERT_TRUE(tokens_off.isOk()) << tokens_off.error();
+    EXPECT_GT(engine_off.value()->getStats().time_to_first_token_ms, 0.0f);
 
     // 2) graphs on（默认即开启；显式设 1 以确保语义明确）
     setenv("TLLM_CUDA_GRAPHS", "1", 1);
@@ -463,6 +464,7 @@ TEST_F(InferenceEngineTest, CudaGraphsGenerateMatchesNonGraph) {
     ASSERT_TRUE(engine_on.isOk()) << engine_on.error();
     auto tokens_on = engine_on.value()->generate(prompt, gen_config);
     ASSERT_TRUE(tokens_on.isOk()) << tokens_on.error();
+    EXPECT_GT(engine_on.value()->getStats().time_to_first_token_ms, 0.0f);
 
     ASSERT_EQ(tokens_off.value().size(), tokens_on.value().size())
         << "graph on/off generated different number of tokens";
@@ -675,9 +677,10 @@ TEST(RepetitionPenaltyTest, AffectsGreedySelection) {
 TEST_F(InferenceEngineTest, TopKTopPSamplingRespectsTopK) {
     // logits 前 4 个接近（softmax 后概率不可忽略）：只做 top_p 会采到 2/3，
     // top_k=2 必须把采样范围限制在 {0,1}。
-    const float vals[] = {3.0f, 2.9f, 2.8f, 2.7f, 1.0f, 0.5f, 0.0f, -1.0f};
+    const float       vals[] = {3.0f, 2.9f, 2.8f, 2.7f, 1.0f, 0.5f, 0.0f, -1.0f};
     std::vector<half> logits;
-    for (float v : vals) logits.push_back(__float2half(v));
+    for (float v : vals)
+        logits.push_back(__float2half(v));
     const int vocab = static_cast<int>(logits.size());
 
     for (int i = 0; i < 200; ++i) {

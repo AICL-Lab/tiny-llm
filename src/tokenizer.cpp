@@ -48,8 +48,7 @@ std::vector<Cp> decodeCps(const std::string &s) {
                 break;
             }
         }
-        if (i + len > s.size())
-            len = 1; // 残缺尾部：leader 单独成字节，剩余字节由后续迭代处理
+        if (i + len > s.size()) len = 1; // 残缺尾部：leader 单独成字节，剩余字节由后续迭代处理
         // 修复：len==1（ASCII 或孤立 continuation byte 0x80-0xBF）时用
         // 无符号字节值。此前 `uint32_t cp = s[i]` 在 char 为有符号时会把
         // 0x80-0xBF 符号扩展成 0xFFFFFF80，导致后续 isLetter/预分词查表
@@ -104,12 +103,8 @@ bool inRanges(uint32_t cp, const CodepointRange *ranges, size_t n) {
     return false;
 }
 
-bool isLetter(uint32_t cp) {
-    return inRanges(cp, kLetterRanges, std::size(kLetterRanges));
-}
-bool isNumber(uint32_t cp) {
-    return inRanges(cp, kNumberRanges, std::size(kNumberRanges));
-}
+bool isLetter(uint32_t cp) { return inRanges(cp, kLetterRanges, std::size(kLetterRanges)); }
+bool isNumber(uint32_t cp) { return inRanges(cp, kNumberRanges, std::size(kNumberRanges)); }
 
 bool isWhitespace(uint32_t cp) {
     const auto *p = std::lower_bound(kWhitespace, std::end(kWhitespace), cp);
@@ -164,8 +159,7 @@ std::string byteEncode(const std::string &utf8) {
 }
 
 bool ciEqualsLower(uint32_t cp, char lower) {
-    return cp == static_cast<uint32_t>(lower) ||
-           cp == static_cast<uint32_t>(lower - 'a' + 'A');
+    return cp == static_cast<uint32_t>(lower) || cp == static_cast<uint32_t>(lower - 'a' + 'A');
 }
 
 // 缩写后缀表，顺序即正则分支 (?i:'s|'t|'re|'ve|'m|'ll|'d) 的优先级
@@ -176,8 +170,7 @@ constexpr std::string_view kContractions[] = {"s", "t", "re", "ve", "m", "ll", "
 const uint32_t *byteToUnicodeTable() { return byteTable().data(); }
 
 int unicodeToByte(uint32_t cp) {
-    if (cp >= inverseByteTable().size())
-        return -1;
+    if (cp >= inverseByteTable().size()) return -1;
     return inverseByteTable()[cp];
 }
 
@@ -194,8 +187,7 @@ std::vector<uint32_t> decodeUtf8Codepoints(const std::string &s) {
 Result<Tokenizer> Tokenizer::build(const TokenizerData &data) {
     if (data.model_type != "gpt2")
         return Result<Tokenizer>::err("unsupported tokenizer model: " + data.model_type);
-    if (data.tokens.empty())
-        return Result<Tokenizer>::err("empty token list");
+    if (data.tokens.empty()) return Result<Tokenizer>::err("empty token list");
 
     Tokenizer t;
     t.id_to_token_ = data.tokens;
@@ -255,7 +247,7 @@ std::vector<std::string> Tokenizer::preTokenize(const std::string &text) const {
     std::vector<std::string> out;
     size_t                   i = 0;
     while (i < n) {
-        size_t j = i; // 匹配终点（码点下标，不含）
+        size_t   j = i; // 匹配终点（码点下标，不含）
         uint32_t c = cps[i].cp;
 
         // 分支 1: (?i:'s|'t|'re|'ve|'m|'ll|'d)
@@ -264,8 +256,7 @@ std::vector<std::string> Tokenizer::preTokenize(const std::string &text) const {
                 size_t k = i + 1;
                 bool   ok = suf.size() <= n - k;
                 for (size_t s = 0; ok && s < suf.size(); ++s, ++k) {
-                    if (!ciEqualsLower(cps[k].cp, suf[s]))
-                        ok = false;
+                    if (!ciEqualsLower(cps[k].cp, suf[s])) ok = false;
                 }
                 if (ok) {
                     j = k;
@@ -289,8 +280,7 @@ std::vector<std::string> Tokenizer::preTokenize(const std::string &text) const {
         }
 
         // 分支 3: \p{N}（单个数字码点）
-        if (j == i && isNumber(c))
-            j = i + 1;
+        if (j == i && isNumber(c)) j = i + 1;
 
         // 分支 4: ' '?[^\s\p{L}\p{N}]+[\r\n]*
         if (j == i) {
@@ -298,8 +288,7 @@ std::vector<std::string> Tokenizer::preTokenize(const std::string &text) const {
                 return !isWhitespace(cp) && !isLetter(cp) && !isNumber(cp);
             };
             size_t k = i;
-            if (k < n && cps[k].cp == ' ')
-                ++k;
+            if (k < n && cps[k].cp == ' ') ++k;
             if (k < n && isOther(cps[k].cp)) {
                 while (k < n && isOther(cps[k].cp))
                     ++k;
@@ -316,11 +305,9 @@ std::vector<std::string> Tokenizer::preTokenize(const std::string &text) const {
                 ++r;
             size_t lastNl = n;
             for (size_t k = i; k < r; ++k) {
-                if (cps[k].cp == '\r' || cps[k].cp == '\n')
-                    lastNl = k;
+                if (cps[k].cp == '\r' || cps[k].cp == '\n') lastNl = k;
             }
-            if (lastNl != n)
-                j = lastNl + 1;
+            if (lastNl != n) j = lastNl + 1;
         }
 
         // 分支 6: \s+(?!\S)
@@ -372,9 +359,8 @@ std::vector<std::string> Tokenizer::bpe(const std::string &word) const {
                 bestPos = k;
             }
         }
-        if (bestRank == INT_MAX)
-            break;
-        const std::string a = syms[bestPos], b = syms[bestPos + 1];
+        if (bestRank == INT_MAX) break;
+        const std::string        a = syms[bestPos], b = syms[bestPos + 1];
         std::vector<std::string> next;
         next.reserve(syms.size());
         for (size_t k = 0; k < syms.size();) {
@@ -400,21 +386,18 @@ bool Tokenizer::pieceIsSpecial(int id) const {
 
 std::vector<int> Tokenizer::encode(const std::string &text, bool add_bos) const {
     std::vector<int> ids;
-    if (add_bos && bos_id_ >= 0)
-        ids.push_back(bos_id_);
+    if (add_bos && bos_id_ >= 0) ids.push_back(bos_id_);
 
     // 1) 特殊 token 精确匹配隔离（从左到右，同位置长者优先）
-    size_t i = 0;
+    size_t      i = 0;
     std::string seg;
-    auto flushSeg = [&] {
-        if (seg.empty())
-            return;
+    auto        flushSeg = [&] {
+        if (seg.empty()) return;
         // 2) 预分词 -> 3) 字节编码 -> 4) BPE
         for (const std::string &chunk : preTokenize(seg)) {
             for (const std::string &piece : bpe(byteEncode(chunk))) {
                 auto it = token_to_id_.find(piece);
-                if (it != token_to_id_.end())
-                    ids.push_back(it->second);
+                if (it != token_to_id_.end()) ids.push_back(it->second);
             }
         }
         seg.clear();
@@ -431,8 +414,7 @@ std::vector<int> Tokenizer::encode(const std::string &text, bool add_bos) const 
                 break;
             }
         }
-        if (!matched)
-            seg += text[i++];
+        if (!matched) seg += text[i++];
     }
     flushSeg();
     return ids;
@@ -441,8 +423,7 @@ std::vector<int> Tokenizer::encode(const std::string &text, bool add_bos) const 
 std::string Tokenizer::decode(const std::vector<int> &ids) const {
     std::string out;
     for (int id : ids) {
-        if (id < 0 || static_cast<size_t>(id) >= id_to_token_.size())
-            continue;
+        if (id < 0 || static_cast<size_t>(id) >= id_to_token_.size()) continue;
         const std::string &piece = id_to_token_[id];
         if (pieceIsSpecial(id)) {
             out += piece;

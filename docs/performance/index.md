@@ -12,7 +12,7 @@
 | KV Cache 分配与回收 | 单元测试 + 不变量检查 | ✅ |
 | GGUF 解析与反量化（F16/F32/Q4_0/Q5_0/Q8_0/Q4_K/Q6_K） | 与 Python gguf 参考差分对比 | ✅ |
 | 真实模型端到端生成 | Qwen2.5-0.5B-Instruct（Q4_K_M）在 RTX 3060 上验证 | ✅ |
-| 吞吐 / 延迟 / 显存基准 | `tiny_llm_bench`（TTFT / TPOT / tok/s / 峰值显存） | ✅ |
+| 吞吐 / 延迟 / 显存基准 | `tiny_llm_bench`（同请求 TTFT / TPOT / tok/s / 常驻显存差值） | ✅ |
 
 ## 基准快照（2026-08-18，C0–C2 优化后）
 
@@ -24,13 +24,19 @@
 | TTFT (mean) | 10.6 ms |
 | TPOT (mean) | 6.1 ms/token |
 | decode 吞吐 | 164.3 tok/s |
-| 峰值显存增量 | 3368 MB（含 M==1 转置权重副本） |
+| 常驻显存差值 | 3368 MB（加载前 vs 运行后；非真实峰值） |
 
 复现：`./build/tiny_llm_bench model.gguf --prompt "你好" --max-tokens 64 --warmup 3 --iters 10`
 （CUDA Graphs decode 默认开启；`TLLM_CUDA_GRAPHS=0` 关闭）
 
+> 上表是 schema v1 历史快照。2026-08-23 起 schema v2 在同一次请求内记录首 token
+> 时间，并输出 Graph 实际状态、GPU 与迭代元数据；不同 schema 不直接合并统计。
+
 > 数字会随优化更新，每次更新都会同步记录 commit 与命令。kernel 级证据见
 > [2026-08-18-decode-optimization](results/2026-08-18-decode-optimization.md)。
+> current-worktree Graph on/off 本地验证见
+> [2026-08-23-cuda-graphs-ab](results/2026-08-23-cuda-graphs-ab.md)；该报告明确标为
+> dirty worktree，不替代 clean commit 快照。
 
 ## 章节
 

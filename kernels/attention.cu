@@ -39,12 +39,16 @@ constexpr int ATTEND_TILE = 128;
 //   out_acc[head_dim]         partial attention output (un-normalized)
 //   q_smem[head_dim]          query head cache (fp16)
 struct AttentionSmemLayout {
-    int head_dim;
+    int                               head_dim;
     __host__ __device__ constexpr int scores_offset() const { return 0; }
     __host__ __device__ constexpr int red_offset() const { return ATTEND_TILE; }
     __host__ __device__ constexpr int out_acc_offset() const { return ATTEND_TILE + 8; }
-    __host__ __device__ constexpr int q_offset_bytes() const { return (ATTEND_TILE + 8 + head_dim) * sizeof(float); }
-    __host__ __device__ constexpr int total_bytes() const { return q_offset_bytes() + head_dim * sizeof(half); }
+    __host__ __device__ constexpr int q_offset_bytes() const {
+        return (ATTEND_TILE + 8 + head_dim) * sizeof(float);
+    }
+    __host__ __device__ constexpr int total_bytes() const {
+        return q_offset_bytes() + head_dim * sizeof(half);
+    }
 };
 
 __device__ __forceinline__ float block_reduce_max_dyn(float val, float *red, int nthreads) {
@@ -86,11 +90,10 @@ __device__ __forceinline__ float block_reduce_sum_dyn(float val, float *red, int
 // visible_len is read from global memory so the kernel is CUDA-Graph
 // replayable (task 3.1): the host updates one device int then replays.
 __global__ void attention_decode_kernel(const half *__restrict__ query,
-                                         const half *__restrict__ k_cache,
-                                         const half *__restrict__ v_cache,
-                                         half *__restrict__ output, float scale, int num_q_heads,
-                                         int num_kv_heads, const int *device_visible_len,
-                                         int head_dim) {
+                                        const half *__restrict__ k_cache,
+                                        const half *__restrict__ v_cache, half *__restrict__ output,
+                                        float scale, int num_q_heads, int num_kv_heads,
+                                        const int *device_visible_len, int head_dim) {
     const int visible_len = *device_visible_len;
     const int q_head = blockIdx.x;
     const int tid = threadIdx.x;
@@ -105,12 +108,12 @@ __global__ void attention_decode_kernel(const half *__restrict__ query,
     half       *o = output + q_head * head_dim;
 
     extern __shared__ float smem[];
-    AttentionSmemLayout layout{head_dim};
-    float *scores = smem + layout.scores_offset();
-    float *red    = smem + layout.red_offset();
-    float *out_acc = smem + layout.out_acc_offset();
-    half  *q_smem = reinterpret_cast<half *>(
-        reinterpret_cast<char *>(smem) + layout.q_offset_bytes());
+    AttentionSmemLayout     layout{head_dim};
+    float                  *scores = smem + layout.scores_offset();
+    float                  *red = smem + layout.red_offset();
+    float                  *out_acc = smem + layout.out_acc_offset();
+    half                   *q_smem =
+        reinterpret_cast<half *>(reinterpret_cast<char *>(smem) + layout.q_offset_bytes());
 
     // Cache Q for this head and zero the output accumulator.
     for (int d = tid; d < head_dim; d += nthreads) {
@@ -127,9 +130,9 @@ __global__ void attention_decode_kernel(const half *__restrict__ query,
 
         // Step 1: scores s_i = scale * (Q dot K_i) for this tile.
         for (int i = tid; i < tile_size; i += nthreads) {
-            const int pos = tile_start + i;
+            const int   pos = tile_start + i;
             const half *k_pos = k + pos * kv_stride;
-            float score = 0.0f;
+            float       score = 0.0f;
             for (int d = 0; d < head_dim; ++d) {
                 score += __half2float(q_smem[d]) * __half2float(k_pos[d]);
             }
@@ -162,8 +165,7 @@ __global__ void attention_decode_kernel(const half *__restrict__ query,
             float partial = 0.0f;
             for (int i = 0; i < tile_size; ++i) {
                 const int pos = tile_start + i;
-                partial += __expf(scores[i] - m_new) *
-                           __half2float(v[pos * kv_stride + d]);
+                partial += __expf(scores[i] - m_new) * __half2float(v[pos * kv_stride + d]);
             }
             out_acc[d] = out_acc[d] * old_rescale + partial;
         }
@@ -180,16 +182,16 @@ __global__ void attention_decode_kernel(const half *__restrict__ query,
 }
 
 void attention_decode(const half *query, const half *k_cache, const half *v_cache, half *output,
-                       float scale, int num_q_heads, int num_kv_heads,
-                       const int *device_visible_len, int head_dim, cudaStream_t stream) {
+                      float scale, int num_q_heads, int num_kv_heads, const int *device_visible_len,
+                      int head_dim, cudaStream_t stream) {
     if (num_q_heads <= 0 || num_kv_heads <= 0 || head_dim <= 0 || device_visible_len == nullptr) {
         return;
     }
 
-    const int num_blocks = num_q_heads;
-    const int block_size = 128;
+    const int           num_blocks = num_q_heads;
+    const int           block_size = 128;
     AttentionSmemLayout layout{head_dim};
-    const size_t shared_size = layout.total_bytes();
+    const size_t        shared_size = layout.total_bytes();
 
     attention_decode_kernel<<<num_blocks, block_size, shared_size, stream>>>(
         query, k_cache, v_cache, output, scale, num_q_heads, num_kv_heads, device_visible_len,
@@ -214,10 +216,10 @@ void attention_decode(const half *query, const half *k_cache, const half *v_cach
 // Prefill attention: full sequence with causal masking.
 // Q: [S, Hq, D]; K/V: [S, Hkv, D].  One block per (query_pos, q_head).
 __global__ void attention_prefill_kernel(const half *__restrict__ query,
-                                          const half *__restrict__ key,
-                                          const half *__restrict__ value,
-                                          half *__restrict__ output, float scale, int num_q_heads,
-                                          int num_kv_heads, int seq_len, int head_dim) {
+                                         const half *__restrict__ key,
+                                         const half *__restrict__ value, half *__restrict__ output,
+                                         float scale, int num_q_heads, int num_kv_heads,
+                                         int seq_len, int head_dim) {
     const int query_pos = blockIdx.x;
     const int q_head = blockIdx.y;
     const int tid = threadIdx.x;
@@ -233,12 +235,12 @@ __global__ void attention_prefill_kernel(const half *__restrict__ query,
     half       *o = output + (query_pos * num_q_heads + q_head) * head_dim;
 
     extern __shared__ float smem[];
-    AttentionSmemLayout layout{head_dim};
-    float *scores = smem + layout.scores_offset();
-    float *red    = smem + layout.red_offset();
-    float *out_acc = smem + layout.out_acc_offset();
-    half  *q_smem = reinterpret_cast<half *>(
-        reinterpret_cast<char *>(smem) + layout.q_offset_bytes());
+    AttentionSmemLayout     layout{head_dim};
+    float                  *scores = smem + layout.scores_offset();
+    float                  *red = smem + layout.red_offset();
+    float                  *out_acc = smem + layout.out_acc_offset();
+    half                   *q_smem =
+        reinterpret_cast<half *>(reinterpret_cast<char *>(smem) + layout.q_offset_bytes());
 
     for (int d = tid; d < head_dim; d += nthreads) {
         q_smem[d] = q[d];
@@ -256,9 +258,9 @@ __global__ void attention_prefill_kernel(const half *__restrict__ query,
         if (tile_size <= 0) break;
 
         for (int i = tid; i < tile_size; i += nthreads) {
-            const int pos = tile_start + i;
+            const int   pos = tile_start + i;
             const half *k_pos = k + pos * kv_stride;
-            float score = 0.0f;
+            float       score = 0.0f;
             for (int d = 0; d < head_dim; ++d) {
                 score += __half2float(q_smem[d]) * __half2float(k_pos[d]);
             }
@@ -287,8 +289,7 @@ __global__ void attention_prefill_kernel(const half *__restrict__ query,
             float partial = 0.0f;
             for (int i = 0; i < tile_size; ++i) {
                 const int pos = tile_start + i;
-                partial += __expf(scores[i] - m_new) *
-                           __half2float(v[pos * kv_stride + d]);
+                partial += __expf(scores[i] - m_new) * __half2float(v[pos * kv_stride + d]);
             }
             out_acc[d] = out_acc[d] * old_rescale + partial;
         }
@@ -304,16 +305,16 @@ __global__ void attention_prefill_kernel(const half *__restrict__ query,
 }
 
 void attention_prefill(const half *query, const half *key, const half *value, half *output,
-                        float scale, int num_q_heads, int num_kv_heads, int seq_len, int head_dim,
-                        cudaStream_t stream) {
+                       float scale, int num_q_heads, int num_kv_heads, int seq_len, int head_dim,
+                       cudaStream_t stream) {
     if (num_q_heads <= 0 || num_kv_heads <= 0 || seq_len <= 0 || head_dim <= 0) {
         return;
     }
 
-    dim3 grid(seq_len, num_q_heads);
-    const int block_size = 128;
+    dim3                grid(seq_len, num_q_heads);
+    const int           block_size = 128;
     AttentionSmemLayout layout{head_dim};
-    const size_t shared_size = layout.total_bytes();
+    const size_t        shared_size = layout.total_bytes();
 
     attention_prefill_kernel<<<grid, block_size, shared_size, stream>>>(
         query, key, value, output, scale, num_q_heads, num_kv_heads, seq_len, head_dim);
@@ -340,13 +341,13 @@ __global__ void get_attention_weights_kernel(const half *__restrict__ query,
 
     const half *q = query + (query_pos * num_q_heads + q_head) * head_dim;
     const half *k = key + kv_head * head_dim;
-    half *w = weights + (query_pos * num_q_heads + q_head) * key_len;
+    half       *w = weights + (query_pos * num_q_heads + q_head) * key_len;
 
     for (int key_pos = tid; key_pos < key_len; key_pos += block_size) {
         if (apply_causal_mask && key_pos > query_pos) {
             w[key_pos] = __float2half(0.0f);
         } else {
-            float score = 0.0f;
+            float       score = 0.0f;
             const half *k_pos = k + key_pos * kv_stride;
             for (int d = 0; d < head_dim; ++d) {
                 score += __half2float(q[d]) * __half2float(k_pos[d]);
@@ -358,14 +359,13 @@ __global__ void get_attention_weights_kernel(const half *__restrict__ query,
 
 void get_attention_weights(const half *query, const half *key, half *__restrict__ weights,
                            float scale, int num_q_heads, int num_kv_heads, int query_len,
-                           int key_len, int head_dim, bool apply_causal_mask,
-                           cudaStream_t stream) {
+                           int key_len, int head_dim, bool apply_causal_mask, cudaStream_t stream) {
     if (num_q_heads <= 0 || num_kv_heads <= 0 || query_len <= 0 || key_len <= 0 || head_dim <= 0) {
         return;
     }
 
     dim3 grid(query_len, num_q_heads);
-    int block_size = 256;
+    int  block_size = 256;
 
     get_attention_weights_kernel<<<grid, block_size, 0, stream>>>(
         query, key, weights, scale, num_q_heads, num_kv_heads, query_len, key_len, head_dim,

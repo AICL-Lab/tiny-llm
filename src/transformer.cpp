@@ -1,9 +1,9 @@
 #include "tiny_llm/transformer.h"
 #include "attention.cuh"
-#include "rope.cuh"
 #include "elementwise.cuh"
 #include "paged_kv.cuh"
 #include "rmsnorm.cuh"
+#include "rope.cuh"
 #include "tiny_llm/cuda_utils.h"
 #include "tiny_llm/logger.h"
 #include "tiny_llm/validator.h"
@@ -107,10 +107,10 @@ TransformerLayer::~TransformerLayer() {} // workspace 由引擎统一管理
 // 无法重绑定它们（旧版移动赋值只更新 layer_idx_/ws_，会静默产生指向错误权重
 // 的对象）。所有调用方均以 unique_ptr 持有（make_unique 原地构造），无需移动。
 
-Result<void> TransformerLayer::forward(half *hidden_states, KVCacheManager &kv_cache,
-                                         int seq_id, int position, const int *decode_len,
-                                         const int *rope_pos, const float *rope_cos,
-                                         const float *rope_sin, cudaStream_t stream) {
+Result<void> TransformerLayer::forward(half *hidden_states, KVCacheManager &kv_cache, int seq_id,
+                                       int position, const int *decode_len, const int *rope_pos,
+                                       const float *rope_cos, const float *rope_sin,
+                                       cudaStream_t stream) {
     // Input validation
     auto ptr_result = Validator::validateNotNull(hidden_states, "hidden_states");
     if (ptr_result.isErr()) {
@@ -137,9 +137,9 @@ Result<void> TransformerLayer::forward(half *hidden_states, KVCacheManager &kv_c
 }
 
 Result<void> TransformerLayer::forwardPrefill(half *hidden_states, KVCacheManager &kv_cache,
-                                               int seq_id, int seq_len, const int *rope_pos,
-                                               const float *rope_cos, const float *rope_sin,
-                                               cudaStream_t stream) {
+                                              int seq_id, int seq_len, const int *rope_pos,
+                                              const float *rope_cos, const float *rope_sin,
+                                              cudaStream_t stream) {
     // Input validation
     auto ptr_result = Validator::validateNotNull(hidden_states, "hidden_states");
     if (ptr_result.isErr()) {
@@ -170,9 +170,9 @@ Result<void> TransformerLayer::forwardPrefill(half *hidden_states, KVCacheManage
 }
 
 Result<void> TransformerLayer::forwardPaged(half *hidden_states, const PagedKVCacheView &kv,
-                                              int num_tokens, const int *rope_pos,
-                                              const float *rope_cos, const float *rope_sin,
-                                              cudaStream_t stream) {
+                                            int num_tokens, const int *rope_pos,
+                                            const float *rope_cos, const float *rope_sin,
+                                            cudaStream_t stream) {
     // Input validation
     auto ptr_result = Validator::validateNotNull(hidden_states, "hidden_states");
     if (ptr_result.isErr()) {
@@ -219,17 +219,16 @@ Result<void> TransformerLayer::forwardPaged(half *hidden_states, const PagedKVCa
     return Result<void>::ok();
 }
 
-Result<void> TransformerLayer::runLayer(half *hidden_states, KVCacheManager &kv_cache,
-                                          int seq_id, int position, int num_tokens,
-                                          const int *decode_len, const int *rope_pos,
-                                          const float *rope_cos, const float *rope_sin,
-                                          cudaStream_t stream) {
+Result<void> TransformerLayer::runLayer(half *hidden_states, KVCacheManager &kv_cache, int seq_id,
+                                        int position, int num_tokens, const int *decode_len,
+                                        const int *rope_pos, const float *rope_cos,
+                                        const float *rope_sin, cudaStream_t stream) {
     const int hidden_dim = config_.hidden_dim;
 
     // Attention sublayer with residual: x = x + attention(rms_norm(x))
     rmsNorm(hidden_states, weights_.rms_att_weight, ws_->norm_output, num_tokens, stream);
     auto attn_result = attention(ws_->norm_output, ws_->attn_output, kv_cache, seq_id, position,
-                                  num_tokens, decode_len, rope_pos, rope_cos, rope_sin, stream);
+                                 num_tokens, decode_len, rope_pos, rope_cos, rope_sin, stream);
     if (attn_result.isErr()) {
         return attn_result;
     }
@@ -244,10 +243,10 @@ Result<void> TransformerLayer::runLayer(half *hidden_states, KVCacheManager &kv_
 }
 
 Result<void> TransformerLayer::attention(const half *x, half *output, KVCacheManager &kv_cache,
-                                           int seq_id, int position, int num_tokens,
-                                           const int *decode_len, const int *rope_pos,
-                                           const float *rope_cos, const float *rope_sin,
-                                           cudaStream_t stream) {
+                                         int seq_id, int position, int num_tokens,
+                                         const int *decode_len, const int *rope_pos,
+                                         const float *rope_cos, const float *rope_sin,
+                                         cudaStream_t stream) {
     int hidden_dim = config_.hidden_dim;
     int num_heads = config_.num_heads;
     int num_kv_heads = config_.num_kv_heads;
@@ -266,14 +265,14 @@ Result<void> TransformerLayer::attention(const half *x, half *output, KVCacheMan
     // K projection: [num_tokens, hidden_dim] @ [hidden_dim, num_kv_heads *
     // head_dim]
     kernels::w8a16_matmul(x, weights_.wk.data, weights_.wk.scales, weights_.wk.data_t,
-                          weights_.wk.scales_t, ws_->k_buf, num_tokens,
-                          num_kv_heads * head_dim, hidden_dim, weights_.wk.group_size, stream);
+                          weights_.wk.scales_t, ws_->k_buf, num_tokens, num_kv_heads * head_dim,
+                          hidden_dim, weights_.wk.group_size, stream);
 
     // V projection: [num_tokens, hidden_dim] @ [hidden_dim, num_kv_heads *
     // head_dim]
     kernels::w8a16_matmul(x, weights_.wv.data, weights_.wv.scales, weights_.wv.data_t,
-                          weights_.wv.scales_t, ws_->v_buf, num_tokens,
-                          num_kv_heads * head_dim, hidden_dim, weights_.wv.group_size, stream);
+                          weights_.wv.scales_t, ws_->v_buf, num_tokens, num_kv_heads * head_dim,
+                          hidden_dim, weights_.wv.group_size, stream);
 
     // Qwen2 系 attention bias：q = x@Wq^T + bq（bias 在 RoPE 之前加）
     if (weights_.wq_bias) {
@@ -281,12 +280,12 @@ Result<void> TransformerLayer::attention(const half *x, half *output, KVCacheMan
                                   stream);
     }
     if (weights_.wk_bias) {
-        kernels::add_bias_inplace(ws_->k_buf, weights_.wk_bias, num_tokens,
-                                  num_kv_heads * head_dim, stream);
+        kernels::add_bias_inplace(ws_->k_buf, weights_.wk_bias, num_tokens, num_kv_heads * head_dim,
+                                  stream);
     }
     if (weights_.wv_bias) {
-        kernels::add_bias_inplace(ws_->v_buf, weights_.wv_bias, num_tokens,
-                                  num_kv_heads * head_dim, stream);
+        kernels::add_bias_inplace(ws_->v_buf, weights_.wv_bias, num_tokens, num_kv_heads * head_dim,
+                                  stream);
     }
 
     // TLLM-003: Apply RoPE to Q and K after projection, before KV append.
@@ -300,9 +299,8 @@ Result<void> TransformerLayer::attention(const half *x, half *output, KVCacheMan
     auto [k_cache, v_cache] = kv_cache.getCache(seq_id, layer_idx_);
 
     // Append new K, V to cache（device 写位置版本，CUDA Graph 重放前置）
-    auto append_result =
-        kv_cache.appendKV(seq_id, layer_idx_, ws_->k_buf, ws_->v_buf, num_tokens,
-                          kv_cache.appendPosDevicePtr(), stream);
+    auto append_result = kv_cache.appendKV(seq_id, layer_idx_, ws_->k_buf, ws_->v_buf, num_tokens,
+                                           kv_cache.appendPosDevicePtr(), stream);
     if (append_result.isErr()) {
         TLLM_ERROR("attention: appendKV failed for layer {}: {}", layer_idx_,
                    append_result.error());
@@ -337,9 +335,9 @@ Result<void> TransformerLayer::attention(const half *x, half *output, KVCacheMan
 }
 
 Result<void> TransformerLayer::attentionPaged(const half *x, half *output,
-                                                const PagedKVCacheView &kv, int num_tokens,
-                                                const int *rope_pos, const float *rope_cos,
-                                                const float *rope_sin, cudaStream_t stream) {
+                                              const PagedKVCacheView &kv, int num_tokens,
+                                              const int *rope_pos, const float *rope_cos,
+                                              const float *rope_sin, cudaStream_t stream) {
     int hidden_dim = config_.hidden_dim;
     int num_heads = config_.num_heads;
     int num_kv_heads = config_.num_kv_heads;
@@ -389,13 +387,13 @@ Result<void> TransformerLayer::attentionPaged(const half *x, half *output,
     // 可见长度：prefill = num_tokens；decode（num_tokens==1 && decode_len）=
     // kv.position + 1（与 *kv.decode_len 一致）。
     const bool is_decode = (num_tokens == 1 && kv.decode_len != nullptr);
-    const int visible = is_decode ? (kv.position + 1) : num_tokens;
+    const int  visible = is_decode ? (kv.position + 1) : num_tokens;
 
     // 把可见区间 gather 到 scratch（连续布局供 attention kernel 使用）
-    kernels::paged_gather_blocks(kv.k_scratch, k_pool_layer, kv.block_table, visible,
-                                 kv.block_size, kv_dim, kv.max_num_blocks, stream);
-    kernels::paged_gather_blocks(kv.v_scratch, v_pool_layer, kv.block_table, visible,
-                                 kv.block_size, kv_dim, kv.max_num_blocks, stream);
+    kernels::paged_gather_blocks(kv.k_scratch, k_pool_layer, kv.block_table, visible, kv.block_size,
+                                 kv_dim, kv.max_num_blocks, stream);
+    kernels::paged_gather_blocks(kv.v_scratch, v_pool_layer, kv.block_table, visible, kv.block_size,
+                                 kv_dim, kv.max_num_blocks, stream);
 
     // Attention
     float scale = 1.0f / std::sqrt(static_cast<float>(head_dim));

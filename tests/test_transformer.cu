@@ -1,8 +1,8 @@
 #include "attention.cuh"
-#include "transpose_weights.cuh"
 #include "tiny_llm/cuda_utils.h"
 #include "tiny_llm/kv_cache.h"
 #include "tiny_llm/transformer.h"
+#include "transpose_weights.cuh"
 #include <cmath>
 #include <cuda_fp16.h>
 #include <cuda_runtime.h>
@@ -215,11 +215,11 @@ TEST_F(TransformerTest, KeyProjectionUsesItsOwnGroupSize) {
 
     // RoPE 恒等：cos=1, sin=0
     DeviceBuffer<float> d_cos(16), d_sin(16);
-    std::vector<float> ones_f(16, 1.0f), zeros_f(16, 0.0f);
+    std::vector<float>  ones_f(16, 1.0f), zeros_f(16, 0.0f);
     d_cos.copyFromHost(ones_f.data(), 16);
     d_sin.copyFromHost(zeros_f.data(), 16);
     DeviceBuffer<int> d_pos(1);
-    int zero = 0;
+    int               zero = 0;
     d_pos.copyFromHost(&zero, 1);
 
     // 输入 one-hot e_16（命中 wk 第 2 组 scale）

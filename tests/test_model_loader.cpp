@@ -128,8 +128,7 @@ struct GGUFTensorSpec {
 
 class MinimalGGUFBuilder {
   public:
-    int hidden = 8, layers = 1, heads = 1, kv_heads = 1, vocab = 4, context = 16,
-        intermediate = 8;
+    int hidden = 8, layers = 1, heads = 1, kv_heads = 1, vocab = 4, context = 16, intermediate = 8;
 
     std::vector<GGUFTensorSpec> tensors;
 
@@ -137,7 +136,7 @@ class MinimalGGUFBuilder {
     std::vector<uint8_t> build() const {
         std::vector<uint8_t> metadata;
         uint64_t             metadata_count = 0;
-        auto add_int = [&](const std::string &key, int32_t v) {
+        auto                 add_int = [&](const std::string &key, int32_t v) {
             appendString(metadata, key);
             appendValue(metadata, uint32_t(static_cast<uint32_t>(GGUFType::INT32)));
             appendValue(metadata, v);
@@ -154,7 +153,8 @@ class MinimalGGUFBuilder {
         appendValue(metadata, uint32_t(static_cast<uint32_t>(GGUFType::ARRAY)));
         appendValue(metadata, uint32_t(static_cast<uint32_t>(GGUFType::STRING)));
         appendValue(metadata, uint64_t(vocab));
-        for (int i = 0; i < vocab; ++i) appendString(metadata, "t" + std::to_string(i));
+        for (int i = 0; i < vocab; ++i)
+            appendString(metadata, "t" + std::to_string(i));
         ++metadata_count;
 
         // tensor info 条目（offset 相对数据区起始，数据按声明顺序连续写入）
@@ -163,7 +163,8 @@ class MinimalGGUFBuilder {
         for (const auto &t : tensors) {
             appendString(entries, t.name);
             appendValue(entries, uint32_t(t.dims.size()));
-            for (auto d : t.dims) appendValue(entries, uint64_t(d));
+            for (auto d : t.dims)
+                appendValue(entries, uint64_t(d));
             appendValue(entries, uint32_t(static_cast<uint32_t>(GGMLType::F32)));
             appendValue(entries, uint64_t(data_off));
             data_off += t.data.size() * sizeof(float);
@@ -204,7 +205,8 @@ class ModelLoaderContractTest : public ::testing::Test {
 
     static std::vector<float> ramp(size_t n, float base) {
         std::vector<float> v(n);
-        for (size_t i = 0; i < n; ++i) v[i] = base + static_cast<float>(i) * 0.01f;
+        for (size_t i = 0; i < n; ++i)
+            v[i] = base + static_cast<float>(i) * 0.01f;
         return v;
     }
 
@@ -233,7 +235,8 @@ class ModelLoaderContractTest : public ::testing::Test {
             b.tensors.push_back({"blk.0.attn_k.bias", {8}, ramp(8, 2.1f)});
             b.tensors.push_back({"blk.0.attn_v.bias", {8}, ramp(8, 2.2f)});
         }
-        for (const auto &t : extra) b.tensors.push_back(t);
+        for (const auto &t : extra)
+            b.tensors.push_back(t);
         file.writeBytes(b.build());
     }
 };
@@ -243,8 +246,8 @@ TEST_F(ModelLoaderContractTest, NonTiedOutputWeightLoads) {
     TempFile file(".gguf");
     writeMinimalGGUF(file, /*include_output=*/true, /*include_qwen_bias=*/false);
 
-    ModelConfig          config;
-    auto                 result = ModelLoader::loadGGUF(file.path(), config);
+    ModelConfig config;
+    auto        result = ModelLoader::loadGGUF(file.path(), config);
     ASSERT_TRUE(result.isOk()) << result.error();
     auto &weights = result.value();
     EXPECT_TRUE(weights.lm_head.isValid());
@@ -260,8 +263,8 @@ TEST_F(ModelLoaderContractTest, TiedOutputEmbeddingFallsBackToTokenEmbedding) {
     // 无 output.weight / lm_head.weight → tied output embedding 路径
     writeMinimalGGUF(file, /*include_output=*/false, /*include_qwen_bias=*/false);
 
-    ModelConfig          config;
-    auto                 result = ModelLoader::loadGGUF(file.path(), config);
+    ModelConfig config;
+    auto        result = ModelLoader::loadGGUF(file.path(), config);
     ASSERT_TRUE(result.isOk()) << result.error();
     auto &weights = result.value();
     EXPECT_TRUE(weights.lm_head.isValid());
@@ -270,8 +273,8 @@ TEST_F(ModelLoaderContractTest, TiedOutputEmbeddingFallsBackToTokenEmbedding) {
     ASSERT_NE(weights.lm_head_fp16, nullptr);
 
     // 差分验证：lm_head_fp16 [hidden, vocab] = transpose(token_embd [vocab, hidden])
-    const int hidden = config.hidden_dim;
-    const int vocab = config.vocab_size;
+    const int         hidden = config.hidden_dim;
+    const int         vocab = config.vocab_size;
     std::vector<half> lm_host(static_cast<size_t>(hidden) * vocab);
     cudaMemcpy(lm_host.data(), weights.lm_head_fp16, lm_host.size() * sizeof(half),
                cudaMemcpyDeviceToHost);
@@ -319,16 +322,16 @@ TEST_F(ModelLoaderContractTest, TransposedWeightCopiesBuiltAndCorrect) {
     // 逐层所有 QuantizedWeight + lm_head 都必须有转置副本
     ASSERT_EQ(weights.layers.size(), 1u);
     auto &lw = weights.layers[0];
-    for (const QuantizedWeight *qw : {&lw.wq, &lw.wk, &lw.wv, &lw.wo, &lw.w1, &lw.w2, &lw.w3,
-                                      &weights.lm_head}) {
+    for (const QuantizedWeight *qw :
+         {&lw.wq, &lw.wk, &lw.wv, &lw.wo, &lw.w1, &lw.w2, &lw.w3, &weights.lm_head}) {
         EXPECT_TRUE(qw->hasTransposed()) << "missing transposed copy";
     }
     EXPECT_NE(weights.lm_head_fp16_t, nullptr);
 
     // 抽查 wq（8×8）：D2H 读回 data 与 data_t，比较 data_t[i*rows+j] == data[j*cols+i]
     const QuantizedWeight &qw = lw.wq;
-    const int rows = qw.rows;
-    const int cols = qw.cols;
+    const int              rows = qw.rows;
+    const int              cols = qw.cols;
     ASSERT_EQ(rows, 8);
     ASSERT_EQ(cols, 8);
     std::vector<int8_t> data_host(static_cast<size_t>(rows) * cols);
@@ -337,8 +340,8 @@ TEST_F(ModelLoaderContractTest, TransposedWeightCopiesBuiltAndCorrect) {
     cudaMemcpy(data_t_host.data(), qw.data_t, data_t_host.size(), cudaMemcpyDeviceToHost);
     cudaDeviceSynchronize();
 
-    for (int i = 0; i < 8; ++i) {      // data_t 行（= data 列）
-        for (int j = 0; j < 4; ++j) {  // data_t 列（= data 行），抽查 8×4 子块
+    for (int i = 0; i < 8; ++i) {     // data_t 行（= data 列）
+        for (int j = 0; j < 4; ++j) { // data_t 列（= data 行），抽查 8×4 子块
             EXPECT_EQ(data_t_host[static_cast<size_t>(i) * cols + j],
                       data_host[static_cast<size_t>(j) * cols + i])
                 << "transpose mismatch at data_t[" << i << "][" << j << "]";
@@ -441,7 +444,7 @@ TEST_F(GGUFHeaderTest, IncompleteRuntimeGGUFReturnsStructuredErrorWithoutThrowin
 
 TEST_F(GGUFHeaderTest, ValidHeaderTruncatedTensorData) {
     // 合法 header + 完整 metadata/tensor info，但 tensor 数据区被截断
-    //（声明的数据大小超过文件长度）。parse() 只读 info 应成功；
+    // （声明的数据大小超过文件长度）。parse() 只读 info 应成功；
     // readTensorData() 必须干净地返回错误且不崩溃。
     GGUFFileBuilder builder;
     // 手写一条合法 string 元数据（GGUF：key + type + uint64 长度 + 字节）
@@ -453,8 +456,7 @@ TEST_F(GGUFHeaderTest, ValidHeaderTruncatedTensorData) {
     appendString(builder.tensor_entries, "blk.0.weight");
     appendValue(builder.tensor_entries, uint32_t(1));    // n_dims
     appendValue(builder.tensor_entries, uint32_t(4096)); // dim
-    appendValue(builder.tensor_entries,
-                uint32_t(static_cast<uint32_t>(GGMLType::F32)));
+    appendValue(builder.tensor_entries, uint32_t(static_cast<uint32_t>(GGMLType::F32)));
     appendValue(builder.tensor_entries, uint64_t(0)); // offset（无对齐、无数据）
 
     TempFile file(".gguf");
@@ -501,19 +503,18 @@ TEST_F(GGUFHeaderTest, ValidHeaderTruncatedMetadata) {
 // 必须返回结构化错误，而不是 reserve() 抛 length_error/bad_alloc 穿透。
 TEST_F(GGUFHeaderTest, HugeEntryCountsFailCleanlyWithoutThrowing) {
     for (uint64_t huge : {uint64_t(1) << 40, std::numeric_limits<uint64_t>::max()}) {
-        TempFile file(".gguf");
+        TempFile             file(".gguf");
         std::vector<uint8_t> bytes;
         appendValue(bytes, GGUF_MAGIC);
         appendValue(bytes, uint32_t(3));
-        appendValue(bytes, huge);       // tensor_count
+        appendValue(bytes, huge);        // tensor_count
         appendValue(bytes, uint64_t(0)); // metadata_kv_count
         file.writeBytes(bytes);
 
         GGUFParser parser(file.path());
         EXPECT_NO_THROW({
             auto result = parser.parse();
-            EXPECT_TRUE(result.isErr())
-                << "tensor_count=" << huge << " must be rejected";
+            EXPECT_TRUE(result.isErr()) << "tensor_count=" << huge << " must be rejected";
             if (result.isErr()) {
                 EXPECT_TRUE(result.error().find("count") != std::string::npos ||
                             result.error().find("limit") != std::string::npos ||
@@ -526,12 +527,12 @@ TEST_F(GGUFHeaderTest, HugeEntryCountsFailCleanlyWithoutThrowing) {
 
 // metadata_kv_count 同理：超大计数必须被上界校验拒绝（而非逐条读到流死）。
 TEST_F(GGUFHeaderTest, HugeMetadataCountFailsCleanlyWithoutThrowing) {
-    TempFile file(".gguf");
+    TempFile             file(".gguf");
     std::vector<uint8_t> bytes;
     appendValue(bytes, GGUF_MAGIC);
     appendValue(bytes, uint32_t(3));
-    appendValue(bytes, uint64_t(0));  // tensor_count
-    appendValue(bytes, uint64_t(1) << 40); // metadata_kv_count
+    appendValue(bytes, uint64_t(0));             // tensor_count
+    appendValue(bytes, uint64_t(1) << 40);       // metadata_kv_count
     appendString(bytes, "general.architecture"); // 一条残缺 entry 后截断
     file.writeBytes(bytes);
 

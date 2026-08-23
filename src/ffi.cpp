@@ -6,21 +6,21 @@
 // 并行 batch 优化留待后续里程碑。
 
 #include "tiny_llm/ffi.h"
-#include "tiny_llm/cuda_utils.h"
-#include "tiny_llm/execution_common.h"
-#include "tiny_llm/gguf_parser.h"
-#include "tiny_llm/inference_engine.h"  // sampleGreedy
-#include "tiny_llm/kv_cache.h"
-#include "tiny_llm/model_loader.h"
-#include "tiny_llm/transformer.h"
 #include "elementwise.cuh"
 #include "rmsnorm.cuh"
 #include "rope.cuh"
+#include "tiny_llm/cuda_utils.h"
+#include "tiny_llm/execution_common.h"
+#include "tiny_llm/gguf_parser.h"
+#include "tiny_llm/inference_engine.h" // sampleGreedy
+#include "tiny_llm/kv_cache.h"
+#include "tiny_llm/model_loader.h"
+#include "tiny_llm/transformer.h"
 #include "w8a16_matmul.cuh"
 
-#include <cuda_fp16.h>
 #include <cmath>
 #include <cstring>
+#include <cuda_fp16.h>
 #include <memory>
 #include <string>
 #include <unordered_map>
@@ -32,33 +32,33 @@ constexpr int TLLM_OK = 0;
 constexpr int TLLM_ERR = -1;
 
 struct SeqState {
-    int position = 0;      // 已处理的 token 数（下一 decode 的绝对位置）
+    int  position = 0; // 已处理的 token 数（下一 decode 的绝对位置）
     bool allocated = false;
 };
 
 struct TinyLlmHandleImpl {
-    tiny_llm::ModelConfig                       config;
-    tiny_llm::ModelWeights                      weights;
+    tiny_llm::ModelConfig                                    config;
+    tiny_llm::ModelWeights                                   weights;
     std::vector<std::unique_ptr<tiny_llm::TransformerLayer>> layers;
-    std::unique_ptr<tiny_llm::KVCacheManager>   kv_cache;
-    tiny_llm::LayerWorkspace                    workspace;
-    float                                      *rope_cos = nullptr;
-    float                                      *rope_sin = nullptr;
-    half                                       *hidden_buf = nullptr; // [max_seq_len * hidden]
-    half                                       *logits_buf = nullptr; // [vocab_size]
-    cudaStream_t                                stream = 0;
-    int                                         max_batch_size = 1;
-    tiny_llm::DeviceBuffer<int>                 d_tokens; // token ids 上传缓冲（gather 需 device 指针）
-    tiny_llm::DeviceBuffer<int>                 decode_len; // 任务 3.1：decode 可见 KV 长度 (device int)
-    tiny_llm::DeviceBuffer<int>                 rope_pos; // 任务 3.2：RoPE 起始位置 (device int)
-    std::unordered_map<int, SeqState>           sequences;
+    std::unique_ptr<tiny_llm::KVCacheManager>                kv_cache;
+    tiny_llm::LayerWorkspace                                 workspace;
+    float                                                   *rope_cos = nullptr;
+    float                                                   *rope_sin = nullptr;
+    half                             *hidden_buf = nullptr; // [max_seq_len * hidden]
+    half                             *logits_buf = nullptr; // [vocab_size]
+    cudaStream_t                      stream = 0;
+    int                               max_batch_size = 1;
+    tiny_llm::DeviceBuffer<int>       d_tokens;   // token ids 上传缓冲（gather 需 device 指针）
+    tiny_llm::DeviceBuffer<int>       decode_len; // 任务 3.1：decode 可见 KV 长度 (device int)
+    tiny_llm::DeviceBuffer<int>       rope_pos;   // 任务 3.2：RoPE 起始位置 (device int)
+    std::unordered_map<int, SeqState> sequences;
 
     // ── 分页 KV（策略 1，max_num_blocks > 0）──
     bool  paged_kv = false;
     int   max_num_blocks = 0;
     int   max_visible_tokens = 0;
-    int   block_size = 0; // paged 模式下保存的分页块大小
-    half *paged_k_pool = nullptr;    // [L * max_num_blocks * block_size * kv_dim]
+    int   block_size = 0;         // paged 模式下保存的分页块大小
+    half *paged_k_pool = nullptr; // [L * max_num_blocks * block_size * kv_dim]
     half *paged_v_pool = nullptr;
     half *paged_k_scratch = nullptr; // [max_visible_tokens * kv_dim]
     half *paged_v_scratch = nullptr;
@@ -80,9 +80,9 @@ void embed(TinyLlmHandleImpl *h, const int *tokens, int num_tokens, half *output
         h->d_tokens = tiny_llm::DeviceBuffer<int>(static_cast<size_t>(num_tokens));
     }
     h->d_tokens.copyFromHost(tokens, static_cast<size_t>(num_tokens), h->stream);
-    tiny_llm::kernels::gather_embeddings(
-        h->d_tokens.data(), h->weights.token_embedding, output, num_tokens, h->config.hidden_dim,
-        h->config.vocab_size, h->stream);
+    tiny_llm::kernels::gather_embeddings(h->d_tokens.data(), h->weights.token_embedding, output,
+                                         num_tokens, h->config.hidden_dim, h->config.vocab_size,
+                                         h->stream);
 }
 
 /// final norm + lm_head + greedy 采样，返回下一 token id。
@@ -110,22 +110,24 @@ void compute_logprobs(TinyLlmHandleImpl *h, int seq_idx, int logprobs_k, float *
 
     // softmax（数值稳定）
     float max_l = -1e30f;
-    for (const auto &v : h_logits) max_l = std::max(max_l, __half2float(v));
-    double sum_exp = 0.0;
+    for (const auto &v : h_logits)
+        max_l = std::max(max_l, __half2float(v));
+    double             sum_exp = 0.0;
     std::vector<float> probs(static_cast<size_t>(h->config.vocab_size));
     for (size_t i = 0; i < h_logits.size(); ++i) {
         probs[i] = std::exp(__half2float(h_logits[i]) - max_l);
         sum_exp += probs[i];
     }
-    for (auto &p : probs) p = static_cast<float>(p / sum_exp);
+    for (auto &p : probs)
+        p = static_cast<float>(p / sum_exp);
 
     // top-k 选择（插入排序，k 通常很小）
-    const int k = logprobs_k;
+    const int                          k = logprobs_k;
     std::vector<std::pair<int, float>> top;
     for (int v = 0; v < h->config.vocab_size; ++v) {
         if (probs[v] <= 0.0f) continue;
         std::pair<int, float> cand{v, probs[v]};
-        bool inserted = false;
+        bool                  inserted = false;
         for (size_t i = 0; i < top.size(); ++i) {
             if (cand.second > top[i].second) {
                 top.insert(top.begin() + static_cast<long>(i), cand);
@@ -166,7 +168,7 @@ TinyLlmHandle *tinyllm_load(const char *model_path, const TinyLlmConfig *config,
 
         // 解析 GGUF 提取真实模型配置
         tiny_llm::GGUFParser parser(model_path);
-        auto parse_result = parser.parse();
+        auto                 parse_result = parser.parse();
         if (parse_result.isErr()) {
             set_err(err_buf, err_buf_len, "GGUF parse: " + parse_result.error());
             return nullptr;
@@ -203,19 +205,17 @@ TinyLlmHandle *tinyllm_load(const char *model_path, const TinyLlmConfig *config,
             h->max_num_blocks = config->max_num_blocks;
             h->max_visible_tokens = config->max_num_blocks * config->block_size;
             h->block_size = config->block_size;
-            const int kv_dim = h->config.num_kv_heads * h->config.head_dim;
-            const size_t pool_elems = static_cast<size_t>(h->config.num_layers) *
-                                      static_cast<size_t>(h->max_num_blocks) *
-                                      static_cast<size_t>(config->block_size) *
-                                      static_cast<size_t>(kv_dim);
+            const int    kv_dim = h->config.num_kv_heads * h->config.head_dim;
+            const size_t pool_elems =
+                static_cast<size_t>(h->config.num_layers) * static_cast<size_t>(h->max_num_blocks) *
+                static_cast<size_t>(config->block_size) * static_cast<size_t>(kv_dim);
             const size_t scratch_elems =
                 static_cast<size_t>(h->max_visible_tokens) * static_cast<size_t>(kv_dim);
             CUDA_CHECK(cudaMalloc(&h->paged_k_pool, pool_elems * sizeof(half)));
             CUDA_CHECK(cudaMalloc(&h->paged_v_pool, pool_elems * sizeof(half)));
             CUDA_CHECK(cudaMalloc(&h->paged_k_scratch, scratch_elems * sizeof(half)));
             CUDA_CHECK(cudaMalloc(&h->paged_v_scratch, scratch_elems * sizeof(half)));
-            h->d_block_tables =
-                tiny_llm::DeviceBuffer<int>(static_cast<size_t>(h->max_num_blocks));
+            h->d_block_tables = tiny_llm::DeviceBuffer<int>(static_cast<size_t>(h->max_num_blocks));
         } else {
             // 策略 2：连续 KV（KVCacheManager）
             tiny_llm::KVCacheConfig kv_config;
@@ -260,8 +260,8 @@ TinyLlmHandle *tinyllm_load(const char *model_path, const TinyLlmConfig *config,
                                                  h->stream);
         CUDA_CHECK(cudaMalloc(&h->hidden_buf, static_cast<size_t>(h->config.max_seq_len) *
                                                   h->config.hidden_dim * sizeof(half)));
-        CUDA_CHECK(cudaMalloc(&h->logits_buf,
-                              static_cast<size_t>(h->config.vocab_size) * sizeof(half)));
+        CUDA_CHECK(
+            cudaMalloc(&h->logits_buf, static_cast<size_t>(h->config.vocab_size) * sizeof(half)));
         CUDA_CHECK(cudaStreamSynchronize(h->stream));
 
         return reinterpret_cast<TinyLlmHandle *>(h.release());
@@ -288,16 +288,15 @@ int tinyllm_allocate_sequence(TinyLlmHandle *handle, int seq_id, int num_tokens)
             st.allocated = true;
             h->sequences[seq_id] = st;
             if (std::getenv("TLLM_FFI_DEBUG")) {
-                fprintf(stderr, "  [ffi] paged allocate_sequence(%d, %d) ok\n", seq_id,
-                        num_tokens);
+                fprintf(stderr, "  [ffi] paged allocate_sequence(%d, %d) ok\n", seq_id, num_tokens);
             }
             return TLLM_OK;
         }
         auto alloc = h->kv_cache->allocateSequence(seq_id, num_tokens);
         if (alloc.isErr()) {
             if (std::getenv("TLLM_FFI_DEBUG")) {
-                fprintf(stderr, "  [ffi] allocate_sequence(%d,%d) fail: %s\n", seq_id,
-                        num_tokens, alloc.error().c_str());
+                fprintf(stderr, "  [ffi] allocate_sequence(%d,%d) fail: %s\n", seq_id, num_tokens,
+                        alloc.error().c_str());
             }
             return TLLM_ERR;
         }
@@ -341,12 +340,12 @@ int tinyllm_step(TinyLlmHandle *handle, const int *seq_ids, const int *input_tok
         is_prefill == nullptr || next_tokens == nullptr || num_sequences <= 0) {
         return TLLM_ERR;
     }
-    auto *h = reinterpret_cast<TinyLlmHandleImpl *>(handle);
+    auto     *h = reinterpret_cast<TinyLlmHandleImpl *>(handle);
     const int hidden = h->config.hidden_dim;
 
-    // 修复：logprobs_k 必须 <= vocab_size，否则 compute_logprobs 的 top-k
-    // 缓冲区语义越界（外部接口防御）。
-    if (logprobs_k > h->config.vocab_size) {
+    // logprobs_k 的范围与输出缓冲区必须和双源 ABI 契约一致。
+    if (logprobs_k < 0 || logprobs_k > h->config.vocab_size ||
+        (logprobs_k > 0 && logprobs == nullptr)) {
         return TLLM_ERR;
     }
 
@@ -356,7 +355,7 @@ int tinyllm_step(TinyLlmHandle *handle, const int *seq_ids, const int *input_tok
         const int len = seq_lens[s];
         if (len <= 0) return TLLM_ERR;
         const int seq_id = seq_ids[s];
-        auto it = h->sequences.find(seq_id);
+        auto      it = h->sequences.find(seq_id);
         if (it == h->sequences.end() || !it->second.allocated) return TLLM_ERR;
         auto &st = it->second;
 
@@ -378,14 +377,13 @@ int tinyllm_step(TinyLlmHandle *handle, const int *seq_ids, const int *input_tok
                 if (nb <= 0 || nb > h->max_num_blocks) return TLLM_ERR;
                 const int block_size = h->block_size;
                 const int cur_pos = is_prefill[s] ? 0 : st.position;
-                const int need_blocks = is_prefill[s]
-                                            ? (len + block_size - 1) / block_size
-                                            : (cur_pos + 1 + block_size - 1) / block_size;
+                const int need_blocks = is_prefill[s] ? (len + block_size - 1) / block_size
+                                                      : (cur_pos + 1 + block_size - 1) / block_size;
                 if (nb < need_blocks) return TLLM_ERR;
 
                 // 块表上传（逐序列，同一 stream 上顺序执行）
-                h->d_block_tables.copyFromHost(block_tables + table_offset,
-                                               static_cast<size_t>(nb), h->stream);
+                h->d_block_tables.copyFromHost(block_tables + table_offset, static_cast<size_t>(nb),
+                                               h->stream);
                 table_offset += nb;
 
                 // 构造视图
@@ -520,9 +518,9 @@ int tinyllm_step(TinyLlmHandle *handle, const int *seq_ids, const int *input_tok
                 h->rope_pos.copyFromHost(&pos, 1, h->stream);
                 h->kv_cache->setAppendPos(h->kv_cache->getSeqLen(seq_id), h->stream);
                 for (auto &layer : h->layers) {
-                    auto r = layer->forward(token_state, *h->kv_cache, seq_id, pos,
-                                            h->decode_len.data(), h->rope_pos.data(), h->rope_cos,
-                                            h->rope_sin, h->stream);
+                    auto r =
+                        layer->forward(token_state, *h->kv_cache, seq_id, pos, h->decode_len.data(),
+                                       h->rope_pos.data(), h->rope_cos, h->rope_sin, h->stream);
                     if (r.isErr()) return TLLM_ERR;
                 }
                 auto adv = h->kv_cache->advanceSeqLen(seq_id, 1);

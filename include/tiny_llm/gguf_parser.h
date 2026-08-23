@@ -225,7 +225,7 @@ class GGUFParser {
     uint64_t                                data_offset_ = 0;
     // Alignment (GGUF spec 默认 32；若 metadata 含 general.alignment 则覆盖，
     // 且必须为 2 的幂)。数据区起点按此对齐。
-    uint64_t                                alignment_ = 32;
+    uint64_t alignment_ = 32;
 };
 
 // Template implementations

@@ -48,12 +48,14 @@
 | CUDA Graphs | 降低 decode 阶段 kernel launch 开销 | ✅ 已完成（默认开启） |
 | M==1 转置权重 GEMM 快路径 | 消解 decode GEMM 非 coalesced 访存 | ✅ 已完成（C1） |
 | Tensor Core WMMA（FP16/INT8） | GEMM 再提速（未做 `mma.sync`） | 待做 |
-| KV paged / FlashDecoding | attention 长序列显存与速度 | 待做（可复用 [cuflash-attn](https://github.com/open-infra-ai/cuflash-attn) 的经验） |
+| 分页 KV（策略 1） | block table + scatter/gather，与连续 KV 逐 token 差分 | ✅ 已完成 |
+| FlashDecoding | 长上下文 decode attention | 待做；只复用算法经验，不把 cuflash-attn 接入 generate 路径 |
 | fused kernel（rmsnorm/RoPE/QKV/bias） | 减少 kernel 数与中间显存 | 待做 |
 | KV Cache swapping/offload | 支持超出显存的并发序列 | 待做 |
 | 连续批处理 | 吞吐导向场景 | 待做（调度层设计见 [paged-infer](https://github.com/open-infra-ai/paged-infer)） |
 
-> 注意：上表中的配置开关（如 CUDA Graphs 开关）**目前尚不存在于代码中**，实现前请勿在任何文档中引用。
+> 已完成项的开关和复现方式以代码与对应结果页为准；待做项在实现前不写虚构开关或
+> 预估加速比。
 
 ## 内存估算方法（理论值，非实测）
 
@@ -65,7 +67,8 @@
 | KV Cache | `2 × num_layers × num_kv_heads × head_dim × max_seq_len × batch × 2 bytes` |
 | 激活与临时缓冲 | 与 hidden_dim、seq_len 相关，按实际分配统计 |
 
-实测显存分解将在基准测试阶段用 `cudaMemGetInfo` 差值法补充。
+`tiny_llm_bench` 当前报告加载前与运行后的**常驻显存差值**；这不是进程峰值。
+真实峰值需要用外部采样器或 profiler 记录运行期间的最高占用，并单独注明采样频率。
 
 ## 通用测量建议
 

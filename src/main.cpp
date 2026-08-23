@@ -2,9 +2,9 @@
 #include "tiny_llm/gguf_parser.h"
 #include "tiny_llm/inference_engine.h"
 #include "tiny_llm/tokenizer.h"
-#include "w8a16_matmul.cuh"  // 诊断：g_force_reference
-#include <exception>
+#include "w8a16_matmul.cuh" // 诊断：g_force_reference
 #include <cuda_runtime.h>
+#include <exception>
 #include <iomanip>
 #include <iostream>
 #include <string>
@@ -29,12 +29,10 @@ void printHelp(const char *program_name) {
     std::cout << "  -h, --help     Show this help message and exit" << std::endl;
     std::cout << "  -v, --version  Show version information and exit" << std::endl;
     std::cout << "  --info         Show detailed CUDA device information" << std::endl;
-    std::cout << "  --inspect      Parse a GGUF file and print config/tensor summary"
-              << std::endl;
+    std::cout << "  --inspect      Parse a GGUF file and print config/tensor summary" << std::endl;
     std::cout << "  --prompt TEXT  Prompt for GPU end-to-end generation (requires GGUF)"
               << std::endl;
-    std::cout << "  --max-tokens N Maximum tokens to generate (default: 64)"
-              << std::endl;
+    std::cout << "  --max-tokens N Maximum tokens to generate (default: 64)" << std::endl;
     std::cout << "                 (CPU-only, no GPU required)" << std::endl;
     std::cout << std::endl;
     std::cout << "Arguments:" << std::endl;
@@ -112,26 +110,46 @@ void printDetailedDeviceInfo() {
 
 const char *ggmlTypeName(tiny_llm::GGMLType type) {
     switch (type) {
-    case tiny_llm::GGMLType::F32: return "F32";
-    case tiny_llm::GGMLType::F16: return "F16";
-    case tiny_llm::GGMLType::Q4_0: return "Q4_0";
-    case tiny_llm::GGMLType::Q4_1: return "Q4_1";
-    case tiny_llm::GGMLType::Q5_0: return "Q5_0";
-    case tiny_llm::GGMLType::Q5_1: return "Q5_1";
-    case tiny_llm::GGMLType::Q8_0: return "Q8_0";
-    case tiny_llm::GGMLType::Q8_1: return "Q8_1";
-    case tiny_llm::GGMLType::Q2_K: return "Q2_K";
-    case tiny_llm::GGMLType::Q3_K: return "Q3_K";
-    case tiny_llm::GGMLType::Q4_K: return "Q4_K";
-    case tiny_llm::GGMLType::Q5_K: return "Q5_K";
-    case tiny_llm::GGMLType::Q6_K: return "Q6_K";
-    case tiny_llm::GGMLType::Q8_K: return "Q8_K";
-    case tiny_llm::GGMLType::I8: return "I8";
-    case tiny_llm::GGMLType::I16: return "I16";
-    case tiny_llm::GGMLType::I32: return "I32";
-    case tiny_llm::GGMLType::I64: return "I64";
-    case tiny_llm::GGMLType::F64: return "F64";
-    default: return "UNKNOWN";
+    case tiny_llm::GGMLType::F32:
+        return "F32";
+    case tiny_llm::GGMLType::F16:
+        return "F16";
+    case tiny_llm::GGMLType::Q4_0:
+        return "Q4_0";
+    case tiny_llm::GGMLType::Q4_1:
+        return "Q4_1";
+    case tiny_llm::GGMLType::Q5_0:
+        return "Q5_0";
+    case tiny_llm::GGMLType::Q5_1:
+        return "Q5_1";
+    case tiny_llm::GGMLType::Q8_0:
+        return "Q8_0";
+    case tiny_llm::GGMLType::Q8_1:
+        return "Q8_1";
+    case tiny_llm::GGMLType::Q2_K:
+        return "Q2_K";
+    case tiny_llm::GGMLType::Q3_K:
+        return "Q3_K";
+    case tiny_llm::GGMLType::Q4_K:
+        return "Q4_K";
+    case tiny_llm::GGMLType::Q5_K:
+        return "Q5_K";
+    case tiny_llm::GGMLType::Q6_K:
+        return "Q6_K";
+    case tiny_llm::GGMLType::Q8_K:
+        return "Q8_K";
+    case tiny_llm::GGMLType::I8:
+        return "I8";
+    case tiny_llm::GGMLType::I16:
+        return "I16";
+    case tiny_llm::GGMLType::I32:
+        return "I32";
+    case tiny_llm::GGMLType::I64:
+        return "I64";
+    case tiny_llm::GGMLType::F64:
+        return "F64";
+    default:
+        return "UNKNOWN";
     }
 }
 
@@ -187,20 +205,18 @@ int inspectGGUF(const std::string &path) {
         const size_t bytes = tensor.calculateSize();
         total_bytes += bytes;
         std::cout << std::left << std::setw(36) << tensor.name << std::setw(8)
-                  << ggmlTypeName(tensor.type) << std::setw(20) << dims.str() << bytes
-                  << std::endl;
+                  << ggmlTypeName(tensor.type) << std::setw(20) << dims.str() << bytes << std::endl;
     }
-    std::cout << "\nTotal tensor data: " << total_bytes / (1024.0 * 1024.0) << " MB"
-              << std::endl;
+    std::cout << "\nTotal tensor data: " << total_bytes / (1024.0 * 1024.0) << " MB" << std::endl;
     return 0;
 }
 
 // GPU 端到端生成：加载 GGUF 模型，编码 prompt，生成并解码输出。
 int runGeneration(const std::string &model_path, const std::string &prompt, int max_tokens,
-                     bool show_tokens) {
+                  bool show_tokens) {
     try {
         tiny_llm::GGUFParser parser(model_path);
-        auto parse_result = parser.parse();
+        auto                 parse_result = parser.parse();
         if (parse_result.isErr()) {
             std::cerr << "GGUF parse failed: " << parse_result.error() << std::endl;
             return 1;
@@ -237,7 +253,8 @@ int runGeneration(const std::string &model_path, const std::string &prompt, int 
                   << std::endl;
         if (show_tokens) {
             std::cout << "Prompt tokens: ";
-            for (int t : prompt_tokens) std::cout << t << " ";
+            for (int t : prompt_tokens)
+                std::cout << t << " ";
             std::cout << std::endl;
         }
 

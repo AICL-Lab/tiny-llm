@@ -1,9 +1,9 @@
 #pragma once
 
+#include "rope.cuh" // TLLM-003
 #include "tiny_llm/kv_cache.h"
 #include "tiny_llm/result.h"
 #include "tiny_llm/transformer.h"
-#include "rope.cuh"  // TLLM-003
 #include "tiny_llm/types.h"
 #include <cuda_fp16.h>
 #include <cuda_runtime.h>
@@ -35,6 +35,9 @@ class InferenceEngine {
 
     // Get generation statistics
     const GenerationStats &getStats() const { return stats_; }
+
+    bool cudaGraphsEnabled() const { return cuda_graphs_enabled_; }
+    bool cudaGraphCaptured() const { return graph_captured_; }
 
     // Reset statistics
     void resetStats() { stats_ = GenerationStats{}; }
@@ -124,9 +127,9 @@ class InferenceEngine {
     // 任务 3.2 / C2：CUDA Graph 状态。默认开启 decode graph 捕获/重放；
     // 环境变量 TLLM_CUDA_GRAPHS=0 显式关闭（opt-out）。捕获失败自动回退
     // 并置 graphs_enabled=false。
-    bool          cuda_graphs_enabled_ = false;
-    bool          graph_captured_ = false;
-    cudaGraph_t   decode_graph_ = nullptr;
+    bool            cuda_graphs_enabled_ = false;
+    bool            graph_captured_ = false;
+    cudaGraph_t     decode_graph_ = nullptr;
     cudaGraphExec_t decode_graph_exec_ = nullptr;
 
     // 任务 3.2：decode 的 device 序列（embed + 24 层 forward + finalNorm +

@@ -19,6 +19,5 @@ void rmsnorm(const half *__restrict__ input, const half *__restrict__ weight,
 void rmsnorm_inplace(half *__restrict__ x, const half *__restrict__ weight, int batch_size,
                      int hidden_dim, float eps, cudaStream_t stream = 0);
 
-
 } // namespace kernels
 } // namespace tiny_llm

@@ -44,6 +44,7 @@ jobs:
             ! -path './vendor/*' \
             ! -path './external/*' \
             ! -path './.kiro/*' \
+            ! -path './tests/tokenizer_fixture_cases.h' \
             | xargs clang-format-18 --dry-run --Werror
 
   build-test:

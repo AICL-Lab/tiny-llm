@@ -16,8 +16,7 @@ using namespace tiny_llm;
 namespace {
 
 std::optional<std::string> modelPath() {
-    if (const char *p = std::getenv("TLLM_GGUF_TEST_MODEL"); p && *p)
-        return std::string(p);
+    if (const char *p = std::getenv("TLLM_GGUF_TEST_MODEL"); p && *p) return std::string(p);
     return std::nullopt;
 }
 
@@ -53,7 +52,7 @@ TEST(Tokenizer, ByteEncodingTable) {
     EXPECT_EQ(t['~'], 126u);
     EXPECT_EQ(t[0xA1], 0xA1u); // 161 在可打印区间，映射到自身
     EXPECT_EQ(t[0xFF], 0xFFu);
-    EXPECT_EQ(t[0xA0], 322u);  // 160(NBSP) 不在可打印区间 -> 256+66
+    EXPECT_EQ(t[0xA0], 322u); // 160(NBSP) 不在可打印区间 -> 256+66
     EXPECT_EQ(t[0x00], 256u);
     EXPECT_EQ(t[0x01], 257u);
     for (uint32_t b = 0; b < 256; ++b)
@@ -94,7 +93,7 @@ TEST(Tokenizer, DecodeUtf8CodepointsFallsBackPerByteOnInvalidContinuation) {
 // 最小合成词表验证 encode 流水线（特殊 token 隔离 -> 预分词 -> 字节编码 -> BPE）
 TEST(Tokenizer, SyntheticEncode) {
     const uint32_t *t = byteToUnicodeTable();
-    TokenizerData d;
+    TokenizerData   d;
     d.model_type = "gpt2";
     d.tokens.resize(256);
     for (uint32_t b = 0; b < 256; ++b)
@@ -126,16 +125,14 @@ TEST(Tokenizer, SyntheticEncode) {
 class TokenizerRealModel : public ::testing::Test {
   protected:
     static void SetUpTestSuite() {
-        if (auto p = modelPath())
-            g_path = *p;
+        if (auto p = modelPath()) g_path = *p;
     }
     static inline std::string g_path;
 };
 
 // C++ encode 与 HuggingFace tokenizers 权威输出逐 id 对齐
 TEST_F(TokenizerRealModel, DifferentialAgainstHuggingFace) {
-    if (g_path.empty())
-        GTEST_SKIP() << "set TLLM_GGUF_TEST_MODEL to a Qwen2.5 GGUF to enable";
+    if (g_path.empty()) GTEST_SKIP() << "set TLLM_GGUF_TEST_MODEL to a Qwen2.5 GGUF to enable";
     GGUFParser parser(g_path);
     ASSERT_TRUE(parser.parse().isOk()) << "failed to parse GGUF";
     auto td = loadTokenizerData(parser.getMetadata());
@@ -166,8 +163,7 @@ TEST_F(TokenizerRealModel, DifferentialAgainstHuggingFace) {
 
 // decode(encode(text)) == text（字节级 BPE 无损往返）
 TEST_F(TokenizerRealModel, RoundTripDecode) {
-    if (g_path.empty())
-        GTEST_SKIP() << "set TLLM_GGUF_TEST_MODEL to a Qwen2.5 GGUF to enable";
+    if (g_path.empty()) GTEST_SKIP() << "set TLLM_GGUF_TEST_MODEL to a Qwen2.5 GGUF to enable";
     GGUFParser parser(g_path);
     ASSERT_TRUE(parser.parse().isOk());
     auto td = loadTokenizerData(parser.getMetadata());
@@ -183,7 +179,7 @@ TEST_F(TokenizerRealModel, RoundTripDecode) {
 }
 
 // R2: GGUF 缺失 bos/eos/pad 键时，loadTokenizerData 应保持 TokenizerData 默认值 -1
-//（此前 getOr 默认 0 会把合法的 token id 0 误用作特殊 token）。
+// （此前 getOr 默认 0 会把合法的 token id 0 误用作特殊 token）。
 TEST(Tokenizer, MissingSpecialIdsDefaultToMinusOne) {
     GGUFMetadata md;
     md.kv["tokenizer.ggml.tokens"] = std::vector<std::string>{"a", "b"};

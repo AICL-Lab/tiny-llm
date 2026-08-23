@@ -351,7 +351,7 @@ TEST_F(W8A16MatMulTest, LargeMatrixTiledMatchesReference) {
     int group_size = 128;
     int num_groups = (K + group_size - 1) / group_size;
 
-    auto input  = randomFP16(M, K);
+    auto input = randomFP16(M, K);
     auto weight = randomINT8(K, N);
     auto scales = randomScales(num_groups, N);
 
@@ -369,8 +369,8 @@ TEST_F(W8A16MatMulTest, LargeMatrixTiledMatchesReference) {
     w8a16_matmul(d_input.data(), d_weight.data(), d_scales.data(), d_output.data(), M, N, K,
                  group_size);
     // reference 分支
-    w8a16_matmul_reference(d_input.data(), d_weight.data(), d_scales.data(), d_output_ref.data(),
-                           M, N, K, group_size);
+    w8a16_matmul_reference(d_input.data(), d_weight.data(), d_scales.data(), d_output_ref.data(), M,
+                           N, K, group_size);
     cudaDeviceSynchronize();
 
     std::vector<half> out(M * N);
@@ -392,7 +392,7 @@ TEST_F(W8A16MatMulTest, LargeMatrixTiledMatchesReference) {
 TEST_F(W8A16MatMulTest, Fp16MatmulM1MatchesReference) {
     int M = 1, K = 128, N = 1024;
 
-    auto input  = randomFP16(M, K);
+    auto input = randomFP16(M, K);
     auto weight = randomFP16(K, N);
 
     DeviceBuffer<half> d_input(M * K);
@@ -432,7 +432,7 @@ TEST_F(W8A16MatMulTest, Fp16MatmulM1MatchesReference) {
 TEST_F(W8A16MatMulTest, Fp16MatmulM4FallsBackToReference) {
     int M = 4, K = 128, N = 256;
 
-    auto input  = randomFP16(M, K);
+    auto input = randomFP16(M, K);
     auto weight = randomFP16(K, N);
 
     DeviceBuffer<half> d_input(M * K);
@@ -469,18 +469,21 @@ static void expectTransposedW8A16Matches(int N, int K, int group_size) {
     // 本地随机数据（与 fixture 生成逻辑一致，避免依赖 fixture 的 protected 访问）
     std::mt19937                          gen_in(42);
     std::uniform_real_distribution<float> dist_in(-1.0f, 1.0f);
-    std::vector<half> input(M * K);
-    for (auto &v : input) v = __float2half(dist_in(gen_in));
+    std::vector<half>                     input(M * K);
+    for (auto &v : input)
+        v = __float2half(dist_in(gen_in));
 
     std::mt19937                       gen_w(123);
     std::uniform_int_distribution<int> dist_w(-127, 127);
-    std::vector<int8_t> weight(static_cast<size_t>(K) * N);
-    for (auto &v : weight) v = static_cast<int8_t>(dist_w(gen_w));
+    std::vector<int8_t>                weight(static_cast<size_t>(K) * N);
+    for (auto &v : weight)
+        v = static_cast<int8_t>(dist_w(gen_w));
 
     std::mt19937                          gen_s(456);
     std::uniform_real_distribution<float> dist_s(0.001f, 0.1f);
-    std::vector<half> scales(static_cast<size_t>(num_groups) * N);
-    for (auto &v : scales) v = __float2half(dist_s(gen_s));
+    std::vector<half>                     scales(static_cast<size_t>(num_groups) * N);
+    for (auto &v : scales)
+        v = __float2half(dist_s(gen_s));
 
     // 构造转置布局 [N, K] / [N, scale_rows]（host 端转置）
     std::vector<int8_t> weight_t(static_cast<size_t>(N) * K);
@@ -498,8 +501,8 @@ static void expectTransposedW8A16Matches(int N, int K, int group_size) {
     DeviceBuffer<half>   d_scales(num_groups * N);
     DeviceBuffer<int8_t> d_weight_t(N * K);
     DeviceBuffer<half>   d_scales_t(N * num_groups);
-    DeviceBuffer<half>   d_old(M * N);  // 旧 m1 kernel
-    DeviceBuffer<half>   d_new(M * N);  // 转置快路径
+    DeviceBuffer<half>   d_old(M * N); // 旧 m1 kernel
+    DeviceBuffer<half>   d_new(M * N); // 转置快路径
 
     d_input.copyFromHost(input.data(), M * K);
     d_weight.copyFromHost(weight.data(), K * N);
@@ -523,7 +526,7 @@ static void expectTransposedW8A16Matches(int N, int K, int group_size) {
 
     // CPU float 参考：output[col] = sum_k input[k] * weight[k*N+col] * scales[(k/gs)*N+col]
     // 容差：绝对值 1e-1（小形状），大 K 归约数值量级放大时退化为 1% 相对容差
-    //（与 LargeMatrixTiledMatchesReference 口径一致）。
+    // （与 LargeMatrixTiledMatchesReference 口径一致）。
     for (int col = 0; col < N; ++col) {
         float cpu_sum = 0.0f;
         for (int k = 0; k < K; ++k) {
@@ -536,8 +539,8 @@ static void expectTransposedW8A16Matches(int N, int K, int group_size) {
         EXPECT_NEAR(__half2float(out_old[col]), cpu_sum, tol_cpu)
             << "old m1 kernel vs CPU at col " << col << " (N=" << N << ",K=" << K << ")";
         EXPECT_NEAR(__half2float(out_new[col]), __half2float(out_old[col]), 1e-2f)
-            << "transposed fast path vs old m1 kernel at col " << col << " (N=" << N
-            << ",K=" << K << ")";
+            << "transposed fast path vs old m1 kernel at col " << col << " (N=" << N << ",K=" << K
+            << ")";
     }
 }
 
@@ -552,7 +555,7 @@ TEST_F(W8A16MatMulTest, TransposedFastPathFallsBackWithoutBuffers) {
     int M = 1, K = 128, N = 512, group_size = 64;
     int num_groups = (K + group_size - 1) / group_size;
 
-    auto input  = randomFP16(M, K);
+    auto input = randomFP16(M, K);
     auto weight = randomINT8(K, N);
     auto scales = randomScales(num_groups, N);
 
@@ -567,11 +570,10 @@ TEST_F(W8A16MatMulTest, TransposedFastPathFallsBackWithoutBuffers) {
     d_scales.copyFromHost(scales.data(), num_groups * N);
 
     // 旧签名
-    w8a16_matmul(d_input.data(), d_weight.data(), d_scales.data(), d_a.data(), M, N, K,
-                 group_size);
+    w8a16_matmul(d_input.data(), d_weight.data(), d_scales.data(), d_a.data(), M, N, K, group_size);
     // 新重载、转置指针为 nullptr
-    w8a16_matmul(d_input.data(), d_weight.data(), d_scales.data(), nullptr, nullptr, d_b.data(),
-                 M, N, K, group_size);
+    w8a16_matmul(d_input.data(), d_weight.data(), d_scales.data(), nullptr, nullptr, d_b.data(), M,
+                 N, K, group_size);
     cudaDeviceSynchronize();
 
     std::vector<half> a(M * N);
@@ -589,8 +591,8 @@ TEST_F(W8A16MatMulTest, TransposedFastPathFallsBackWithoutBuffers) {
 TEST_F(W8A16MatMulTest, Fp16MatmulTransposedMatchesUntransposed) {
     int M = 1, K = 128, N = 1024;
 
-    auto input  = randomFP16(M, K);
-    auto weight = randomFP16(K, N);
+    auto              input = randomFP16(M, K);
+    auto              weight = randomFP16(K, N);
     std::vector<half> weight_t(static_cast<size_t>(N) * K);
     for (int n = 0; n < N; ++n)
         for (int k = 0; k < K; ++k)

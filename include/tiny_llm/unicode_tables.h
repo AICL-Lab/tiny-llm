@@ -1,4 +1,4 @@
-// 由脚本从 Unicode 15.1 类别数据生成的紧凑区间表（tokenizer 预分词用）。
+// 由脚本从 Unicode 15.0.0 类别数据生成的紧凑区间表（tokenizer 预分词用）。
 // 重新生成方式见 scripts/gen_unicode_tables.py。
 #pragma once
 
@@ -12,6 +12,7 @@ struct CodepointRange {
 };
 
 // \p{L} = Lu | Ll | Lt | Lm | Lo
+// clang-format off
 inline constexpr CodepointRange kLetterRanges[] = {
     {0x41, 0x5A},
     {0x61, 0x7A},
@@ -822,5 +823,7 @@ inline constexpr uint32_t kWhitespace[] = {
     0x2007, 0x2008, 0x2009, 0x200A, 0x2028, 0x2029, 0x202F, 0x205F,
     0x3000,
 };
+
+// clang-format on
 
 } // namespace tiny_llm

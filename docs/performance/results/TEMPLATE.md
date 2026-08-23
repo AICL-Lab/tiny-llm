@@ -13,6 +13,8 @@
 | GPU | （型号 / 显存 / 驱动版本） |
 | CUDA Toolkit | （`nvcc --version`） |
 | tiny-llm commit | （`git rev-parse HEAD`） |
+| 工作区状态 | clean；若为 dirty 必须记录 `git diff --binary | sha256sum`，且不得当 release 数字 |
+| benchmark schema | v2 |
 | llama.cpp commit（如对比） | |
 | 模型 | Qwen2.5-0.5B-Instruct GGUF Q4_K_M |
 | 原始日志路径 | `reports/<name>.nsys-rep`、`reports/<name>.ncu-rep`、stdout 重定向文件 |
@@ -35,7 +37,7 @@ ncu --set full --launch-count 3 --launch-skip 10 ./build/tiny_llm_bench ...
 | TTFT (ms) | |
 | TPOT (ms/token) | |
 | decode tok/s | |
-| 峰值显存 (MB) | |
+| 常驻显存差值 (MB) | （加载前 vs 运行后；非真实峰值） |
 
 ### 3.2 kernel 时间分布
 
@@ -88,3 +90,5 @@ flowchart LR
 - [ ] 命令可原样执行
 - [ ] 数字与原始日志一致
 - [ ] 硬件 / commit / 命令已记录
+- [ ] TTFT 与 TPOT 来自同一请求；JSON `cuda_graphs` 状态与实验组一致
+- [ ] 若声称峰值显存，另有外部采样器/profiler 与采样频率，不把 resident delta 冒充峰值

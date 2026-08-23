@@ -1,8 +1,8 @@
+#include "rope.cuh" // kernels::rope_precompute_cache
 #include "tiny_llm/cuda_streams.h"
 #include "tiny_llm/cuda_utils.h"
 #include "tiny_llm/inference_engine.h"
 #include "tiny_llm/model_loader.h"
-#include "rope.cuh"  // kernels::rope_precompute_cache
 #include <cmath>
 #include <cuda_fp16.h>
 #include <cuda_runtime.h>
@@ -348,6 +348,7 @@ TEST_F(IntegrationTest, GenerationStatsTracking) {
 
     // Default values
     EXPECT_EQ(stats.prefill_time_ms, 0.0f);
+    EXPECT_EQ(stats.time_to_first_token_ms, 0.0f);
     EXPECT_EQ(stats.decode_time_ms, 0.0f);
     EXPECT_EQ(stats.prompt_tokens, 0);
     EXPECT_EQ(stats.tokens_generated, 0);

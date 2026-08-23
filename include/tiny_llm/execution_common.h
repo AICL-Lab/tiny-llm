@@ -16,8 +16,7 @@ namespace tiny_llm {
 //   device 缓冲。本函数不负责采样。
 //
 // 注意：只支持 num_tokens == 1（单 token），不处理 batch。
-void finalNormAndComputeLogits(half *hidden, const ModelWeights &weights,
-                               const ModelConfig &config, half *logits,
-                               cudaStream_t stream = 0);
+void finalNormAndComputeLogits(half *hidden, const ModelWeights &weights, const ModelConfig &config,
+                               half *logits, cudaStream_t stream = 0);
 
 } // namespace tiny_llm

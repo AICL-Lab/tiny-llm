@@ -75,7 +75,7 @@ export TLLM_GGUF_TEST_MODEL=/path/to/qwen2.5-0.5b-instruct-q4_k_m.gguf
   1.2 attention prefill 长序列测试与 tile 边界测试
 
 阶段 2（P0）：benchmark 与对比基线
-  2.1 benchmark 驱动（TTFT / TPOT / tok/s / 峰值显存）
+  2.1 benchmark 驱动（TTFT / TPOT / tok/s / 常驻显存差值；峰值显存外部测量）
   2.2 llama.cpp 对比方法论文档
   2.3 nsys/ncu profiling 指南与结果归档模板
         依赖：真实 GGUF 模型（TLLM_GGUF_TEST_MODEL 或 CLI 参数）
@@ -283,8 +283,11 @@ tiny_llm_bench <model.gguf> --prompt "..." --max-tokens 128 \
 | TTFT (ms) | 从调用 `generate()` 到第一个新 token 采样完成的墙钟时间（含 prefill + 第一次 logits） |
 | TPOT (ms/token) | decode 阶段墙钟时间 ÷（生成 token 数 − 1）；只生成 1 个 token 时记 N/A |
 | decode tok/s | 1 / TPOT × 1000 |
-| 峰值显存 (MB) | 加载模型前记录一次 `cudaMemGetInfo`，`generate` 完成后记录一次，差值换算 MB |
+| 常驻显存差值 (MB) | 加载模型前与 benchmark 完成后各记录一次 `cudaMemGetInfo`，差值换算 MB；不得称为峰值 |
 | prompt tokens / new tokens | 直接打印，供复现 |
+
+如需报告峰值显存，必须另用外部采样器或 profiler，并同时记录采样频率；不能从两个
+离散时间点推导峰值。
 
 **统计口径**：
 - warmup 3 次不统计；
@@ -591,16 +594,22 @@ greedy 逐 token 对齐。Rust 侧启用 `tiny-llm` feature + build.rs 链接
 达到以下所有项即认为**本项目开发结束**：
 
 - [ ] `DEVELOPMENT_PLAN.md` 中阶段 1–3 任务全部完成并合并。
-- [ ] `tiny_llm_bench` 能输出 TTFT / TPOT / tok/s / 峰值显存，数字可复现。
+- [x] `tiny_llm_bench` schema v2 能从同一次请求输出 TTFT / TPOT / tok/s / 常驻显存差值；
+      单 token 的 TPOT/tok/s 为 `null`，stdout 是单个合法 JSON 对象。
+- [ ] 在 clean commit 上按 schema v2 重跑正式 A/B；若声称峰值显存，附外部采样器或
+      profiler 的工具、版本与采样频率。
 - [ ] README 出现一张与 llama.cpp 的对比表（同模型、同 prompt、同 greedy、
       同硬件），并注明“W8A16 重量化 vs Q4_K_M 直接计算”的公平性声明。
-- [ ] 至少一份 nsys/ncu 报告归档在 `docs/performance/results/`，
-      能解释 decode 瓶颈前三名。
-- [ ] CUDA Graphs 有 before/after TPOT 对比数字，默认关闭、开关可复现。
-- [ ] `TLLM_CUDA_GRAPHS=1/0` 输出逐 token 一致。
+- [ ] 至少一份可导出的 nsys/ncu 报告归档在 `docs/performance/results/`，
+      能解释 decode 瓶颈前三名；本机当前受 `ERR_NVGPUCTRPERM` 与 nsys importer 缺失阻塞，
+      仓库内 kernel 微基准仅作为替代证据。
+- [x] CUDA Graphs 有 schema v2 dirty-worktree A/B 趋势验证，默认开启，
+      `--graphs` / `--no-graphs` 与 `TLLM_CUDA_GRAPHS=1/0` 可复现；正式数据待 clean commit 重跑。
+- [x] `TLLM_CUDA_GRAPHS=1/0` 输出逐 token 一致。
 - [ ] 失败路径测试：损坏 GGUF / OOM / 超长输入 / KV 溢出。
 - [ ] 两个不同 GQA 配置（或一个 GQA + 一个 MQA）的真实模型验证记录。
-- [ ] 147+ 测试全绿（有模型时 6 个门控测试也通过）。
+- [x] 193 个测试全绿（无模型时 10 个门控测试按设计跳过）；真实模型 Graph 与 FFI
+      门控测试另行执行并记录。
 - [ ] 能回答三个面试问题：
   1. 为什么不用 llama.cpp / vLLM？——学习目的、可控性、从它们借鉴的设计。
   2. 每个性能数字的基线、硬件、复现命令是什么？

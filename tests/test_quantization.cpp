@@ -72,12 +72,14 @@ TEST(DequantizeQ4_K, NullPointerFails) {
 TEST(DequantizeQ4_K, MatchesReferenceOnSyntheticBlock) {
     // 合成块: d=1.0, dmin=0.5, scales=[0..11], qs=[0..127]
     uint8_t block[144];
-    half    d    = __float2half(1.0f);
+    half    d = __float2half(1.0f);
     half    dmin = __float2half(0.5f);
     std::memcpy(block, &d, sizeof(d));
     std::memcpy(block + 2, &dmin, sizeof(dmin));
-    for (int i = 0; i < 12; ++i) block[4 + i] = static_cast<uint8_t>(i);
-    for (int i = 0; i < 128; ++i) block[16 + i] = static_cast<uint8_t>(i);
+    for (int i = 0; i < 12; ++i)
+        block[4 + i] = static_cast<uint8_t>(i);
+    for (int i = 0; i < 128; ++i)
+        block[16 + i] = static_cast<uint8_t>(i);
 
     auto r = dequantizeQ4_K(block, 1);
     ASSERT_FALSE(r.isErr()) << r.error();
@@ -85,11 +87,15 @@ TEST(DequantizeQ4_K, MatchesReferenceOnSyntheticBlock) {
     ASSERT_EQ(v.size(), 256u);
 
     // Python gguf 参考实现输出
-    for (int i = 0; i < 8; ++i) expectNearF16(v[i], -2.0f, "sub-block 0");
-    for (int i = 32; i < 40; ++i) expectNearF16(v[i], -2.5f, "sub-block 1");
+    for (int i = 0; i < 8; ++i)
+        expectNearF16(v[i], -2.0f, "sub-block 0");
+    for (int i = 32; i < 40; ++i)
+        expectNearF16(v[i], -2.5f, "sub-block 1");
     const float sb2[8] = {-3.0f, -1.0f, 1.0f, 3.0f, 5.0f, 7.0f, 9.0f, 11.0f};
-    for (int i = 0; i < 8; ++i) expectNearF16(v[64 + i], sb2[i], "sub-block 2");
-    for (int i = 248; i < 256; ++i) expectNearF16(v[i], 77.0f, "sub-block 7");
+    for (int i = 0; i < 8; ++i)
+        expectNearF16(v[64 + i], sb2[i], "sub-block 2");
+    for (int i = 248; i < 256; ++i)
+        expectNearF16(v[i], 77.0f, "sub-block 7");
 }
 
 TEST(DequantizeQ6_K, NullPointerFails) {
@@ -100,9 +106,12 @@ TEST(DequantizeQ6_K, NullPointerFails) {
 TEST(DequantizeQ6_K, MatchesReferenceOnSyntheticBlock) {
     // 合成块: ql=[0..127], qh=[0..63], scales=[-8..7], d=0.25
     uint8_t block[210];
-    for (int i = 0; i < 128; ++i) block[i] = static_cast<uint8_t>(i);
-    for (int i = 0; i < 64; ++i) block[128 + i] = static_cast<uint8_t>(i);
-    for (int i = 0; i < 16; ++i) block[192 + i] = static_cast<uint8_t>(static_cast<int8_t>(i - 8));
+    for (int i = 0; i < 128; ++i)
+        block[i] = static_cast<uint8_t>(i);
+    for (int i = 0; i < 64; ++i)
+        block[128 + i] = static_cast<uint8_t>(i);
+    for (int i = 0; i < 16; ++i)
+        block[192 + i] = static_cast<uint8_t>(static_cast<int8_t>(i - 8));
     half d = __float2half(0.25f);
     std::memcpy(block + 208, &d, sizeof(d));
 
@@ -113,11 +122,15 @@ TEST(DequantizeQ6_K, MatchesReferenceOnSyntheticBlock) {
 
     // Python gguf 参考实现输出
     const float first8[8] = {64.0f, 30.0f, -4.0f, -38.0f, 56.0f, 22.0f, -12.0f, -46.0f};
-    for (int i = 0; i < 8; ++i) expectNearF16(v[i], first8[i], "first 8");
+    for (int i = 0; i < 8; ++i)
+        expectNearF16(v[i], first8[i], "first 8");
     const float at16[8] = {56.0f, 26.25f, -3.5f, -33.25f, 49.0f, 19.25f, -10.5f, -40.25f};
-    for (int i = 0; i < 8; ++i) expectNearF16(v[16 + i], at16[i], "[16:24]");
-    for (int i = 128; i < 136; ++i) expectNearF16(v[i], 0.0f, "[128:136]");
-    for (int i = 248; i < 256; ++i) expectNearF16(v[i], -43.75f, "last 8");
+    for (int i = 0; i < 8; ++i)
+        expectNearF16(v[16 + i], at16[i], "[16:24]");
+    for (int i = 128; i < 136; ++i)
+        expectNearF16(v[i], 0.0f, "[128:136]");
+    for (int i = 248; i < 256; ++i)
+        expectNearF16(v[i], -43.75f, "last 8");
 }
 
 // ── 真实模型验证（门控）──────────────────────────────────────────
@@ -147,14 +160,19 @@ class GGUFRealModelTest : public ::testing::Test {
         EXPECT_FALSE(raw.isErr()) << raw.error();
         if (raw.isErr()) return {};
         switch (type) {
-        case GGMLType::Q5_0: return dequantizeQ5_0(raw.value().data(), 1).value();
-        case GGMLType::Q4_K: return dequantizeQ4_K(raw.value().data(), 1).value();
-        case GGMLType::Q6_K: return dequantizeQ6_K(raw.value().data(), 1).value();
-        default: ADD_FAILURE() << "unexpected type"; return {};
+        case GGMLType::Q5_0:
+            return dequantizeQ5_0(raw.value().data(), 1).value();
+        case GGMLType::Q4_K:
+            return dequantizeQ4_K(raw.value().data(), 1).value();
+        case GGMLType::Q6_K:
+            return dequantizeQ6_K(raw.value().data(), 1).value();
+        default:
+            ADD_FAILURE() << "unexpected type";
+            return {};
         }
     }
 
-    std::string              path_;
+    std::string                 path_;
     std::unique_ptr<GGUFParser> parser_;
 };
 
@@ -188,27 +206,32 @@ TEST_F(GGUFRealModelTest, FirstBlocksMatchPythonReference) {
     {
         auto v = toFloats(dequantFirstBlock("token_embd.weight", GGMLType::Q5_0, 22, 32));
         ASSERT_EQ(v.size(), 32u);
-        const float exp8[8] = {-0.0101929f, 0.0407715f, 0.0101929f, -0.0f,
-                               -0.0280304f, -0.00254822f, -0.0f, -0.0203857f};
-        for (int i = 0; i < 8; ++i) expectNearF16(v[i], exp8[i], "token_embd Q5_0");
+        const float exp8[8] = {-0.0101929f, 0.0407715f,   0.0101929f, -0.0f,
+                               -0.0280304f, -0.00254822f, -0.0f,      -0.0203857f};
+        for (int i = 0; i < 8; ++i)
+            expectNearF16(v[i], exp8[i], "token_embd Q5_0");
     }
     {
         auto v = toFloats(dequantFirstBlock("blk.0.ffn_down.weight", GGMLType::Q6_K, 210, 256));
         ASSERT_EQ(v.size(), 256u);
-        const float exp8[8] = {-0.00611287f, 0.00611287f, 0.0279446f, 0.00436634f,
+        const float exp8[8] = {-0.00611287f, 0.00611287f,  0.0279446f,  0.00436634f,
                                -0.00523961f, -0.00698614f, -0.0183386f, 0.0026198f};
-        for (int i = 0; i < 8; ++i) expectNearF16(v[i], exp8[i], "ffn_down Q6_K first8");
+        for (int i = 0; i < 8; ++i)
+            expectNearF16(v[i], exp8[i], "ffn_down Q6_K first8");
         const float exp128[4] = {0.00285149f, -0.00142574f, -0.00142574f, 0.0456238f};
-        for (int i = 0; i < 4; ++i) expectNearF16(v[128 + i], exp128[i], "ffn_down Q6_K [128:132]");
+        for (int i = 0; i < 4; ++i)
+            expectNearF16(v[128 + i], exp128[i], "ffn_down Q6_K [128:132]");
     }
     {
         auto v = toFloats(dequantFirstBlock("blk.23.ffn_down.weight", GGMLType::Q4_K, 144, 256));
         ASSERT_EQ(v.size(), 256u);
-        const float exp8[8] = {0.00669551f, 0.00373709f, 0.00669551f, 0.00373709f,
-                               -0.00513816f, 0.000778675f, -0.011055f, 0.000778675f};
-        for (int i = 0; i < 8; ++i) expectNearF16(v[i], exp8[i], "blk.23 Q4_K first8");
+        const float exp8[8] = {0.00669551f,  0.00373709f,  0.00669551f, 0.00373709f,
+                               -0.00513816f, 0.000778675f, -0.011055f,  0.000778675f};
+        for (int i = 0; i < 8; ++i)
+            expectNearF16(v[i], exp8[i], "blk.23 Q4_K first8");
         const float exp128[4] = {0.00363874f, 0.0179163f, -0.00825924f, 0.00601834f};
-        for (int i = 0; i < 4; ++i) expectNearF16(v[128 + i], exp128[i], "blk.23 Q4_K [128:132]");
+        for (int i = 0; i < 4; ++i)
+            expectNearF16(v[128 + i], exp128[i], "blk.23 Q4_K [128:132]");
     }
 }
 
@@ -224,7 +247,7 @@ TEST_F(GGUFRealModelTest, WeightW8A16RoundTripPreservesValues) {
     ASSERT_NE(tensor, nullptr);
     ASSERT_EQ(static_cast<uint32_t>(tensor->type), static_cast<uint32_t>(GGMLType::Q5_0));
 
-    int in_f  = static_cast<int>(tensor->dimensions[0]); // K
+    int in_f = static_cast<int>(tensor->dimensions[0]);  // K
     int out_f = static_cast<int>(tensor->dimensions[1]); // N
     ASSERT_EQ(in_f, 896);
     ASSERT_EQ(out_f, 896);
@@ -242,29 +265,30 @@ TEST_F(GGUFRealModelTest, WeightW8A16RoundTripPreservesValues) {
     std::vector<half> dst(static_cast<size_t>(in_f) * out_f);
     for (int o = 0; o < out_f; ++o) {
         for (int i = 0; i < in_f; ++i) {
-            dst[static_cast<size_t>(i) * out_f + o] = f16.value()[static_cast<size_t>(o) * in_f + i];
+            dst[static_cast<size_t>(i) * out_f + o] =
+                f16.value()[static_cast<size_t>(o) * in_f + i];
         }
     }
 
     auto q = quantizeF16ToW8A16(dst.data(), in_f, out_f, group_size);
     ASSERT_FALSE(q.isErr());
     const auto &int8_data = q.value().first;
-    const auto &scales    = q.value().second;
+    const auto &scales = q.value().second;
 
     // 反量化重建：val = q * scale。量化误差应受限于该组步长 scale/2。
     double max_abs_err = 0.0;
     double worst_ratio = 0.0; // 绝对误差 / scale，应 <= 0.5 + 少许
     size_t max_err_idx = 0;
-    size_t bad_count   = 0;
+    size_t bad_count = 0;
     for (int k = 0; k < in_f; ++k) {
         for (int n = 0; n < out_f; ++n) {
-            size_t idx      = static_cast<size_t>(k) * out_f + n;
-            int    group    = k / group_size;
-            float  scale    = __half2float(scales[static_cast<size_t>(group) * out_f + n]);
-            float  rebuilt  = static_cast<float>(int8_data[idx]) * scale;
-            float  orig     = __half2float(dst[idx]);
-            float  abs_err  = std::abs(rebuilt - orig);
-            float  ratio    = abs_err / (scale + 1e-30f);
+            size_t idx = static_cast<size_t>(k) * out_f + n;
+            int    group = k / group_size;
+            float  scale = __half2float(scales[static_cast<size_t>(group) * out_f + n]);
+            float  rebuilt = static_cast<float>(int8_data[idx]) * scale;
+            float  orig = __half2float(dst[idx]);
+            float  abs_err = std::abs(rebuilt - orig);
+            float  ratio = abs_err / (scale + 1e-30f);
             if (abs_err > max_abs_err) {
                 max_abs_err = abs_err;
                 max_err_idx = idx;
@@ -273,9 +297,9 @@ TEST_F(GGUFRealModelTest, WeightW8A16RoundTripPreservesValues) {
             if (ratio > 0.75) ++bad_count;
         }
     }
-    EXPECT_LT(worst_ratio, 0.75)
-        << "worst abs_err/scale ratio " << worst_ratio << " at idx " << max_err_idx
-        << " (k=" << max_err_idx / out_f << ", n=" << max_err_idx % out_f << ")";
+    EXPECT_LT(worst_ratio, 0.75) << "worst abs_err/scale ratio " << worst_ratio << " at idx "
+                                 << max_err_idx << " (k=" << max_err_idx / out_f
+                                 << ", n=" << max_err_idx % out_f << ")";
     // 量化应覆盖绝大多数元素；允许少数极小值被量化到相邻档位
     EXPECT_LT(static_cast<double>(bad_count) / (static_cast<double>(in_f) * out_f), 1e-4)
         << "bad_count=" << bad_count;

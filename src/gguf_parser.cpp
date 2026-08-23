@@ -125,13 +125,13 @@ Result<void> GGUFParser::parseHeader(std::ifstream &file) {
     constexpr uint64_t MAX_GGUF_ENTRY_COUNT = uint64_t(1) << 20;
     if (header_.tensor_count > MAX_GGUF_ENTRY_COUNT) {
         return Result<void>::err("GGUF tensor_count exceeds sanity limit (" +
-                                 std::to_string(MAX_GGUF_ENTRY_COUNT) + "): " +
-                                 std::to_string(header_.tensor_count));
+                                 std::to_string(MAX_GGUF_ENTRY_COUNT) +
+                                 "): " + std::to_string(header_.tensor_count));
     }
     if (header_.metadata_kv_count > MAX_GGUF_ENTRY_COUNT) {
         return Result<void>::err("GGUF metadata_kv_count exceeds sanity limit (" +
-                                 std::to_string(MAX_GGUF_ENTRY_COUNT) + "): " +
-                                 std::to_string(header_.metadata_kv_count));
+                                 std::to_string(MAX_GGUF_ENTRY_COUNT) +
+                                 "): " + std::to_string(header_.metadata_kv_count));
     }
 
     return Result<void>::ok();
@@ -404,7 +404,8 @@ Result<GGUFValue> GGUFParser::readArray(std::ifstream &file) {
         // R10: 数组元素类型为 ARRAY（嵌套数组）——GGUFValue 无法表示，
         // 且递归解析会随恶意文件深度增长，显式拒绝。
         if (elem_type == GGUFType::ARRAY) {
-            return Result<GGUFValue>::err("Nested arrays are not supported (array element type ARRAY)");
+            return Result<GGUFValue>::err(
+                "Nested arrays are not supported (array element type ARRAY)");
         }
         // Skip unsupported array types
         TLLM_WARN("Unsupported array element type: {}, skipping {} elements",

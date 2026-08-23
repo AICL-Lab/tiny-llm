@@ -31,17 +31,20 @@
 ## 阶段 2：可复现的性能基准
 
 - [x] 编写 benchmark 驱动（固定预热/迭代/统计口径，CUDA Event + 宿主计时）
-      —— `tiny_llm_bench`（TTFT / TPOT / tok/s / 峰值显存，warmup/iters/统计口径固定）
-- [x] 指标：TTFT、TPOT、decode 吞吐（tok/s）、峰值显存
-- [x] 对比基线：llama.cpp（同硬件、同量化、同模型）
-      —— 实测归档 `docs/performance/results/2026-08-18-rtx3060.md`
+      —— `tiny_llm_bench` schema v2（同请求 TTFT / TPOT / tok/s / 常驻显存差值，
+      warmup/iters/统计口径固定；峰值显存须由外部采样器或 profiler 另测）
+- [x] 指标：TTFT、TPOT、decode 吞吐（tok/s）、常驻显存差值
+- [ ] 对比基线：llama.cpp（同硬件、同模型、可解释的量化差异）
+      —— `docs/performance/results/2026-08-18-rtx3060.md` 是已审计的 schema v1
+      历史快照；clean commit 上的 schema v2 正式重跑仍待完成
 - [x] kernel 级瓶颈分析 —— ncu/nsys 本机不可用（`ERR_NVGPUCTRPERM` / importer
       缺失），改用仓库内微基准 `tiny_llm_kernel_bench`（C0）作为替代证据
 - [x] 将实测数字回填 docs/performance/（附硬件/软件版本/复现命令）
       —— 见 `docs/performance/results/2026-08-18-decode-optimization.md`
 
-**完成证据**：README 出现第一张带基线对比、可复现的性能表（TPOT 21.9 →
-**6.1 ms/token**，decode 45.6 → **164.3 tok/s**）。
+**当前证据**：历史 schema v1 报告记录 TPOT 21.9 → **6.1 ms/token**、decode
+45.6 → **164.3 tok/s**，但 TPOT 使用跨请求估算；schema v2 已修正计时，需在
+clean commit 上重跑后才作为简历与 release 的正式数字。
 
 ## 阶段 3：选一个推理加速主题做深（二选一）
 
@@ -49,8 +52,8 @@
 - [x] decode 阶段 graph capture/replay，配置开关
       —— 默认开启，`TLLM_CUDA_GRAPHS=0` opt-out（见 `cuda-graphs.md`）
 - [x] before/after 的 launch 开销与 TPOT 对比数字
-      —— 转置快路径 + graphs 后 TPOT 24.3 → 6.1 ms；见
-      `docs/performance/results/2026-08-18-decode-optimization.md`
+      —— schema v2 的 dirty-worktree 三组交错 A/B 仅作本地正确性与趋势验证；见
+      `docs/performance/results/2026-08-23-cuda-graphs-ab.md`，正式数字待 clean commit 重跑
 
 **完成证据**：一个有数字、有 profiling 证据、能讲清取舍的优化故事。
 （C1 转置权重 M==1 快路径是本批另一个核心加速点，与 CUDA Graphs 叠加。）

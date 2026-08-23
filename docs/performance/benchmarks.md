@@ -19,7 +19,7 @@
 | TTFT | 首 token 延迟（prefill 阶段） | 宿主计时 |
 | TPOT | decode 阶段每 token 平均延迟 | 宿主计时 |
 | Decode 吞吐 | 稳态 token 生成速率（tok/s） | 宿主计时 |
-| 峰值显存 | 权重 + KV Cache + 激活 | `cudaMemGetInfo` 差值 |
+| 常驻显存差值 | benchmark 结束时仍驻留的权重 + KV Cache + 工作区 | 加载前/运行后 `cudaMemGetInfo` 差值（非峰值） |
 | 数值质量 | 量化前后困惑度变化 | 评估脚本（待实现） |
 
 ### 计划的对比基线

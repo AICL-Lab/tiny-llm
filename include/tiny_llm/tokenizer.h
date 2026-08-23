@@ -16,11 +16,12 @@ struct TokenizerData {
     std::string              model_type; // "gpt2"（BPE）/ "llama"（SentencePiece）等
     std::vector<std::string> tokens;     // id -> piece（gpt2 风格字节编码的 UTF-8）
     std::vector<std::string> merges;     // rank -> "piece1 piece2"（gpt2 BPE 合并规则）
-    std::vector<int>         token_types; // 每 token 的 GGML 类型（1=NORMAL 3=CONTROL 4=USER_DEFINED 5=UNUSED）
-    int                      bos_token_id = -1;
-    int                      eos_token_id = -1;
-    int                      padding_token_id = -1;
-    bool                     add_bos_token = false;
+    std::vector<int>
+         token_types; // 每 token 的 GGML 类型（1=NORMAL 3=CONTROL 4=USER_DEFINED 5=UNUSED）
+    int  bos_token_id = -1;
+    int  eos_token_id = -1;
+    int  padding_token_id = -1;
+    bool add_bos_token = false;
 };
 
 /**
@@ -62,12 +63,12 @@ class Tokenizer {
     std::vector<std::string> preTokenize(const std::string &text) const;
     std::vector<std::string> bpe(const std::string &word) const;
 
-    std::vector<std::string>                        id_to_token_;
-    std::unordered_map<std::string, int>            token_to_id_;
-    std::unordered_map<std::string, int>            merge_rank_; // "a b" -> rank
-    std::vector<std::pair<std::string, int>>        special_tokens_; // 按长度降序
-    int                                             bos_id_ = -1;
-    int                                             eos_id_ = -1;
+    std::vector<std::string>                 id_to_token_;
+    std::unordered_map<std::string, int>     token_to_id_;
+    std::unordered_map<std::string, int>     merge_rank_;     // "a b" -> rank
+    std::vector<std::pair<std::string, int>> special_tokens_; // 按长度降序
+    int                                      bos_id_ = -1;
+    int                                      eos_id_ = -1;
 };
 
 struct GGUFMetadata;

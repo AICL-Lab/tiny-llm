@@ -112,9 +112,8 @@ void append_kv_at(const half *new_k, const half *new_v, half *dst_k, half *dst_v
     const int total = num_tokens * kv_heads * head_dim;
     const int block_size = 256;
     const int grid_size = (total + block_size - 1) / block_size;
-    append_kv_at_kernel<<<grid_size, block_size, 0, stream>>>(new_k, new_v, dst_k, dst_v,
-                                                              device_write_pos, num_tokens,
-                                                              kv_heads, head_dim);
+    append_kv_at_kernel<<<grid_size, block_size, 0, stream>>>(
+        new_k, new_v, dst_k, dst_v, device_write_pos, num_tokens, kv_heads, head_dim);
 }
 
 } // namespace kernels

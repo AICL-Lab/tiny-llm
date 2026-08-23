@@ -28,7 +28,7 @@ Tiny-LLM 将仓库表面保持得尽量小：CUDA/C++17 内核、W8A16 量化、
 - GGUF 加载与反量化（F16/F32/Q4_0/Q5_0/Q8_0/Q4_K/Q6_K）
 - W8A16 量化推理、KV Cache、tokenizer、采样、端到端生成
 - 分页 KV（策略 1：block_tables + scatter/gather；经 C ABI 供 paged-infer 使用）
-- 性能基准（TTFT / TPOT / tok/s / 峰值显存）与 CUDA Graphs 加速 decode
+- 性能基准（TTFT / TPOT / tok/s / 常驻显存差值）与 CUDA Graphs 加速 decode
 
 **OUT（明确不做，见对应仓库）**：
 - 调度 / 批处理 / continuous batching → [paged-infer](https://github.com/open-infra-ai/paged-infer)
@@ -46,11 +46,11 @@ Tiny-LLM 将仓库表面保持得尽量小：CUDA/C++17 内核、W8A16 量化、
 | tokenizer | ✅ 已实现，与 HuggingFace tokenizers 差分测试逐 id 对齐（30 例 417 token） |
 | 真实模型端到端生成 | ✅ Qwen2.5-0.5B-Instruct（Q4_K_M）在 RTX 3060 上验证通过 |
 | 分页 KV（策略 1） | ✅ block_tables + scatter/gather 池，与连续 KV 策略逐 token 差分一致，paged-infer 3 并发 e2e 与 llama.cpp 对齐 |
-| 端到端性能基准 | ✅ 已实现 `tiny_llm_bench`（TTFT / TPOT / tok/s / 峰值显存），见下方基准快照 |
+| 端到端性能基准 | ✅ 已实现 `tiny_llm_bench`（同请求 TTFT / TPOT / tok/s / 常驻显存差值），见下方基准快照 |
 
 当前开发重点见 [ROADMAP](ROADMAP.md)。性能相关的文档只描述方法与计划，不引用未实测的数字。
 
-### 基准快照（2026-08-17）
+### 基准快照（2026-08-18）
 
 | 指标 | 数值 |
 |------|------|
@@ -61,11 +61,16 @@ Tiny-LLM 将仓库表面保持得尽量小：CUDA/C++17 内核、W8A16 量化、
 | TTFT (mean) | 10.6 ms |
 | TPOT (mean) | 6.1 ms/token |
 | decode 吞吐 | 164.3 tok/s |
-| 峰值显存增量 | 3368 MB（含 M==1 转置权重副本） |
+| 常驻显存差值 | 3368 MB（加载前 vs 运行后，含 M==1 转置权重副本；非真实峰值） |
 
 > CUDA Graphs decode 默认开启；`TLLM_CUDA_GRAPHS=0` 显式关闭。
 > kernel 级 microbench 与 llama.cpp 比值见
 > [2026-08-18-decode-optimization](docs/performance/results/2026-08-18-decode-optimization.md)。
+> 2026-08-23 起 benchmark schema v2 使用同一请求记录 TTFT/TPOT，并在 JSON 中报告
+> GPU、迭代数与 Graph 实际状态；旧快照保留为历史结果，不与新 schema 混算。
+> current-worktree Graph A/B 见
+> [`2026-08-23-cuda-graphs-ab.md`](docs/performance/results/2026-08-23-cuda-graphs-ab.md)，
+> 报告已明确标为 dirty 本地验证，不冒充 release 数字。
 
 ## 已实现能力
 

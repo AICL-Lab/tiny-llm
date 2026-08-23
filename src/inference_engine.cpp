@@ -49,9 +49,9 @@ int sampleFromCdf(Probs &probs, Indices &indices, int count, std::mt19937 &gen) 
         return indices[0];
     }
     std::uniform_real_distribution<float> dist(0.0f, sum);
-    float r = dist(gen);
+    float                                 r = dist(gen);
     auto it = std::lower_bound(cdf.begin(), cdf.begin() + count, r);
-    int idx = static_cast<int>(it - cdf.begin());
+    int  idx = static_cast<int>(it - cdf.begin());
     return indices[std::min(idx, count - 1)];
 }
 
@@ -72,7 +72,7 @@ Result<std::unique_ptr<InferenceEngine>> InferenceEngine::load(const std::string
     if (model_path.size() >= 5 && model_path.substr(model_path.size() - 5) == ".gguf") {
         // GGUF 运行时加载：从文件提取配置并转换权重到 W8A16
         ModelConfig gguf_config = config;
-        auto        result      = ModelLoader::loadGGUF(model_path, gguf_config);
+        auto        result = ModelLoader::loadGGUF(model_path, gguf_config);
         if (result.isErr()) {
             TLLM_ERROR("Failed to load GGUF model: {}", result.error());
             return Result<std::unique_ptr<InferenceEngine>>::err(result.error());
@@ -102,67 +102,69 @@ InferenceEngine::InferenceEngine(const ModelConfig &config, ModelWeights &&weigh
     : config_(config), weights_(std::move(weights)) {
     try {
 
-    // Create CUDA stream
-    CUDA_CHECK(cudaStreamCreate(&stream_));
+        // Create CUDA stream
+        CUDA_CHECK(cudaStreamCreate(&stream_));
 
-    // Initialize KV cache
-    KVCacheConfig kv_config;
-    kv_config.num_layers = config_.num_layers;
-    kv_config.num_kv_heads = config_.num_kv_heads;
-    kv_config.head_dim = config_.head_dim;
-    kv_config.max_seq_len = config_.max_seq_len;
-    kv_config.max_batch_size = 1;
+        // Initialize KV cache
+        KVCacheConfig kv_config;
+        kv_config.num_layers = config_.num_layers;
+        kv_config.num_kv_heads = config_.num_kv_heads;
+        kv_config.head_dim = config_.head_dim;
+        kv_config.max_seq_len = config_.max_seq_len;
+        kv_config.max_batch_size = 1;
 
-    auto kv_cache_result = KVCacheManager::create(kv_config);
-    if (kv_cache_result.isErr()) {
-        throw std::runtime_error("Failed to create KV cache: " + kv_cache_result.error());
-    }
-    kv_cache_ = std::move(kv_cache_result.value());
+        auto kv_cache_result = KVCacheManager::create(kv_config);
+        if (kv_cache_result.isErr()) {
+            throw std::runtime_error("Failed to create KV cache: " + kv_cache_result.error());
+        }
+        kv_cache_ = std::move(kv_cache_result.value());
 
-    // Create transformer layers
-    // 共享中间激活工作区：所有层复用，避免按层数线性放大显存
-    workspace_.allocate(config_);
+        // Create transformer layers
+        // 共享中间激活工作区：所有层复用，避免按层数线性放大显存
+        workspace_.allocate(config_);
 
-    layers_.reserve(config_.num_layers);
-    for (int i = 0; i < config_.num_layers; ++i) {
-        layers_.push_back(
-            std::make_unique<TransformerLayer>(i, weights_.layers[i], config_, &workspace_));
-    }
+        layers_.reserve(config_.num_layers);
+        for (int i = 0; i < config_.num_layers; ++i) {
+            layers_.push_back(
+                std::make_unique<TransformerLayer>(i, weights_.layers[i], config_, &workspace_));
+        }
 
-    // Allocate buffers
-    size_t hidden_size = static_cast<size_t>(config_.max_seq_len) * config_.hidden_dim * sizeof(half);
-    size_t logits_size = config_.vocab_size * sizeof(half);
+        // Allocate buffers
+        size_t hidden_size =
+            static_cast<size_t>(config_.max_seq_len) * config_.hidden_dim * sizeof(half);
+        size_t logits_size = config_.vocab_size * sizeof(half);
 
-    CUDA_CHECK(cudaMalloc(&hidden_states_, hidden_size));
-    CUDA_CHECK(cudaMalloc(&logits_, logits_size));
-    // 任务 3.1：decode 可见 KV 长度的 device int 缓冲（CUDA Graph 前置）。
-    decode_len_ = DeviceBuffer<int>(1);
-    // 任务 3.2：decode 固定输入缓冲（token id + RoPE 起始位置）。
-    graph_token_ = DeviceBuffer<int>(1);
-    rope_pos_ = DeviceBuffer<int>(1);
-    if (std::getenv("TLLM_DEBUG_ZERO")) {
-        CUDA_CHECK(cudaMemset(hidden_states_, 0, hidden_size));
-        CUDA_CHECK(cudaMemset(logits_, 0, logits_size));
-    }
+        CUDA_CHECK(cudaMalloc(&hidden_states_, hidden_size));
+        CUDA_CHECK(cudaMalloc(&logits_, logits_size));
+        // 任务 3.1：decode 可见 KV 长度的 device int 缓冲（CUDA Graph 前置）。
+        decode_len_ = DeviceBuffer<int>(1);
+        // 任务 3.2：decode 固定输入缓冲（token id + RoPE 起始位置）。
+        graph_token_ = DeviceBuffer<int>(1);
+        rope_pos_ = DeviceBuffer<int>(1);
+        if (std::getenv("TLLM_DEBUG_ZERO")) {
+            CUDA_CHECK(cudaMemset(hidden_states_, 0, hidden_size));
+            CUDA_CHECK(cudaMemset(logits_, 0, logits_size));
+        }
 
-    // 任务 C2：CUDA Graphs 默认开启；TLLM_CUDA_GRAPHS=0 显式关闭（opt-out）。
-    // 状态仍打印当前值。
-    if (const char *g = std::getenv("TLLM_CUDA_GRAPHS"); g && std::string(g) == "0") {
-        cuda_graphs_enabled_ = false;
-        TLLM_INFO("CUDA Graphs: decode graph capture/replay DISABLED (TLLM_CUDA_GRAPHS=0)");
-    } else {
-        cuda_graphs_enabled_ = true;
-        TLLM_INFO("CUDA Graphs: decode graph capture/replay ENABLED (default; set TLLM_CUDA_GRAPHS=0 to disable)");
-    }
+        // 任务 C2：CUDA Graphs 默认开启；TLLM_CUDA_GRAPHS=0 显式关闭（opt-out）。
+        // 状态仍打印当前值。
+        if (const char *g = std::getenv("TLLM_CUDA_GRAPHS"); g && std::string(g) == "0") {
+            cuda_graphs_enabled_ = false;
+            TLLM_INFO("CUDA Graphs: decode graph capture/replay DISABLED (TLLM_CUDA_GRAPHS=0)");
+        } else {
+            cuda_graphs_enabled_ = true;
+            TLLM_INFO("CUDA Graphs: decode graph capture/replay ENABLED (default; set "
+                      "TLLM_CUDA_GRAPHS=0 to disable)");
+        }
 
-    // TLLM-003: Allocate and precompute RoPE cos/sin half cache
-    int half_d = config_.head_dim / 2;
-    size_t rope_cache_size = static_cast<size_t>(config_.max_seq_len) * half_d * sizeof(float);
-    CUDA_CHECK(cudaMalloc(&rope_cos_, rope_cache_size));
-    CUDA_CHECK(cudaMalloc(&rope_sin_, rope_cache_size));
-    kernels::rope_precompute_cache(rope_cos_, rope_sin_, config_.max_seq_len, config_.head_dim,
-                                   config_.rope_theta, stream_);
-    CUDA_CHECK(cudaStreamSynchronize(stream_));
+        // TLLM-003: Allocate and precompute RoPE cos/sin half cache
+        int    half_d = config_.head_dim / 2;
+        size_t rope_cache_size = static_cast<size_t>(config_.max_seq_len) * half_d * sizeof(float);
+        CUDA_CHECK(cudaMalloc(&rope_cos_, rope_cache_size));
+        CUDA_CHECK(cudaMalloc(&rope_sin_, rope_cache_size));
+        kernels::rope_precompute_cache(rope_cos_, rope_sin_, config_.max_seq_len, config_.head_dim,
+                                       config_.rope_theta, stream_);
+        CUDA_CHECK(cudaStreamSynchronize(stream_));
 
     } catch (...) {
         // 修复：构造中途抛异常（如 workspace OOM / CUDA_CHECK 失败）时，
@@ -257,6 +259,7 @@ InferenceEngine::~InferenceEngine() {
 Result<std::vector<int>> InferenceEngine::generate(const std::vector<int> &prompt_tokens,
                                                    const GenerationConfig &config) {
     stats_ = GenerationStats{};
+    const auto request_start = std::chrono::steady_clock::now();
 
     // 1. Validate generation config
     auto config_result = config.validate();
@@ -323,16 +326,19 @@ Result<std::vector<int>> InferenceEngine::generate(const std::vector<int> &promp
     auto decode_start = std::chrono::high_resolution_clock::now();
     int  position = static_cast<int>(prompt_tokens.size());
     // prompt_tokens 已在上方校验非空，直接取末位 token 作为首个 decode 输入。
-    int  prev_token = prompt_tokens.back();
-    int  generated = 0;
+    int prev_token = prompt_tokens.back();
+    int generated = 0;
     // repetition_penalty 依赖"已见 token"集合（prompt + 已生成）
     std::vector<int> past_tokens = prompt_tokens;
 
     // 首 token：直接采样自 prefill 最后一个 hidden（KV 已含完整 prompt）。
     // R6: EOS 不写入 output_tokens，避免解码文本尾部出现特殊标记。
     if (generated < config.max_new_tokens) {
-        half *last_hidden = hidden_states_ + (position - 1) * config_.hidden_dim;
-        int   next_token = sampleFromHidden(last_hidden, config, past_tokens);
+        half      *last_hidden = hidden_states_ + (position - 1) * config_.hidden_dim;
+        int        next_token = sampleFromHidden(last_hidden, config, past_tokens);
+        const auto first_token_end = std::chrono::steady_clock::now();
+        stats_.time_to_first_token_ms =
+            std::chrono::duration<float, std::milli>(first_token_end - request_start).count();
 
         if (next_token == config_.eos_token_id) {
             CUDA_CHECK(cudaStreamSynchronize(stream_));
@@ -438,10 +444,9 @@ Result<void> InferenceEngine::prefill(const std::vector<int> &tokens, int seq_id
     // Forward through all layers
     for (auto &layer : layers_) {
         auto layer_result = layer->forwardPrefill(hidden_states_, *kv_cache_, seq_id, num_tokens,
-                                                   rope_pos_.data(), rope_cos_, rope_sin_, stream_);
+                                                  rope_pos_.data(), rope_cos_, rope_sin_, stream_);
         if (layer_result.isErr()) {
-            TLLM_ERROR("prefill: layer {} failed: {}", layer->getLayerIdx(),
-                       layer_result.error());
+            TLLM_ERROR("prefill: layer {} failed: {}", layer->getLayerIdx(), layer_result.error());
             return layer_result;
         }
     }
@@ -456,8 +461,8 @@ Result<void> InferenceEngine::prefill(const std::vector<int> &tokens, int seq_id
 }
 
 Result<int> InferenceEngine::decodeStep(int seq_id, int position, int token_id,
-                                          const GenerationConfig &config,
-                                          const std::vector<int> &past_tokens) {
+                                        const GenerationConfig &config,
+                                        const std::vector<int> &past_tokens) {
     // 任务 3.2：decode 固定使用 hidden_states_ 的最后一行（不随 position 变），
     // 使 graph 捕获的地址可无更新重放。该行只在单次 decode step 内使用，
     // prefill 行（0..num_tokens-1）不受影响。
@@ -492,7 +497,7 @@ Result<int> InferenceEngine::decodeStep(int seq_id, int position, int token_id,
         CUDA_CHECK(cudaGraphLaunch(decode_graph_exec_, stream_));
     } else if (cuda_graphs_enabled_ && !graph_captured_) {
         // 第一次 decode：先直接执行并同步，再在 capture 区内记录一次
-        //（capture 不真正执行 kernel，只记录节点）。本步结果来自直接执行；
+        // （capture 不真正执行 kernel，只记录节点）。本步结果来自直接执行；
         // graph 从第 2 步起重放。任何失败 → 关闭 graphs 回退常规路径。
         auto direct_result = runDecodeDevicePath(token_state, seq_id, position);
         if (direct_result.isErr()) {
@@ -502,9 +507,10 @@ Result<int> InferenceEngine::decodeStep(int seq_id, int position, int token_id,
 
         bool capture_ok = false;
         try {
-            cudaError_t begin_err = cudaStreamBeginCapture(stream_, cudaStreamCaptureModeThreadLocal);
+            cudaError_t begin_err =
+                cudaStreamBeginCapture(stream_, cudaStreamCaptureModeThreadLocal);
             if (begin_err == cudaSuccess) {
-                auto capture_result = runDecodeDevicePath(token_state, seq_id, position);
+                auto        capture_result = runDecodeDevicePath(token_state, seq_id, position);
                 cudaError_t end_err = cudaStreamEndCapture(stream_, &decode_graph_);
                 capture_ok = capture_result.isOk() && end_err == cudaSuccess;
                 if (!capture_ok) {
@@ -537,8 +543,8 @@ Result<int> InferenceEngine::decodeStep(int seq_id, int position, int token_id,
         }
 
         if (capture_ok) {
-            cudaError_t inst_err = cudaGraphInstantiate(&decode_graph_exec_, decode_graph_, nullptr,
-                                                        nullptr, 0);
+            cudaError_t inst_err =
+                cudaGraphInstantiate(&decode_graph_exec_, decode_graph_, nullptr, nullptr, 0);
             if (inst_err != cudaSuccess) {
                 TLLM_WARN("CUDA Graphs: cudaGraphInstantiate failed ({}), falling back",
                           cudaGetErrorString(inst_err));
@@ -577,9 +583,9 @@ Result<void> InferenceEngine::runDecodeDevicePath(half *token_state, int seq_id,
     embedTokens(graph_token_.data(), 1, token_state);
 
     for (auto &layer : layers_) {
-        auto layer_result = layer->forward(token_state, *kv_cache_, seq_id, position,
-                                            decode_len_.data(), rope_pos_.data(), rope_cos_,
-                                            rope_sin_, stream_);
+        auto layer_result =
+            layer->forward(token_state, *kv_cache_, seq_id, position, decode_len_.data(),
+                           rope_pos_.data(), rope_cos_, rope_sin_, stream_);
         if (layer_result.isErr()) {
             TLLM_ERROR("decodeStep: layer {} failed: {}", layer->getLayerIdx(),
                        layer_result.error());
@@ -623,8 +629,8 @@ void InferenceEngine::computeLogits(const half *hidden_states, int num_tokens, h
     // W8A16 版本作为后备。
     // 任务 C1：M==1（decode）时传转置布局走 coalesced 快路径；M>1 自动回退。
     if (weights_.lm_head_fp16) {
-        kernels::fp16_matmul(hidden_states, weights_.lm_head_fp16, weights_.lm_head_fp16_t,
-                             logits, num_tokens, config_.vocab_size, config_.hidden_dim, stream_);
+        kernels::fp16_matmul(hidden_states, weights_.lm_head_fp16, weights_.lm_head_fp16_t, logits,
+                             num_tokens, config_.vocab_size, config_.hidden_dim, stream_);
     } else if (weights_.lm_head.isValid()) {
         kernels::w8a16_matmul(hidden_states, weights_.lm_head.data, weights_.lm_head.scales,
                               weights_.lm_head.data_t, weights_.lm_head.scales_t, logits,
@@ -641,7 +647,7 @@ void InferenceEngine::finalNorm(const half *input, half *output, int num_tokens)
 }
 
 void InferenceEngine::applyRepetitionPenalty(half *logits, const std::vector<int> &past_tokens,
-                                            float penalty, int vocab_size) {
+                                             float penalty, int vocab_size) {
     if (penalty == 1.0f || past_tokens.empty() || logits == nullptr || vocab_size <= 0) {
         return;
     }
@@ -658,7 +664,7 @@ int InferenceEngine::sample(const half *logits, const GenerationConfig &config,
     // repetition_penalty（llama.cpp 语义）：对"已见 token"的 logit 施加惩罚，
     // 负 logit 乘 penalty、正 logit 除 penalty，再走采样分发。penalty==1.0
     // 或无可查历史时零开销直通。
-    const half *effective = logits;
+    const half       *effective = logits;
     std::vector<half> penalized;
     if (config.repetition_penalty != 1.0f && !past_tokens.empty()) {
         penalized.assign(logits, logits + config_.vocab_size);
@@ -737,10 +743,11 @@ int InferenceEngine::sampleTemperature(const half *logits, int vocab_size, float
     }
 
     // Sample from the distribution via CDF lookup.
-    std::mt19937                    &gen = samplingRng(seed);
+    std::mt19937                        &gen = samplingRng(seed);
     static thread_local std::vector<int> indices;
     indices.resize(static_cast<size_t>(vocab_size));
-    for (int i = 0; i < vocab_size; ++i) indices[i] = i;
+    for (int i = 0; i < vocab_size; ++i)
+        indices[i] = i;
     return sampleFromCdf(probs, indices, vocab_size, gen);
 }
 
@@ -777,10 +784,11 @@ int InferenceEngine::sampleTopK(const half *logits, int vocab_size, int k, float
     }
 
     // Sample (CDF lookup; logit_pairs[sampled].second is the token id).
-    std::mt19937     &gen = samplingRng(seed);
+    std::mt19937                        &gen = samplingRng(seed);
     static thread_local std::vector<int> indices_k;
     indices_k.resize(static_cast<size_t>(k));
-    for (int i = 0; i < k; ++i) indices_k[i] = i;
+    for (int i = 0; i < k; ++i)
+        indices_k[i] = i;
     int pick = sampleFromCdf(probs, indices_k, k, gen);
     return logit_pairs[pick].second;
 }
@@ -835,10 +843,11 @@ int InferenceEngine::sampleTopP(const half *logits, int vocab_size, float p, flo
     }
 
     // Sample (CDF lookup over the truncated top-p set).
-    std::mt19937     &gen = samplingRng(seed);
+    std::mt19937                        &gen = samplingRng(seed);
     static thread_local std::vector<int> indices_p;
     indices_p.resize(static_cast<size_t>(cutoff));
-    for (int i = 0; i < cutoff; ++i) indices_p[i] = i;
+    for (int i = 0; i < cutoff; ++i)
+        indices_p[i] = i;
     int pick = sampleFromCdf(probs, indices_p, cutoff, gen);
     return logit_pairs[pick].second;
 }
@@ -862,15 +871,16 @@ int InferenceEngine::sampleTopKTopP(const half *logits, int vocab_size, int k, f
               [](const auto &a, const auto &b) { return a.first > b.first; });
 
     // 候选集 = 前 k 个
-    const int n = k;
-    float     max_logit = logit_pairs[0].first;
+    const int          n = k;
+    float              max_logit = logit_pairs[0].first;
     std::vector<float> probs(static_cast<size_t>(n));
-    float sum = 0.0f;
+    float              sum = 0.0f;
     for (int i = 0; i < n; ++i) {
         probs[i] = std::exp((logit_pairs[i].first - max_logit) / temperature);
         sum += probs[i];
     }
-    for (int i = 0; i < n; ++i) probs[i] /= sum;
+    for (int i = 0; i < n; ++i)
+        probs[i] /= sum;
 
     // 在 top-k 内做 nucleus 截断
     float cumsum = 0.0f;
@@ -883,13 +893,16 @@ int InferenceEngine::sampleTopKTopP(const half *logits, int vocab_size, int k, f
         }
     }
     float top_p_sum = 0.0f;
-    for (int i = 0; i < cutoff; ++i) top_p_sum += probs[i];
-    for (int i = 0; i < cutoff; ++i) probs[i] /= top_p_sum;
+    for (int i = 0; i < cutoff; ++i)
+        top_p_sum += probs[i];
+    for (int i = 0; i < cutoff; ++i)
+        probs[i] /= top_p_sum;
 
-    std::mt19937     &gen = samplingRng(seed);
+    std::mt19937                        &gen = samplingRng(seed);
     static thread_local std::vector<int> indices_kp;
     indices_kp.resize(static_cast<size_t>(cutoff));
-    for (int i = 0; i < cutoff; ++i) indices_kp[i] = i;
+    for (int i = 0; i < cutoff; ++i)
+        indices_kp[i] = i;
     int pick = sampleFromCdf(probs, indices_kp, cutoff, gen);
     return logit_pairs[pick].second;
 }

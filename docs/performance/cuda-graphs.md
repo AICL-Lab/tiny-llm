@@ -107,7 +107,9 @@ capture 或实例化阶段任何失败都会 **关闭 graphs 并回退常规路�
 
 ## 7. before/after 数字
 
-环境：RTX 3060（12GB），CUDA 12.0，Qwen2.5-0.5B-Instruct GGUF Q4_K_M
+### 7.1 实现当时的历史快照（C1 转置快路径之前）
+
+环境：RTX 3060 Laptop（6GB），CUDA 12.0，Qwen2.5-0.5B-Instruct GGUF Q4_K_M
 （本仓库重量化 W8A16），prompt "你好"，greedy，max_tokens=64，
 warmup 5 / iters 20，`tiny_llm_bench` 墙钟。
 
@@ -117,9 +119,24 @@ warmup 5 / iters 20，`tiny_llm_bench` 墙钟。
 | decode tok/s | 41.18 | 44.20 | **+7.3%** |
 | TTFT (ms) | 24.94 | 28.03 | +3.1ms（首次 decode 含捕获开销） |
 
-> 说明：0.5B 模型单步 kernel 都很小，launch 开销占比相对低，收益约 7%。
-> 更大模型/更小 kernel 占比时收益会更高。TTFT 略增是首次 decode 的捕获
+> 说明：这是 commit `a2a9c58`、C1 转置快路径之前的历史 schema v1 快照，不能与当前
+> 结果直接合并。TTFT 略增是首次 decode 的捕获
 > 一次性开销（直接执行 + capture 记录 + 实例化），摊薄到长生成可忽略。
 > 数字受系统负载影响，建议同环境复测。
 
 commit：`a2a9c58`（任务 3.2 实现）。复现命令见 `benchmark-methodology.md`。
+
+### 7.2 2026-08-23 current-worktree schema v2 验证
+
+schema v2 改为在**同一次请求**内记录 TTFT/TPOT，并明确输出 Graph 实际状态。
+RTX 3060 Laptop 上 3 个独立进程、每进程 10 次 timed iteration 的聚合结果：
+
+| 指标 | Graph off | Graph on | 变化 |
+|------|-----------|----------|------|
+| TTFT p50 的跨进程中位数 | 8.862 ms | 9.047 ms | +2.1% |
+| TPOT mean 的跨进程中位数 | 8.810 ms | 5.323 ms | **-39.6%** |
+| decode tok/s 的跨进程中位数 | 113.505 | 187.877 | **+65.5%** |
+
+工作区是 dirty，故本表只作为本地验证，不替换 clean commit 的简历基准。完整环境、六组原始
+汇总、常驻显存口径与 profiler 限制见
+[`results/2026-08-23-cuda-graphs-ab.md`](results/2026-08-23-cuda-graphs-ab.md)。

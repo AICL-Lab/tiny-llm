@@ -5,6 +5,10 @@
 > 所有数字用下述命令在仓库内可复现（`tiny_llm_kernel_bench` /
 > `tiny_llm_bench` / `tiny_llm_demo`）。
 
+> **后续口径审计（2026-08-23）**：本报告使用 benchmark schema v1，TTFT 与完整墙钟
+> 来自两条独立请求；TPOT 是配对估计。表格保留为 C1/C2 优化沿革，正式新结果必须使用
+> schema v2 的同请求 TTFT/TPOT，不能把两种 schema 混算。
+
 ## 1. 元信息
 
 | 项 | 值 |
@@ -60,7 +64,9 @@ cmake --build build -j$(nproc)
 | TTFT (ms) mean | 29.584 | 10.563 | 10.567 |
 | TPOT (ms/token) mean | 24.348 | 6.560 | 6.087 |
 | decode tok/s mean | 41.072 | 152.442 | 164.283 |
-| 峰值显存增量 (MB) | 2494 | 3368（含转置副本） | 3368 |
+| 常驻显存差值 (MB) | 2494 | 3368（含转置副本） | 3368 |
+
+> 该字段是加载前与 benchmark 结束后的 `cudaMemGetInfo` 差值，不是运行期间真实峰值。
 
 复现命令：
 
@@ -131,8 +137,9 @@ diff <(./build/tiny_llm_demo model.gguf --prompt "你好" --max-tokens 32 --show
 
 - **Tensor Core / WMMA（FP16 或 INT8）**：当前 M==1 快路径仍是纯 FMA + 标量
   归约，未用 `mma.sync` / `wgmma`，也未做 `half2` 向量化加载。
-- **KV paged / FlashDecoding 集成**：attention_decode 仍是线性扫描全部可见
-  KV，未做分页布局、L2/共享内存复用、跨 head/block 并行。
+- **分页 KV**：策略 1 已在后续 commit 实现 block table + scatter/gather；本快照当时尚未包含。
+- **FlashDecoding**：attention_decode 仍线性扫描全部可见 KV，未做 L2/共享内存复用、
+  跨 head/block 并行。
 - **fused kernel**：rmsnorm / RoPE / QKV 投影 / bias 尚未融合。
 - **lm_head 进一步优化**：0.98 ms 已达标（≤2.0），但相对 llama.cpp 仍有
   空间（如 k 维 split + 原子写 / 分段 softmax）。

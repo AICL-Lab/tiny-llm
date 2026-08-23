@@ -38,20 +38,22 @@
 因此两者**并非同一种量化格式**，延迟对比反映的是“原生 Q4_K_M 计算” vs
 “W8A16 重量化后计算”两个完整路径的差距，不能解读为纯 GEMM 实现差距。
 
-## 3. 公平性声明（对比前必须满足）
+## 3. 对比边界（先区分两类实验）
 
-1. 相同 prompt、相同 `max_tokens`（= llama.cpp 的 `-n` 减去 prompt 长度后的
-   生成数口径需对齐）、相同 greedy 采样（tiny-llm `do_sample=false`，
-   llama.cpp 默认 greedy，`-t 1` 关闭采样并行）。
-2. llama.cpp 用 `llama-cli -ngl 99`（全层 GPU）或 `llama-bench`，确保
+1. **合成 decode 吞吐**：`llama-bench -p/-n` 使用指定数量的合成 token，不接收
+   文本 prompt。它适合对比 `tg64` 等吞吐，不是同 prompt 端到端测试。
+2. **同 prompt 行为/墙钟**：使用 `llama-cli -p "你好" --temp 0` 与 tiny-llm
+   `do_sample=false`。`-t 1` 在 llama.cpp 中表示 CPU 线程数，**不控制采样**；llama.cpp
+   当前默认 temperature 为 0.8，不能省略 `--temp 0` 后声称 greedy。
+3. llama.cpp 使用 `-ngl 99`（全层 GPU），确保
    不会因 CPU 卸载把数字拖低。
-3. 预热与迭代次数保持一致：
+4. 预热与迭代次数保持一致：
    - tiny-llm：`--warmup 3 --iters 10`；
    - llama.cpp：`llama-bench` 的 `-r`（repeat）与 `-n` 对齐，或用
      `llama-cli -n` 连续多次取稳定值。
-4. 同一块 GPU、同一时刻附近跑（避免其他进程占用显存/算力）。
-5. 峰值显存口径一致：都是“进程启动时与运行完成后 `cudaMemGetInfo`
-   可用显存之差”，或统一用 `nvidia-smi` 采样峰值。
+5. 同一块 GPU、同一时段交错运行 A/B，记录温度、功耗与是否锁频。
+6. tiny-llm 内置字段是“加载前 vs 运行后的常驻显存差值”，不是峰值。只有双方都用
+   同一个外部采样器、同一采样频率时，才比较峰值显存。
 
 ## 4. 可复制命令
 
@@ -63,24 +65,26 @@ cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTS=ON
 cmake --build build -j$(nproc)
 
 ./build/tiny_llm_bench /path/to/qwen2.5-0.5b-instruct-q4_k_m.gguf \
-    --prompt "你好" --max-tokens 64 --warmup 3 --iters 10
-# 机器可读：追加 --json
+    --prompt "你好" --max-tokens 64 --warmup 3 --iters 10 --json
+# CUDA Graph A/B：另一组追加 --no-graphs；JSON 会记录实际 enabled/captured 状态。
 ```
 
-### llama.cpp（llama-bench，推荐）
+### llama.cpp（合成 decode 吞吐）
 
 ```bash
 # 在 llama.cpp 仓库 build 目录
 ./build/bin/llama-bench \
     -m /path/to/qwen2.5-0.5b-instruct-q4_k_m.gguf \
     -ngl 99 \
+    -p 1 \
     -n 64 \
     -t 1 \
     -r 3
 ```
 
-`llama-bench` 输出 TTFT（`t_load`/`t_prompt` 相关列）、decode 吞吐
-（`tgen` 相关列）与 `pp*` / `tg*` 指标，按需对齐到 tiny-llm 的 TTFT / TPOT。
+`llama-bench` 输出 prompt processing (`pp*`) 与 token generation (`tg*`)；`tg64`
+可换算 decode TPOT。`pp1` 只是一个合成 prompt token 的处理时间，不包含用户可观察的
+排队、首 token 采样与输出，不能标成 TTFT。`-t 1` 只固定 CPU 线程数。
 
 ### llama.cpp（llama-cli，端到端兜底）
 
@@ -88,11 +92,14 @@ cmake --build build -j$(nproc)
 ./build/bin/llama-cli \
     -m /path/to/qwen2.5-0.5b-instruct-q4_k_m.gguf \
     -ngl 99 -t 1 -n 64 \
-    -p "你好" --no-display-prompt
+    -p "你好" --temp 0 --seed 1 --no-display-prompt
 ```
 
 > 注意：llama-cli 的输出带装饰信息，建议用 `llama-bench` 取数字，
-> 用 `llama-cli` 做“同一 prompt 同一 greedy 输出逐 token 一致”的正确性抽查。
+> 用 `llama-cli` 做同 prompt greedy 行为抽查。由于 Q4_K_M 与 W8A16 量化不同，
+> 输出可能在 argmax 边界分叉；只能按实测报告完整一致、公共前缀或 EOS，不能预设逐 token 一致。
+> 参数语义以 [llama.cpp CLI 官方说明](https://github.com/ggml-org/llama.cpp/blob/master/tools/cli/README.md)
+> 为准。
 
 ## 5. 结果表模板
 
@@ -103,10 +110,10 @@ Laptop，详见 [2026-08-18-rtx3060](results/2026-08-18-rtx3060.md) 与
 
 | 指标 | tiny-llm | llama.cpp | 比值 (tiny/llama) |
 |------|----------|-----------|-------------------|
-| TTFT (ms) | 10.6（1-token prompt，含首次 logits） | 4.9（`pp1`，仅 prompt 处理，口径不同） | ~2.2（口径见归档） |
+| TTFT (ms) | 10.6（1-token prompt，含首次 logits） | 未按同口径测量；`pp1=4.9ms` 不是 TTFT | 不可比 |
 | TPOT (ms/token) | 6.1 | 3.7（`tg64`: 272 t/s） | 1.65 |
 | decode tok/s | 164.3 | 272.2 | 0.60 |
-| 峰值显存 (MB) | 3368（含 M==1 转置权重副本） | 未测（同口径） | — |
+| 常驻显存差值 (MB) | 3368（加载前 vs 运行后，含 M==1 转置权重副本） | 未测（同口径） | — |
 
 每张表下方必须附：第 1、2 节的环境快照 + 实际执行的完整命令 + 原始日志路径。
 
@@ -138,12 +145,12 @@ Laptop，详见 [2026-08-18-rtx3060](results/2026-08-18-rtx3060.md) 与
 - 采样配置差异（temperature/top-p）——对比固定 greedy。
 - 非本机、非同一时段的数据。
 
-## 8. 工具说明：ncu / nsys 不可用与替代方案
+## 8. 本机 profiler 限制与替代方案
 
-本机（WSL2）无法使用常用 GPU profiler：
+2026-08-23 在本机 WSL2 / 驱动 610.88 复核：`nsys`/`ncu` 命令存在，但完整分析仍受限：
 
-- **`ncu` 不可用**：`ERR_NVGPUCTRPERM`（WSL2 无性能计数器权限）。
-- **`nsys stats` 不可用**：importer 缺失，qdstrm 无法转报告。
+- **`ncu`**：采样返回 `ERR_NVGPUCTRPERM`，没有 kernel 指标可收集；
+- **`nsys profile`**：能生成 `.qdstrm`，但本机安装缺 importer，不能转换为报告并执行 stats。
 
 因此 kernel 级瓶颈分析改用仓库内微基准 **`tiny_llm_kernel_bench`**：
 

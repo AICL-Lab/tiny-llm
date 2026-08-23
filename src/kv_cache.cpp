@@ -1,7 +1,7 @@
 #include "tiny_llm/kv_cache.h"
+#include "elementwise.cuh"
 #include "tiny_llm/logger.h"
 #include "tiny_llm/validator.h"
-#include "elementwise.cuh"
 #include <algorithm>
 
 namespace tiny_llm {
@@ -129,7 +129,7 @@ Result<int> KVCacheManager::allocateSequence(int seq_id, int max_len) {
     // Zero the whole slot so a re-used slot never exposes stale KV data from a
     // previously released sequence (the slot size is derived from the pool's
     // max_seq_len, not the per-allocation max_len).
-    size_t slot_offset_bytes = static_cast<size_t>(slot_idx) * slot_size_;
+    size_t      slot_offset_bytes = static_cast<size_t>(slot_idx) * slot_size_;
     cudaError_t zero_err = cudaMemset(
         reinterpret_cast<unsigned char *>(memory_pool_) + slot_offset_bytes, 0, slot_size_);
     if (zero_err != cudaSuccess) {
@@ -312,7 +312,7 @@ Result<void> KVCacheManager::appendKV(int seq_id, int layer_idx, const half *new
 
     // host 侧溢出检查（device 值与 getSeqLen 一致，host 检查不变量即可）
     auto &slot = slots_[it->second];
-    int write_pos = slot.current_len;
+    int   write_pos = slot.current_len;
     if (write_pos + num_tokens > slot.max_len) {
         TLLM_ERROR("appendKV: cache overflow. seq_id={}, write_pos={}, num_tokens={}, max_len={}",
                    seq_id, write_pos, num_tokens, slot.max_len);

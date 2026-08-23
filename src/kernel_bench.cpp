@@ -31,9 +31,9 @@
 #include <chrono>
 #include <cmath>
 #include <cstdio>
+#include <cstdlib>
 #include <cuda_fp16.h>
 #include <cuda_runtime.h>
-#include <cstdlib>
 #include <string>
 #include <vector>
 
@@ -57,10 +57,12 @@ void check(cudaError_t err, const char *what) {
 // Each call to `f` launches work on the default stream.
 template <typename F>
 double bench(F &&f, int warmup, int iters) {
-    for (int i = 0; i < warmup; ++i) f();
+    for (int i = 0; i < warmup; ++i)
+        f();
     check(cudaDeviceSynchronize(), "sync before timed loop");
     auto start = Clock::now();
-    for (int i = 0; i < iters; ++i) f();
+    for (int i = 0; i < iters; ++i)
+        f();
     check(cudaDeviceSynchronize(), "sync after timed loop");
     auto end = Clock::now();
     return std::chrono::duration<double, std::milli>(end - start).count() /
@@ -80,19 +82,21 @@ double benchW8A16(const char *name, const char *shape, int M, int N, int K, int 
     std::vector<__half> h_scales(static_cast<size_t>(scale_rows) * N, __float2half(0.5f));
     std::vector<__half> h_output(static_cast<size_t>(M) * N);
 
-    __half   *d_input = nullptr, *d_scales = nullptr, *d_output = nullptr;
-    int8_t   *d_weight = nullptr, *d_weight_t = nullptr;
-    __half   *d_scales_t = nullptr;
+    __half *d_input = nullptr, *d_scales = nullptr, *d_output = nullptr;
+    int8_t *d_weight = nullptr, *d_weight_t = nullptr;
+    __half *d_scales_t = nullptr;
     check(cudaMalloc(&d_input, h_input.size() * sizeof(__half)), "cudaMalloc input");
     check(cudaMalloc(&d_weight, h_weight.size()), "cudaMalloc weight");
     check(cudaMalloc(&d_scales, h_scales.size() * sizeof(__half)), "cudaMalloc scales");
     check(cudaMalloc(&d_output, h_output.size() * sizeof(__half)), "cudaMalloc output");
     check(cudaMemcpy(d_input, h_input.data(), h_input.size() * sizeof(__half),
-                     cudaMemcpyHostToDevice), "copy input");
+                     cudaMemcpyHostToDevice),
+          "copy input");
     check(cudaMemcpy(d_weight, h_weight.data(), h_weight.size(), cudaMemcpyHostToDevice),
           "copy weight");
     check(cudaMemcpy(d_scales, h_scales.data(), h_scales.size() * sizeof(__half),
-                     cudaMemcpyHostToDevice), "copy scales");
+                     cudaMemcpyHostToDevice),
+          "copy scales");
 
     // 任务 C1：构建转置布局 [N, K] / [N, scale_rows]（M==1 decode 生产路径），
     // 测量的是与推理引擎 decode 相同的 coalesced 快路径。
@@ -101,10 +105,12 @@ double benchW8A16(const char *name, const char *shape, int M, int N, int K, int 
     tiny_llm::kernels::transpose_int8(d_weight, d_weight_t, K, N, 0);
     tiny_llm::kernels::transpose_scales(d_scales, d_scales_t, scale_rows, N, 0);
 
-    double ms = bench([&] {
-        tiny_llm::kernels::w8a16_matmul(d_input, d_weight, d_scales, d_weight_t, d_scales_t,
-                                        d_output, M, N, K, group_size, 0);
-    }, warmup, iters);
+    double ms = bench(
+        [&] {
+            tiny_llm::kernels::w8a16_matmul(d_input, d_weight, d_scales, d_weight_t, d_scales_t,
+                                            d_output, M, N, K, group_size, 0);
+        },
+        warmup, iters);
 
     std::printf("w8a16_matmul,%s,%.4f\n", shape, ms);
     check(cudaFree(d_input), "cudaFree input");
@@ -130,17 +136,21 @@ double benchFP16(const char *name, const char *shape, int M, int N, int K, int w
     check(cudaMalloc(&d_weight, h_weight.size() * sizeof(__half)), "cudaMalloc weight");
     check(cudaMalloc(&d_output, h_output.size() * sizeof(__half)), "cudaMalloc output");
     check(cudaMemcpy(d_input, h_input.data(), h_input.size() * sizeof(__half),
-                     cudaMemcpyHostToDevice), "copy input");
+                     cudaMemcpyHostToDevice),
+          "copy input");
     check(cudaMemcpy(d_weight, h_weight.data(), h_weight.size() * sizeof(__half),
-                     cudaMemcpyHostToDevice), "copy weight");
+                     cudaMemcpyHostToDevice),
+          "copy weight");
 
     // 任务 C1：构建转置布局 [N, K]（M==1 decode 生产路径）
     check(cudaMalloc(&d_weight_t, h_weight.size() * sizeof(__half)), "cudaMalloc weight_t");
     tiny_llm::kernels::transpose_fp16(d_weight, d_weight_t, K, N, 0);
 
-    double ms = bench([&] {
-        tiny_llm::kernels::fp16_matmul(d_input, d_weight, d_weight_t, d_output, M, N, K, 0);
-    }, warmup, iters);
+    double ms = bench(
+        [&] {
+            tiny_llm::kernels::fp16_matmul(d_input, d_weight, d_weight_t, d_output, M, N, K, 0);
+        },
+        warmup, iters);
 
     std::printf("fp16_matmul,%s,%.4f\n", shape, ms);
     check(cudaFree(d_input), "cudaFree input");
@@ -171,9 +181,11 @@ double benchAttentionDecode(int S, int Hq, int Hkv, int D, int warmup, int iters
     check(cudaMemcpy(d_len, &S, sizeof(int), cudaMemcpyHostToDevice), "copy len");
 
     const float scale = 1.0f / std::sqrt(static_cast<float>(D));
-    double ms = bench([&] {
-        tiny_llm::kernels::attention_decode(d_q, d_k, d_v, d_out, scale, Hq, Hkv, d_len, D, 0);
-    }, warmup, iters);
+    double      ms = bench(
+        [&] {
+            tiny_llm::kernels::attention_decode(d_q, d_k, d_v, d_out, scale, Hq, Hkv, d_len, D, 0);
+        },
+        warmup, iters);
 
     char shape[64];
     std::snprintf(shape, sizeof(shape), "S=%d,Hq=%d,Hkv=%d,D=%d", S, Hq, Hkv, D);
@@ -198,9 +210,8 @@ double benchRMSNorm(int batch, int hidden, int warmup, int iters) {
     check(cudaMemset(d_x, 0, static_cast<size_t>(batch) * hidden * sizeof(__half)), "memset x");
     check(cudaMemset(d_w, 0, static_cast<size_t>(hidden) * sizeof(__half)), "memset w");
 
-    double ms = bench([&] {
-        tiny_llm::kernels::rmsnorm(d_x, d_w, d_y, batch, hidden, 1e-6f, 0);
-    }, warmup, iters);
+    double ms = bench([&] { tiny_llm::kernels::rmsnorm(d_x, d_w, d_y, batch, hidden, 1e-6f, 0); },
+                      warmup, iters);
 
     char shape[64];
     std::snprintf(shape, sizeof(shape), "batch=%d,hidden=%d", batch, hidden);
@@ -235,9 +246,11 @@ double benchRoPE(int Hq, int Hkv, int D, int warmup, int iters) {
     const int pos = 0;
     check(cudaMemcpy(d_pos, &pos, sizeof(int), cudaMemcpyHostToDevice), "copy pos");
 
-    double ms = bench([&] {
-        tiny_llm::kernels::apply_rope_inplace(d_q, d_k, d_cos, d_sin, 1, d_pos, Hq, Hkv, D, 0);
-    }, warmup, iters);
+    double ms = bench(
+        [&] {
+            tiny_llm::kernels::apply_rope_inplace(d_q, d_k, d_cos, d_sin, 1, d_pos, Hq, Hkv, D, 0);
+        },
+        warmup, iters);
 
     char shape[64];
     std::snprintf(shape, sizeof(shape), "tokens=1,Hq=%d,Hkv=%d,D=%d,pos=0", Hq, Hkv, D);

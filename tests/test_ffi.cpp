@@ -3,17 +3,18 @@
 //
 // 门控：设置 TLLM_GGUF_TEST_MODEL 指向真实 GGUF 模型后启用。
 // 维度字段由 GGUF 提取，TinyLlmConfig 仅 max_batch_size 生效。
-#include "tiny_llm/ffi.h"
+#include "rmsnorm.cuh"
 #include "tiny_llm/cuda_utils.h"
 #include "tiny_llm/execution_common.h"
-#include "rmsnorm.cuh"
+#include "tiny_llm/ffi.h"
 #include "w8a16_matmul.cuh"
-#include <gtest/gtest.h>
+#include <array>
+#include <cmath>
+#include <cstdio>
+#include <cstdlib>
 #include <cuda_fp16.h>
 #include <cuda_runtime.h>
-#include <cmath>
-#include <cstdlib>
-#include <cstdio>
+#include <gtest/gtest.h>
 #include <random>
 #include <vector>
 
@@ -32,41 +33,40 @@ TEST(FFITest, LoadAllocateStepFree) {
         GTEST_SKIP() << "set TLLM_GGUF_TEST_MODEL to a GGUF file to enable";
     }
 
-    char err[256] = {0};
-    TinyLlmConfig cfg = {0, 0, 0, 0, 0, 0, 16, 1, 0};
+    char           err[256] = {0};
+    TinyLlmConfig  cfg = {0, 0, 0, 0, 0, 0, 16, 1, 0};
     TinyLlmHandle *h = tinyllm_load(path, &cfg, err, sizeof(err));
     ASSERT_NE(h, nullptr) << "load failed: " << err;
 
     ASSERT_EQ(tinyllm_allocate_sequence(h, 0, 64), 0);
 
     // prefill "Hello, how are you?"（token ids 由 llama.cpp tokenizer 给出）
-    int prompt[] = {9707, 11, 1246, 525, 498, 30};
-    int positions[] = {0, 1, 2, 3, 4, 5};
-    int seq_lens[] = {6};
+    int           prompt[] = {9707, 11, 1246, 525, 498, 30};
+    int           positions[] = {0, 1, 2, 3, 4, 5};
+    int           seq_lens[] = {6};
     unsigned char pre[] = {1};
-    int seq_ids[] = {0};
-    int next = -1;
-    float logprobs[6] = {0.0f};
-    ASSERT_EQ(tinyllm_step(h, seq_ids, prompt, positions, seq_lens, nullptr, nullptr, pre, 1,
-                           &next, logprobs, 3),
+    int           seq_ids[] = {0};
+    int           next = -1;
+    float         logprobs[6] = {0.0f};
+    ASSERT_EQ(tinyllm_step(h, seq_ids, prompt, positions, seq_lens, nullptr, nullptr, pre, 1, &next,
+                           logprobs, 3),
               0);
     ASSERT_GE(next, 0);
     EXPECT_EQ(next, 358) << "Qwen2.5-0.5B 对 \"Hello, how are you?\" 的首生成 token 应为 358"
                             "（若模型文件变化需更新该期望）";
     // logprobs 格式：(token_id, logprob) 交错，logprob <= 0
-    EXPECT_GT(logprobs[0], 0.0f);  // token_id
-    EXPECT_LE(logprobs[1], 0.0f);  // logprob
+    EXPECT_GT(logprobs[0], 0.0f); // token_id
+    EXPECT_LE(logprobs[1], 0.0f); // logprob
 
     // decode 4 步
     int pos = 6;
     for (int i = 0; i < 4; ++i) {
-        int in = next;
-        int lens[] = {1};
+        int           in = next;
+        int           lens[] = {1};
         unsigned char dec[] = {0};
-        int sid[] = {0};
-        ASSERT_EQ(tinyllm_step(h, sid, &in, &pos, lens, nullptr, nullptr, dec, 1, &next, nullptr,
-                               0),
-                  0);
+        int           sid[] = {0};
+        ASSERT_EQ(
+            tinyllm_step(h, sid, &in, &pos, lens, nullptr, nullptr, dec, 1, &next, nullptr, 0), 0);
         ASSERT_GE(next, 0);
         ++pos;
     }
@@ -83,6 +83,58 @@ TEST(FFITest, InvalidArgsReturnError) {
               -1);
     ASSERT_EQ(tinyllm_allocate_sequence(h, 0, 0), -1);
     tinyllm_free(nullptr); // 不崩溃
+}
+
+TEST(FFITest, BatchedLogprobsBufferContract) {
+    const char *path = model_path();
+    if (path == nullptr) {
+        GTEST_SKIP() << "set TLLM_GGUF_TEST_MODEL to a GGUF file to enable";
+    }
+
+    char           err[256] = {0};
+    TinyLlmConfig  cfg = {0, 0, 0, 0, 0, 0, 16, 2, 0};
+    TinyLlmHandle *h = tinyllm_load(path, &cfg, err, sizeof(err));
+    ASSERT_NE(h, nullptr) << "load failed: " << err;
+    ASSERT_EQ(tinyllm_allocate_sequence(h, 0, 64), 0);
+    ASSERT_EQ(tinyllm_allocate_sequence(h, 1, 64), 0);
+
+    int           seq_ids[] = {0, 1};
+    int           prompt[] = {9707, 11, 1246, 525, 498, 30, 9707, 11, 1246, 525, 498, 30};
+    int           positions[] = {0, 1, 2, 3, 4, 5, 0, 1, 2, 3, 4, 5};
+    int           seq_lens[] = {6, 6};
+    unsigned char prefill[] = {1, 1};
+    int           next_tokens[] = {-1, -1};
+
+    EXPECT_EQ(tinyllm_step(h, seq_ids, prompt, positions, seq_lens, nullptr, nullptr, prefill, 2,
+                           next_tokens, nullptr, -1),
+              -1);
+    EXPECT_EQ(tinyllm_step(h, seq_ids, prompt, positions, seq_lens, nullptr, nullptr, prefill, 2,
+                           next_tokens, nullptr, 3),
+              -1);
+
+    constexpr int                    k = 3;
+    constexpr float                  sentinel = 12345.0f;
+    std::array<float, 2 * k * 2 + 2> storage;
+    storage.fill(sentinel);
+    float *logprobs = storage.data() + 1;
+    ASSERT_EQ(tinyllm_step(h, seq_ids, prompt, positions, seq_lens, nullptr, nullptr, prefill, 2,
+                           next_tokens, logprobs, k),
+              0);
+
+    EXPECT_EQ(storage.front(), sentinel);
+    EXPECT_EQ(storage.back(), sentinel);
+    for (int sequence = 0; sequence < 2; ++sequence) {
+        EXPECT_GE(next_tokens[sequence], 0);
+        for (int candidate = 0; candidate < k; ++candidate) {
+            const int offset = (sequence * k + candidate) * 2;
+            EXPECT_GE(logprobs[offset], 0.0f);
+            EXPECT_LE(logprobs[offset + 1], 0.0f);
+        }
+    }
+
+    EXPECT_EQ(tinyllm_free_sequence(h, 0), 0);
+    EXPECT_EQ(tinyllm_free_sequence(h, 1), 0);
+    tinyllm_free(h);
 }
 
 // 任务 4.3：execution_common helper 最小测试。
@@ -109,11 +161,12 @@ TEST(ExecutionCommonTest, FinalNormAndComputeLogitsMatchesTwoStep) {
     std::uniform_real_distribution<float> dist(-1.0f, 1.0f);
 
     // fake 权重：final_norm 全 1 + lm_head_fp16 随机小矩阵
-    tiny_llm::ModelWeights   weights;
+    tiny_llm::ModelWeights       weights;
     tiny_llm::DeviceBuffer<half> d_final_norm(hidden_dim);
     {
         std::vector<half> w(hidden_dim);
-        for (auto &v : w) v = __float2half(1.0f);
+        for (auto &v : w)
+            v = __float2half(1.0f);
         d_final_norm.copyFromHost(w.data(), hidden_dim);
     }
     weights.final_norm_weight = d_final_norm.data();
@@ -121,7 +174,8 @@ TEST(ExecutionCommonTest, FinalNormAndComputeLogitsMatchesTwoStep) {
     tiny_llm::DeviceBuffer<half> d_lm_head(static_cast<size_t>(hidden_dim) * vocab_size);
     {
         std::vector<half> w(static_cast<size_t>(hidden_dim) * vocab_size);
-        for (auto &v : w) v = __float2half(dist(gen));
+        for (auto &v : w)
+            v = __float2half(dist(gen));
         d_lm_head.copyFromHost(w.data(), w.size());
     }
     weights.lm_head_fp16 = d_lm_head.data();
@@ -132,7 +186,8 @@ TEST(ExecutionCommonTest, FinalNormAndComputeLogitsMatchesTwoStep) {
     tiny_llm::DeviceBuffer<half> d_hidden_copy(hidden_dim);
     {
         std::vector<half> h(hidden_dim);
-        for (auto &v : h) v = __float2half(dist(gen));
+        for (auto &v : h)
+            v = __float2half(dist(gen));
         d_hidden.copyFromHost(h.data(), hidden_dim);
         d_hidden_copy.copyFromHost(h.data(), hidden_dim);
     }
@@ -162,14 +217,15 @@ TEST(ExecutionCommonTest, FinalNormAndComputeLogitsMatchesTwoStep) {
     }
 
     // final_norm_weight == nullptr 分支：helper 应只做 lm_head
-    tiny_llm::ModelWeights   weights_no_norm;
+    tiny_llm::ModelWeights weights_no_norm;
     weights_no_norm.lm_head_fp16 = d_lm_head.data();
 
     tiny_llm::DeviceBuffer<half> d_hidden2(hidden_dim);
     tiny_llm::DeviceBuffer<half> d_hidden2_copy(hidden_dim);
     {
         std::vector<half> h(hidden_dim);
-        for (auto &v : h) v = __float2half(dist(gen));
+        for (auto &v : h)
+            v = __float2half(dist(gen));
         d_hidden2.copyFromHost(h.data(), hidden_dim);
         d_hidden2_copy.copyFromHost(h.data(), hidden_dim);
     }
@@ -202,16 +258,16 @@ TEST(FFITest, PagedKVStrategyMatchesContiguous) {
         GTEST_SKIP() << "set TLLM_GGUF_TEST_MODEL to a GGUF file to enable";
     }
 
-    char err[256] = {0};
-    int prompt[] = {9707, 11, 1246, 525, 498, 30}; // "Hello, how are you?"
-    int positions[] = {0, 1, 2, 3, 4, 5};
-    int seq_lens[] = {6};
+    char          err[256] = {0};
+    int           prompt[] = {9707, 11, 1246, 525, 498, 30}; // "Hello, how are you?"
+    int           positions[] = {0, 1, 2, 3, 4, 5};
+    int           seq_lens[] = {6};
     unsigned char pre[] = {1};
-    int seq_ids[] = {0};
-    int next = -1;
+    int           seq_ids[] = {0};
+    int           next = -1;
 
     // ── 连续模式（策略 2）基线：prefill 6 token + decode 4 步 ──
-    TinyLlmConfig cfg2 = {0, 0, 0, 0, 0, 0, 16, 1, 0};
+    TinyLlmConfig  cfg2 = {0, 0, 0, 0, 0, 0, 16, 1, 0};
     TinyLlmHandle *h2 = tinyllm_load(path, &cfg2, err, sizeof(err));
     ASSERT_NE(h2, nullptr) << "load failed: " << err;
     ASSERT_EQ(tinyllm_allocate_sequence(h2, 0, 64), 0);
@@ -224,12 +280,12 @@ TEST(FFITest, PagedKVStrategyMatchesContiguous) {
     seq_contig.push_back(next);
     int pos = 6;
     for (int i = 0; i < 4; ++i) {
-        int in = next;
-        int lens[] = {1};
+        int           in = next;
+        int           lens[] = {1};
         unsigned char dec[] = {0};
-        ASSERT_EQ(tinyllm_step(h2, seq_ids, &in, &pos, lens, nullptr, nullptr, dec, 1, &next,
-                               nullptr, 0),
-                  0);
+        ASSERT_EQ(
+            tinyllm_step(h2, seq_ids, &in, &pos, lens, nullptr, nullptr, dec, 1, &next, nullptr, 0),
+            0);
         ASSERT_GE(next, 0);
         seq_contig.push_back(next);
         ++pos;
@@ -239,23 +295,23 @@ TEST(FFITest, PagedKVStrategyMatchesContiguous) {
 
     // ── 分页模式（策略 1）：block_size=16, max_num_blocks=8 ──
     // prompt=6 < block_size=16 → num_blocks=1, block_table={0}
-    TinyLlmConfig cfg1 = {0, 0, 0, 0, 0, 0, 16, 1, 8};
+    TinyLlmConfig  cfg1 = {0, 0, 0, 0, 0, 0, 16, 1, 8};
     TinyLlmHandle *h1 = tinyllm_load(path, &cfg1, err, sizeof(err));
     ASSERT_NE(h1, nullptr) << "load failed: " << err;
     ASSERT_EQ(tinyllm_allocate_sequence(h1, 0, 64), 0);
 
     std::vector<int> seq_paged;
-    int bt[] = {0};
-    int nb = 1;
-    ASSERT_EQ(tinyllm_step(h1, seq_ids, prompt, positions, seq_lens, bt, &nb, pre, 1, &next,
-                           nullptr, 0),
-              0);
+    int              bt[] = {0};
+    int              nb = 1;
+    ASSERT_EQ(
+        tinyllm_step(h1, seq_ids, prompt, positions, seq_lens, bt, &nb, pre, 1, &next, nullptr, 0),
+        0);
     ASSERT_GE(next, 0);
     seq_paged.push_back(next);
     pos = 6;
     for (int i = 0; i < 4; ++i) {
-        int in = next;
-        int lens[] = {1};
+        int           in = next;
+        int           lens[] = {1};
         unsigned char dec[] = {0};
         ASSERT_EQ(tinyllm_step(h1, seq_ids, &in, &pos, lens, bt, &nb, dec, 1, &next, nullptr, 0),
                   0);
@@ -274,7 +330,7 @@ TEST(FFITest, PagedKVStrategyMatchesContiguous) {
 
     // ── 跨块用例：decode 到 position >= 16（nb 从 1 升到 2）──
     // prompt 6 token 后，第 i 次 decode 的绝对位置 = 6 + i；pos=16 起需要 2 块。
-    const int decode_steps = 12; // 覆盖 pos 6..17，含跨块位置 16/17
+    const int        decode_steps = 12; // 覆盖 pos 6..17，含跨块位置 16/17
     std::vector<int> seq_contig_x, seq_paged_x;
 
     TinyLlmHandle *h2b = tinyllm_load(path, &cfg2, err, sizeof(err));
@@ -286,8 +342,8 @@ TEST(FFITest, PagedKVStrategyMatchesContiguous) {
     seq_contig_x.push_back(next);
     pos = 6;
     for (int i = 0; i < decode_steps; ++i) {
-        int in = next;
-        int lens[] = {1};
+        int           in = next;
+        int           lens[] = {1};
         unsigned char dec[] = {0};
         ASSERT_EQ(tinyllm_step(h2b, seq_ids, &in, &pos, lens, nullptr, nullptr, dec, 1, &next,
                                nullptr, 0),
@@ -302,27 +358,26 @@ TEST(FFITest, PagedKVStrategyMatchesContiguous) {
     TinyLlmHandle *h1b = tinyllm_load(path, &cfg1, err, sizeof(err));
     ASSERT_NE(h1b, nullptr) << "load failed: " << err;
     ASSERT_EQ(tinyllm_allocate_sequence(h1b, 0, 128), 0);
-    ASSERT_EQ(tinyllm_step(h1b, seq_ids, prompt, positions, seq_lens, bt, &nb, pre, 1, &next,
-                           nullptr, 0),
-              0);
+    ASSERT_EQ(
+        tinyllm_step(h1b, seq_ids, prompt, positions, seq_lens, bt, &nb, pre, 1, &next, nullptr, 0),
+        0);
     seq_paged_x.push_back(next);
     int bt2[] = {0, 1};
     int nb2 = 2;
     pos = 6;
     for (int i = 0; i < decode_steps; ++i) {
-        int in = next;
-        int lens[] = {1};
+        int           in = next;
+        int           lens[] = {1};
         unsigned char dec[] = {0};
-        const int cur_pos = 6 + i;
+        const int     cur_pos = 6 + i;
         // pos >= 16 需要 2 块；否则 1 块
         if (cur_pos >= 16) {
-            ASSERT_EQ(tinyllm_step(h1b, seq_ids, &in, &pos, lens, bt2, &nb2, dec, 1, &next,
-                                   nullptr, 0),
-                      0);
+            ASSERT_EQ(
+                tinyllm_step(h1b, seq_ids, &in, &pos, lens, bt2, &nb2, dec, 1, &next, nullptr, 0),
+                0);
         } else {
-            ASSERT_EQ(tinyllm_step(h1b, seq_ids, &in, &pos, lens, bt, &nb, dec, 1, &next, nullptr,
-                                   0),
-                      0);
+            ASSERT_EQ(
+                tinyllm_step(h1b, seq_ids, &in, &pos, lens, bt, &nb, dec, 1, &next, nullptr, 0), 0);
         }
         ASSERT_GE(next, 0);
         seq_paged_x.push_back(next);

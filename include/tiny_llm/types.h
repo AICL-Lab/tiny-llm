@@ -62,9 +62,7 @@ struct QuantizedWeight {
     size_t totalBytes() const { return weightBytes() + scaleBytes(); }
 
     // 转置副本是否已就绪（M==1 decode 快路径前置条件）
-    bool hasTransposed() const {
-        return data_t != nullptr && scales_t != nullptr;
-    }
+    bool hasTransposed() const { return data_t != nullptr && scales_t != nullptr; }
 
     // Validate dimensions
     bool isValid() const {
@@ -106,8 +104,9 @@ struct ModelWeights {
     // Output
     half           *final_norm_weight = nullptr; // [hidden_dim]
     QuantizedWeight lm_head;                     // [hidden_dim, vocab_size]（W8A16）
-    half           *lm_head_fp16 = nullptr;      // [hidden_dim, vocab_size]（可选，logits 精度优先）
-    half           *lm_head_fp16_t = nullptr;    // [vocab_size, hidden_dim]（lm_head_fp16 的转置，M==1 decode 快路径）
+    half           *lm_head_fp16 = nullptr; // [hidden_dim, vocab_size]（可选，logits 精度优先）
+    half           *lm_head_fp16_t =
+        nullptr; // [vocab_size, hidden_dim]（lm_head_fp16 的转置，M==1 decode 快路径）
 };
 
 // Forward declaration
@@ -131,12 +130,12 @@ struct GenerationConfig {
 
 // Generation statistics
 struct GenerationStats {
-    float  prefill_time_ms = 0.0f;
-    float  decode_time_ms = 0.0f;
-    int    prompt_tokens = 0;
-    int    tokens_generated = 0;
-    float  tokens_per_second = 0.0f;
-    size_t peak_memory_bytes = 0;
+    float prefill_time_ms = 0.0f;
+    float time_to_first_token_ms = 0.0f;
+    float decode_time_ms = 0.0f;
+    int   prompt_tokens = 0;
+    int   tokens_generated = 0;
+    float tokens_per_second = 0.0f;
 };
 
 // KV Cache configuration

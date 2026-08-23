@@ -17,16 +17,18 @@ using namespace tiny_llm;
 
 namespace {
 
-constexpr uint32_t U32_TYPE = 4;   // GGUF_METADATA_VALUE_TYPE_UINT32
-constexpr uint32_t STR_TYPE = 8;   // GGUF_METADATA_VALUE_TYPE_STRING
-constexpr uint32_t ARR_TYPE = 9;   // GGUF_METADATA_VALUE_TYPE_ARRAY
-constexpr uint32_t I32_TYPE = 5;   // GGUF_METADATA_VALUE_TYPE_INT32
+constexpr uint32_t U32_TYPE = 4; // GGUF_METADATA_VALUE_TYPE_UINT32
+constexpr uint32_t STR_TYPE = 8; // GGUF_METADATA_VALUE_TYPE_STRING
+constexpr uint32_t ARR_TYPE = 9; // GGUF_METADATA_VALUE_TYPE_ARRAY
+constexpr uint32_t I32_TYPE = 5; // GGUF_METADATA_VALUE_TYPE_INT32
 
 void pushU32(std::vector<uint8_t> &b, uint32_t v) {
-    for (int i = 0; i < 4; ++i) b.push_back(static_cast<uint8_t>((v >> (8 * i)) & 0xFF));
+    for (int i = 0; i < 4; ++i)
+        b.push_back(static_cast<uint8_t>((v >> (8 * i)) & 0xFF));
 }
 void pushU64(std::vector<uint8_t> &b, uint64_t v) {
-    for (int i = 0; i < 8; ++i) b.push_back(static_cast<uint8_t>((v >> (8 * i)) & 0xFF));
+    for (int i = 0; i < 8; ++i)
+        b.push_back(static_cast<uint8_t>((v >> (8 * i)) & 0xFF));
 }
 void pushStr(std::vector<uint8_t> &b, const std::string &s) {
     pushU64(b, s.size());
@@ -41,8 +43,7 @@ void writeFile(const std::string &path, const std::vector<uint8_t> &buf) {
 }
 
 std::string tmpPath(const char *tag) {
-    return std::string("/tmp/tiny_llm_gguf_") + tag + "_" +
-           std::to_string(::getpid()) + ".gguf";
+    return std::string("/tmp/tiny_llm_gguf_") + tag + "_" + std::to_string(::getpid()) + ".gguf";
 }
 
 // header：magic + version + tensor_count + metadata_kv_count
@@ -69,7 +70,7 @@ std::vector<uint8_t> headerWithTensors(uint32_t version, uint64_t n_tensors) {
 
 // R4: GGUF v1 必须被拒绝（version < 2 不再仅 WARN）
 TEST(GGUFParser, RejectsVersion1) {
-    auto buf = header(1, 0);
+    auto              buf = header(1, 0);
     const std::string path = tmpPath("v1");
     writeFile(path, buf);
 
@@ -156,10 +157,10 @@ TEST(GGUFParser, RejectsExcessiveTensorDims) {
 TEST(GGUFParser, RejectsTensorOffsetOverflow) {
     auto buf = headerWithTensors(3, 1);
     pushStr(buf, "t0");
-    pushU32(buf, 1);               // n_dims = 1
-    pushU64(buf, 1);               // dims = [1]（F32 单元素，4 字节）
-    pushU32(buf, 0);               // type = F32
-    pushU64(buf, UINT64_MAX - 2);  // offset：与 data_offset_ 相加必然回绕
+    pushU32(buf, 1);              // n_dims = 1
+    pushU64(buf, 1);              // dims = [1]（F32 单元素，4 字节）
+    pushU32(buf, 0);              // type = F32
+    pushU64(buf, UINT64_MAX - 2); // offset：与 data_offset_ 相加必然回绕
 
     const std::string path = tmpPath("offovf");
     writeFile(path, buf);

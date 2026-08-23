@@ -8,16 +8,16 @@ namespace kernels {
 // Precompute RoPE cos/sin half cache
 // cos_output: [max_seq_len, D/2]
 // sin_output: [max_seq_len, D/2]
-__global__ void rope_precompute_cache_kernel(float *cos_output, float *sin_output,
-                                              int max_seq_len, int head_dim, float theta) {
+__global__ void rope_precompute_cache_kernel(float *cos_output, float *sin_output, int max_seq_len,
+                                             int head_dim, float theta) {
     int idx = blockIdx.x * blockDim.x + threadIdx.x;
     int half_d = head_dim / 2;
     int total = max_seq_len * half_d;
 
     if (idx >= total) return;
 
-    int d = idx % half_d;       // frequency index [0, D/2)
-    int pos = idx / half_d;     // position [0, max_seq_len)
+    int d = idx % half_d;   // frequency index [0, D/2)
+    int pos = idx / half_d; // position [0, max_seq_len)
 
     // inv_freq[d] = theta^(-2d/D)
     float freq = 1.0f / powf(theta, (2.0f * static_cast<float>(d)) / static_cast<float>(head_dim));
@@ -45,11 +45,11 @@ void rope_precompute_cache(float *cos_output, float *sin_output, int max_seq_len
 // K: [num_tokens, Hkv, D] (token-major)
 // start_position 从 device 端 int 读取，使 kernel 可被 CUDA Graph 重放。
 __global__ void apply_rope_inplace_kernel(half *q, half *k, const float *cos, const float *sin,
-                                           int num_tokens, const int *device_start_position,
-                                           int num_q_heads, int num_kv_heads, int head_dim) {
+                                          int num_tokens, const int *device_start_position,
+                                          int num_q_heads, int num_kv_heads, int head_dim) {
     const int start_position = *device_start_position;
-    int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    int half_d = head_dim / 2;
+    int       idx = blockIdx.x * blockDim.x + threadIdx.x;
+    int       half_d = head_dim / 2;
 
     // Each thread handles one (token, head, half_dim_index) pair for Q
     int q_total = num_tokens * num_q_heads * half_d;

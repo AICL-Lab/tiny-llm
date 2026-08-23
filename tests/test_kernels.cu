@@ -1,7 +1,7 @@
+#include "elementwise.cuh"
+#include "paged_kv.cuh"
 #include "rmsnorm.cuh"
 #include "rope.cuh"
-#include "paged_kv.cuh"
-#include "elementwise.cuh"
 #include "tiny_llm/cuda_utils.h"
 #include <cmath>
 #include <cuda_fp16.h>
@@ -582,12 +582,12 @@ TEST_F(AttentionTest, GQAPrefillAttention) {
 // attention kernel 按同一契约读取；与 CPU 参考全维度逐元素比较，容差 1e-2f。
 // ============================================================================
 TEST_F(AttentionTest, PrefillLayoutMatchesCpuReference) {
-    const int num_q_heads = 4;
-    const int num_kv_heads = 2;
-    const int seq_len = 16; // S > 1
-    const int head_dim = 32;
+    const int   num_q_heads = 4;
+    const int   num_kv_heads = 2;
+    const int   seq_len = 16; // S > 1
+    const int   head_dim = 32;
     const float scale = 1.0f / std::sqrt(static_cast<float>(head_dim));
-    const int group_size = num_q_heads / num_kv_heads;
+    const int   group_size = num_q_heads / num_kv_heads;
 
     auto query = randomFP16(seq_len * num_q_heads * head_dim, 1.0f, 400);
     auto key = randomFP16(seq_len * num_kv_heads * head_dim, 1.0f, 401);
@@ -612,9 +612,9 @@ TEST_F(AttentionTest, PrefillLayoutMatchesCpuReference) {
     // CPU reference：causal（key_pos <= query_pos，注意是 <=），token-major 读取。
     for (int s = 0; s < seq_len; ++s) {
         for (int h = 0; h < num_q_heads; ++h) {
-            const int kh = h / group_size;
+            const int          kh = h / group_size;
             std::vector<float> scores(static_cast<size_t>(s) + 1);
-            float smax = -1e30f;
+            float              smax = -1e30f;
             for (int ks = 0; ks <= s; ++ks) {
                 float acc = 0.0f;
                 for (int d = 0; d < head_dim; ++d) {
@@ -658,8 +658,7 @@ TEST_F(AttentionTest, SoftmaxHandlesSeqLenBeyondSharedMemoryLimit) {
     EXPECT_NO_THROW({
         softmax(d_input.data(), d_output.data(), batch_size, seq_len);
         cudaError_t err = cudaDeviceSynchronize();
-        EXPECT_EQ(err, cudaSuccess) << "softmax launch failed: "
-                                    << cudaGetErrorString(err);
+        EXPECT_EQ(err, cudaSuccess) << "softmax launch failed: " << cudaGetErrorString(err);
     });
 
     std::vector<half> output(batch_size * seq_len);
@@ -668,16 +667,14 @@ TEST_F(AttentionTest, SoftmaxHandlesSeqLenBeyondSharedMemoryLimit) {
 
     // 每行和为 1，且最大 logit 位置对应最大概率
     for (int b = 0; b < batch_size; ++b) {
-        float   sum = 0.0f;
-        int     argmax_out = 0;
-        int     argmax_in = 0;
+        float sum = 0.0f;
+        int   argmax_out = 0;
+        int   argmax_in = 0;
         for (int i = 0; i < seq_len; ++i) {
             float v = __half2float(output[b * seq_len + i]);
             sum += v;
-            if (v > __half2float(output[b * seq_len + argmax_out]))
-                argmax_out = i;
-            if (__half2float(input[b * seq_len + i]) >
-                __half2float(input[b * seq_len + argmax_in]))
+            if (v > __half2float(output[b * seq_len + argmax_out])) argmax_out = i;
+            if (__half2float(input[b * seq_len + i]) > __half2float(input[b * seq_len + argmax_in]))
                 argmax_in = i;
         }
         EXPECT_NEAR(sum, 1.0f, 0.01f) << "row " << b << " sum: " << sum;
@@ -932,12 +929,12 @@ RC_GTEST_FIXTURE_PROP(AttentionPropertyTest, SoftmaxPreservesOrder,
 // 任务 A2：GQA 映射的精确规格测试 —— Hq=4, Hkv=2, seq_len=8, head_dim=64。
 // 与 CPU 参考（手动实现 kv_head = q_head / group_size 映射）逐元素比较，容差 1e-2f。
 TEST_F(AttentionTest, GQAMappingDecodeMatchesCpuReference) {
-    const int num_q_heads = 4;
-    const int num_kv_heads = 2; // group_size = 2
-    const int seq_len = 8;
-    const int head_dim = 64;
+    const int   num_q_heads = 4;
+    const int   num_kv_heads = 2; // group_size = 2
+    const int   seq_len = 8;
+    const int   head_dim = 64;
     const float scale = 1.0f / std::sqrt(static_cast<float>(head_dim));
-    const int group_size = num_q_heads / num_kv_heads;
+    const int   group_size = num_q_heads / num_kv_heads;
 
     auto query = randomFP16(num_q_heads * head_dim, 1.0f, 550);
     auto k_cache = randomFP16(seq_len * num_kv_heads * head_dim, 1.0f, 551);
@@ -961,9 +958,9 @@ TEST_F(AttentionTest, GQAMappingDecodeMatchesCpuReference) {
 
     // CPU 参考：手动实现 GQA 映射（kv_head = q_head / group_size）
     for (int h = 0; h < num_q_heads; ++h) {
-        int kh = h / group_size;
+        int                kh = h / group_size;
         std::vector<float> scores(seq_len);
-        float smax = -1e30f;
+        float              smax = -1e30f;
         for (int s = 0; s < seq_len; ++s) {
             float acc = 0.0f;
             for (int d = 0; d < head_dim; ++d) {
@@ -974,7 +971,8 @@ TEST_F(AttentionTest, GQAMappingDecodeMatchesCpuReference) {
             smax = std::max(smax, scores[s]);
         }
         float sum_exp = 0.0f;
-        for (int s = 0; s < seq_len; ++s) sum_exp += std::exp(scores[s] - smax);
+        for (int s = 0; s < seq_len; ++s)
+            sum_exp += std::exp(scores[s] - smax);
         for (int d = 0; d < head_dim; ++d) {
             float out_val = 0.0f;
             for (int s = 0; s < seq_len; ++s) {
@@ -992,12 +990,12 @@ TEST_F(AttentionTest, GQAMappingDecodeMatchesCpuReference) {
 // 现有 AttentionTest 只验证"不 crash / 非零"，从未验证数值正确性。
 // ============================================================================
 TEST_F(AttentionTest, GQADecodeMatchesCpuReference) {
-    const int num_q_heads = 4;
-    const int num_kv_heads = 2;
-    const int seq_len = 8;
-    const int head_dim = 32;
+    const int   num_q_heads = 4;
+    const int   num_kv_heads = 2;
+    const int   seq_len = 8;
+    const int   head_dim = 32;
     const float scale = 1.0f / std::sqrt(static_cast<float>(head_dim));
-    const int group_size = num_q_heads / num_kv_heads;
+    const int   group_size = num_q_heads / num_kv_heads;
 
     auto query = randomFP16(num_q_heads * head_dim, 1.0f, 500);
     auto k_cache = randomFP16(seq_len * num_kv_heads * head_dim, 1.0f, 501);
@@ -1024,7 +1022,7 @@ TEST_F(AttentionTest, GQADecodeMatchesCpuReference) {
         int kh = h / group_size;
         // scores
         std::vector<float> scores(seq_len);
-        float smax = -1e30f;
+        float              smax = -1e30f;
         for (int s = 0; s < seq_len; ++s) {
             float acc = 0.0f;
             for (int d = 0; d < head_dim; ++d) {
@@ -1035,7 +1033,8 @@ TEST_F(AttentionTest, GQADecodeMatchesCpuReference) {
             smax = std::max(smax, scores[s]);
         }
         float sum_exp = 0.0f;
-        for (int s = 0; s < seq_len; ++s) sum_exp += std::exp(scores[s] - smax);
+        for (int s = 0; s < seq_len; ++s)
+            sum_exp += std::exp(scores[s] - smax);
         for (int d = 0; d < head_dim; ++d) {
             float out_val = 0.0f;
             for (int s = 0; s < seq_len; ++s) {
@@ -1051,12 +1050,12 @@ TEST_F(AttentionTest, GQADecodeMatchesCpuReference) {
 // Long-sequence decode: spans many online-softmax tiles and exercises the
 // re-scaled running max/sum path (seq_len > several ATTEND_TILE tiles).
 TEST_F(AttentionTest, LongSequenceDecodeMatchesCpuReference) {
-    const int num_q_heads = 4;
-    const int num_kv_heads = 2;
-    const int seq_len = 3000;
-    const int head_dim = 64;
+    const int   num_q_heads = 4;
+    const int   num_kv_heads = 2;
+    const int   seq_len = 3000;
+    const int   head_dim = 64;
     const float scale = 1.0f / std::sqrt(static_cast<float>(head_dim));
-    const int group_size = num_q_heads / num_kv_heads;
+    const int   group_size = num_q_heads / num_kv_heads;
 
     auto query = randomFP16(num_q_heads * head_dim, 1.0f, 600);
     auto k_cache = randomFP16(seq_len * num_kv_heads * head_dim, 1.0f, 601);
@@ -1080,9 +1079,9 @@ TEST_F(AttentionTest, LongSequenceDecodeMatchesCpuReference) {
 
     // CPU reference (only compare few dims per head to keep test fast)
     for (int h = 0; h < num_q_heads; ++h) {
-        int kh = h / group_size;
+        int                kh = h / group_size;
         std::vector<float> scores(seq_len);
-        float smax = -1e30f;
+        float              smax = -1e30f;
         for (int s = 0; s < seq_len; ++s) {
             float acc = 0.0f;
             for (int d = 0; d < head_dim; ++d) {
@@ -1093,7 +1092,8 @@ TEST_F(AttentionTest, LongSequenceDecodeMatchesCpuReference) {
             smax = std::max(smax, scores[s]);
         }
         float sum_exp = 0.0f;
-        for (int s = 0; s < seq_len; ++s) sum_exp += std::exp(scores[s] - smax);
+        for (int s = 0; s < seq_len; ++s)
+            sum_exp += std::exp(scores[s] - smax);
         for (int d = 0; d < head_dim; ++d) {
             float out_val = 0.0f;
             for (int s = 0; s < seq_len; ++s) {
@@ -1101,8 +1101,7 @@ TEST_F(AttentionTest, LongSequenceDecodeMatchesCpuReference) {
                 out_val += w * __half2float(v_cache[(s * num_kv_heads + kh) * head_dim + d]);
             }
             float actual = __half2float(output[h * head_dim + d]);
-            EXPECT_NEAR(actual, out_val, 8e-2f)
-                << "head " << h << " dim " << d;
+            EXPECT_NEAR(actual, out_val, 8e-2f) << "head " << h << " dim " << d;
         }
     }
 }
@@ -1112,12 +1111,12 @@ TEST_F(AttentionTest, LongSequenceDecodeMatchesCpuReference) {
 // online-softmax 在 seq_len % ATTEND_TILE != 0 时的重缩放路径。
 // ============================================================================
 TEST_F(AttentionTest, LongSequencePrefillMatchesCpuReference) {
-    const int num_q_heads = 4;
-    const int num_kv_heads = 2;
-    const int seq_len = 1025;
-    const int head_dim = 64;
+    const int   num_q_heads = 4;
+    const int   num_kv_heads = 2;
+    const int   seq_len = 1025;
+    const int   head_dim = 64;
     const float scale = 1.0f / std::sqrt(static_cast<float>(head_dim));
-    const int group_size = num_q_heads / num_kv_heads;
+    const int   group_size = num_q_heads / num_kv_heads;
 
     auto query = randomFP16(seq_len * num_q_heads * head_dim, 1.0f, 700);
     auto key = randomFP16(seq_len * num_kv_heads * head_dim, 1.0f, 701);
@@ -1141,11 +1140,12 @@ TEST_F(AttentionTest, LongSequencePrefillMatchesCpuReference) {
 
     // 全维度数值比较只做边界 query_pos（含 tile 边界两侧与序列尾部），
     // 其余 query 只检查非零，避免 O(seq_len²×D×H) 的 CPU 参考拖慢单测。
-    const int checked_pos[] = {0, 1, 127, 128, 129, 1024};
+    const int    checked_pos[] = {0, 1, 127, 128, 129, 1024};
     const size_t num_checked = sizeof(checked_pos) / sizeof(checked_pos[0]);
 
     std::vector<bool> full_check(static_cast<size_t>(seq_len), false);
-    for (size_t i = 0; i < num_checked; ++i) full_check[static_cast<size_t>(checked_pos[i])] = true;
+    for (size_t i = 0; i < num_checked; ++i)
+        full_check[static_cast<size_t>(checked_pos[i])] = true;
 
     for (int s = 0; s < seq_len; ++s) {
         for (int h = 0; h < num_q_heads; ++h) {
@@ -1153,7 +1153,7 @@ TEST_F(AttentionTest, LongSequencePrefillMatchesCpuReference) {
             if (full_check[static_cast<size_t>(s)]) {
                 // 只对 key_pos <= query_pos 求 score（causal，注意是 <=）
                 std::vector<float> scores(static_cast<size_t>(s) + 1);
-                float smax = -1e30f;
+                float              smax = -1e30f;
                 for (int ks = 0; ks <= s; ++ks) {
                     float acc = 0.0f;
                     for (int d = 0; d < head_dim; ++d) {
@@ -1170,8 +1170,7 @@ TEST_F(AttentionTest, LongSequencePrefillMatchesCpuReference) {
                     float out_val = 0.0f;
                     for (int ks = 0; ks <= s; ++ks) {
                         float w = std::exp(scores[static_cast<size_t>(ks)] - smax) / sum_exp;
-                        out_val += w *
-                                   __half2float(value[(ks * num_kv_heads + kh) * head_dim + d]);
+                        out_val += w * __half2float(value[(ks * num_kv_heads + kh) * head_dim + d]);
                     }
                     float actual = __half2float(output[(s * num_q_heads + h) * head_dim + d]);
                     EXPECT_NEAR(actual, out_val, 8e-2f)
@@ -1201,12 +1200,12 @@ TEST_F(AttentionTest, LongSequencePrefillMatchesCpuReference) {
 
 // Llama-3.2-1B 的 GQA 比例：32 个 Q head 共享 8 个 KV head（group_size=4）。
 TEST_F(AttentionTest, Llama32GQA32To8DecodeMatchesCpuReference) {
-    const int num_q_heads = 32;
-    const int num_kv_heads = 8;
-    const int seq_len = 16;
-    const int head_dim = 64;
+    const int   num_q_heads = 32;
+    const int   num_kv_heads = 8;
+    const int   seq_len = 16;
+    const int   head_dim = 64;
     const float scale = 1.0f / std::sqrt(static_cast<float>(head_dim));
-    const int group_size = num_q_heads / num_kv_heads;
+    const int   group_size = num_q_heads / num_kv_heads;
 
     auto query = randomFP16(num_q_heads * head_dim, 1.0f, 800);
     auto k_cache = randomFP16(seq_len * num_kv_heads * head_dim, 1.0f, 801);
@@ -1229,9 +1228,9 @@ TEST_F(AttentionTest, Llama32GQA32To8DecodeMatchesCpuReference) {
     cudaDeviceSynchronize();
 
     for (int h = 0; h < num_q_heads; ++h) {
-        int kh = h / group_size;
+        int                kh = h / group_size;
         std::vector<float> scores(seq_len);
-        float smax = -1e30f;
+        float              smax = -1e30f;
         for (int s = 0; s < seq_len; ++s) {
             float acc = 0.0f;
             for (int d = 0; d < head_dim; ++d) {
@@ -1242,7 +1241,8 @@ TEST_F(AttentionTest, Llama32GQA32To8DecodeMatchesCpuReference) {
             smax = std::max(smax, scores[s]);
         }
         float sum_exp = 0.0f;
-        for (int s = 0; s < seq_len; ++s) sum_exp += std::exp(scores[s] - smax);
+        for (int s = 0; s < seq_len; ++s)
+            sum_exp += std::exp(scores[s] - smax);
         for (int d = 0; d < head_dim; ++d) {
             float out_val = 0.0f;
             for (int s = 0; s < seq_len; ++s) {
@@ -1257,12 +1257,12 @@ TEST_F(AttentionTest, Llama32GQA32To8DecodeMatchesCpuReference) {
 
 // MQA：16 个 Q head 共享 1 个 KV head（group_size=16）。
 TEST_F(AttentionTest, MQA16To1DecodeMatchesCpuReference) {
-    const int num_q_heads = 16;
-    const int num_kv_heads = 1;
-    const int seq_len = 16;
-    const int head_dim = 64;
+    const int   num_q_heads = 16;
+    const int   num_kv_heads = 1;
+    const int   seq_len = 16;
+    const int   head_dim = 64;
     const float scale = 1.0f / std::sqrt(static_cast<float>(head_dim));
-    const int group_size = num_q_heads / num_kv_heads;
+    const int   group_size = num_q_heads / num_kv_heads;
 
     auto query = randomFP16(num_q_heads * head_dim, 1.0f, 900);
     auto k_cache = randomFP16(seq_len * num_kv_heads * head_dim, 1.0f, 901);
@@ -1285,9 +1285,9 @@ TEST_F(AttentionTest, MQA16To1DecodeMatchesCpuReference) {
     cudaDeviceSynchronize();
 
     for (int h = 0; h < num_q_heads; ++h) {
-        int kh = h / group_size;
+        int                kh = h / group_size;
         std::vector<float> scores(seq_len);
-        float smax = -1e30f;
+        float              smax = -1e30f;
         for (int s = 0; s < seq_len; ++s) {
             float acc = 0.0f;
             for (int d = 0; d < head_dim; ++d) {
@@ -1298,7 +1298,8 @@ TEST_F(AttentionTest, MQA16To1DecodeMatchesCpuReference) {
             smax = std::max(smax, scores[s]);
         }
         float sum_exp = 0.0f;
-        for (int s = 0; s < seq_len; ++s) sum_exp += std::exp(scores[s] - smax);
+        for (int s = 0; s < seq_len; ++s)
+            sum_exp += std::exp(scores[s] - smax);
         for (int d = 0; d < head_dim; ++d) {
             float out_val = 0.0f;
             for (int s = 0; s < seq_len; ++s) {
@@ -1325,14 +1326,14 @@ TEST(RoPETest, ApplyInplaceMatchesReference) {
     if (!hasCudaDevice()) GTEST_SKIP() << "No CUDA device available";
     cudaSetDevice(0);
 
-    const int num_q_heads = 4;
-    const int num_kv_heads = 2;
-    const int num_tokens = 3; // 覆盖多个位置（start_position + s）
-    const int head_dim = 64;
-    const int half_d = head_dim / 2;
-    const int start_position = 5;
+    const int   num_q_heads = 4;
+    const int   num_kv_heads = 2;
+    const int   num_tokens = 3; // 覆盖多个位置（start_position + s）
+    const int   head_dim = 64;
+    const int   half_d = head_dim / 2;
+    const int   start_position = 5;
     const float theta = 10000.0f;
-    const int max_seq_len = 32;
+    const int   max_seq_len = 32;
 
     // 预计算 cos/sin 表 [max_seq_len, D/2]
     std::vector<float> cos_cache(static_cast<size_t>(max_seq_len) * half_d);
@@ -1352,8 +1353,10 @@ TEST(RoPETest, ApplyInplaceMatchesReference) {
     {
         std::mt19937                          gen(100);
         std::uniform_real_distribution<float> dist(-0.5f, 0.5f);
-        for (auto &v : q) v = __float2half(dist(gen));
-        for (auto &v : k) v = __float2half(dist(gen));
+        for (auto &v : q)
+            v = __float2half(dist(gen));
+        for (auto &v : k)
+            v = __float2half(dist(gen));
     }
     const std::vector<half> q_ref = q;
     const std::vector<half> k_ref = k;
@@ -1391,8 +1394,7 @@ TEST(RoPETest, ApplyInplaceMatchesReference) {
                 const float got_first = __half2float(q_out[(s * num_q_heads + h) * head_dim + d]);
                 const float got_second =
                     __half2float(q_out[(s * num_q_heads + h) * head_dim + d + half_d]);
-                EXPECT_NEAR(got_first, exp_first, 1e-3f)
-                    << "Q s=" << s << " h=" << h << " d=" << d;
+                EXPECT_NEAR(got_first, exp_first, 1e-3f) << "Q s=" << s << " h=" << h << " d=" << d;
                 EXPECT_NEAR(got_second, exp_second, 1e-3f)
                     << "Q s=" << s << " h=" << h << " d=" << d;
             }
@@ -1402,7 +1404,8 @@ TEST(RoPETest, ApplyInplaceMatchesReference) {
                 const float c = cos_cache[static_cast<size_t>(pos) * half_d + d];
                 const float sn = sin_cache[static_cast<size_t>(pos) * half_d + d];
                 const float x1 = __half2float(k_ref[(s * num_kv_heads + kh) * head_dim + d]);
-                const float x2 = __half2float(k_ref[(s * num_kv_heads + kh) * head_dim + d + half_d]);
+                const float x2 =
+                    __half2float(k_ref[(s * num_kv_heads + kh) * head_dim + d + half_d]);
                 const float exp_first = x1 * c - x2 * sn;
                 const float exp_second = x1 * sn + x2 * c;
                 const float got_first = __half2float(k_out[(s * num_kv_heads + kh) * head_dim + d]);
@@ -1462,7 +1465,8 @@ std::vector<half> randomFp16(size_t n, unsigned seed) {
     std::mt19937                          gen(seed);
     std::uniform_real_distribution<float> dist(-1.0f, 1.0f);
     std::vector<half>                     v(n);
-    for (auto &x : v) x = __float2half(dist(gen));
+    for (auto &x : v)
+        x = __float2half(dist(gen));
     return v;
 }
 
@@ -1470,19 +1474,19 @@ std::vector<half> randomFp16(size_t n, unsigned seed) {
 
 TEST(PagedKvTest, PagedScatterGatherRoundTrip) {
     if (!hasCudaDevice()) GTEST_SKIP() << "No CUDA device available";
-    const int block_size = 16;
-    const int chunk_dim = 128;
-    const int num_tokens = 17; // 跨块边界：block 0 的 16 行 + block 1 的 1 行
-    const int pool_blocks = 8;
+    const int              block_size = 16;
+    const int              chunk_dim = 128;
+    const int              num_tokens = 17; // 跨块边界：block 0 的 16 行 + block 1 的 1 行
+    const int              pool_blocks = 8;
     const std::vector<int> block_table = {3, 7};
 
     const std::vector<half> src = randomFp16(static_cast<size_t>(num_tokens) * chunk_dim, 7);
-    DeviceBuffer<half> d_src(src.size());
+    DeviceBuffer<half>      d_src(src.size());
     d_src.copyFromHost(src.data(), src.size());
 
-    DeviceBuffer<half>  d_pool(static_cast<size_t>(pool_blocks) * block_size * chunk_dim);
-    DeviceBuffer<half>  d_dst(src.size());
-    DeviceBuffer<int>   d_table(block_table.size());
+    DeviceBuffer<half> d_pool(static_cast<size_t>(pool_blocks) * block_size * chunk_dim);
+    DeviceBuffer<half> d_dst(src.size());
+    DeviceBuffer<int>  d_table(block_table.size());
     d_table.copyFromHost(block_table.data(), block_table.size());
 
     kernels::paged_scatter_blocks(d_src.data(), d_pool.data(), d_table.data(), num_tokens,
@@ -1502,15 +1506,15 @@ TEST(PagedKvTest, PagedScatterGatherRoundTrip) {
 
 TEST(PagedKvTest, PagedGatherPartialVisibility) {
     if (!hasCudaDevice()) GTEST_SKIP() << "No CUDA device available";
-    const int block_size = 16;
-    const int chunk_dim = 64;
-    const int num_tokens = 16;
-    const int visible_tokens = 7; // 只读前 7 个位置
-    const int pool_blocks = 8;
+    const int              block_size = 16;
+    const int              chunk_dim = 64;
+    const int              num_tokens = 16;
+    const int              visible_tokens = 7; // 只读前 7 个位置
+    const int              pool_blocks = 8;
     const std::vector<int> block_table = {2};
 
     const std::vector<half> src = randomFp16(static_cast<size_t>(num_tokens) * chunk_dim, 11);
-    DeviceBuffer<half> d_src(src.size());
+    DeviceBuffer<half>      d_src(src.size());
     d_src.copyFromHost(src.data(), src.size());
 
     DeviceBuffer<half> d_pool(static_cast<size_t>(pool_blocks) * block_size * chunk_dim);
@@ -1539,23 +1543,23 @@ TEST(PagedKvTest, PagedGatherPartialVisibility) {
 
 TEST(PagedKvTest, PagedScatterWritesAtAbsolutePosition) {
     if (!hasCudaDevice()) GTEST_SKIP() << "No CUDA device available";
-    const int block_size = 16;
-    const int chunk_dim = 32;
-    const int position = 20; // abs=20 → block 1（abs/16），块内 offset 4
-    const int num_tokens = 1;
-    const int pool_blocks = 8;
+    const int              block_size = 16;
+    const int              chunk_dim = 32;
+    const int              position = 20; // abs=20 → block 1（abs/16），块内 offset 4
+    const int              num_tokens = 1;
+    const int              pool_blocks = 8;
     const std::vector<int> block_table = {0, 5};
 
     const std::vector<half> src = randomFp16(static_cast<size_t>(num_tokens) * chunk_dim, 13);
-    DeviceBuffer<half> d_src(src.size());
+    DeviceBuffer<half>      d_src(src.size());
     d_src.copyFromHost(src.data(), src.size());
 
     DeviceBuffer<half> d_pool(static_cast<size_t>(pool_blocks) * block_size * chunk_dim);
     DeviceBuffer<int>  d_table(block_table.size());
     d_table.copyFromHost(block_table.data(), block_table.size());
 
-    kernels::paged_scatter_blocks(d_src.data(), d_pool.data(), d_table.data(), num_tokens,
-                                  position, block_size, chunk_dim, pool_blocks);
+    kernels::paged_scatter_blocks(d_src.data(), d_pool.data(), d_table.data(), num_tokens, position,
+                                  block_size, chunk_dim, pool_blocks);
     cudaDeviceSynchronize();
 
     // 期望落在 block_table[1]=5 块的第 4 行（块内 offset = 20 - 1*16 = 4）
@@ -1579,7 +1583,7 @@ TEST(PagedKvTest, InvalidBlockIdIsGuardedNotDereferenced) {
     const int pool_blocks = 4;
 
     const std::vector<half> src = randomFp16(static_cast<size_t>(num_tokens) * chunk_dim, 31);
-    DeviceBuffer<half> d_src(src.size());
+    DeviceBuffer<half>      d_src(src.size());
     d_src.copyFromHost(src.data(), src.size());
 
     // 块表全部越界：负值与 == max_num_blocks
@@ -1589,7 +1593,7 @@ TEST(PagedKvTest, InvalidBlockIdIsGuardedNotDereferenced) {
 
     // scatter：pool 预填哨兵值，越界 id 不得改动任何槽位
     DeviceBuffer<half> d_pool(static_cast<size_t>(pool_blocks) * block_size * chunk_dim);
-    const size_t pool_elems = static_cast<size_t>(pool_blocks) * block_size * chunk_dim;
+    const size_t       pool_elems = static_cast<size_t>(pool_blocks) * block_size * chunk_dim;
     std::vector<half>  sentinel(pool_elems, __float2half(7.0f));
     d_pool.copyFromHost(sentinel.data(), sentinel.size());
     kernels::paged_scatter_blocks(d_src.data(), d_pool.data(), d_table.data(), num_tokens,
@@ -1630,12 +1634,12 @@ TEST(PagedKvTest, PagedLayersDoNotOverlap) {
     // 两个"层"用不同 pool 偏移写不同数据
     const std::vector<half> src0 = randomFp16(static_cast<size_t>(num_tokens) * chunk_dim, 21);
     const std::vector<half> src1 = randomFp16(static_cast<size_t>(num_tokens) * chunk_dim, 22);
-    DeviceBuffer<half> d_src0(src0.size());
-    DeviceBuffer<half> d_src1(src1.size());
+    DeviceBuffer<half>      d_src0(src0.size());
+    DeviceBuffer<half>      d_src1(src1.size());
     d_src0.copyFromHost(src0.data(), src0.size());
     d_src1.copyFromHost(src1.data(), src1.size());
 
-    DeviceBuffer<half> d_pool(static_cast<size_t>(num_layers) * layer_stride);
+    DeviceBuffer<half>     d_pool(static_cast<size_t>(num_layers) * layer_stride);
     const std::vector<int> block_table = {0};
     DeviceBuffer<int>      d_table(1);
     d_table.copyFromHost(block_table.data(), 1);
@@ -1670,7 +1674,7 @@ TEST(ElementwiseTest, AddBiasNonAlignedSizeCorrect) {
     if (!hasCudaDevice()) GTEST_SKIP() << "No CUDA device available";
     cudaSetDevice(0);
 
-    const int rows = 1, cols = 896; // total = 896 不是 256 倍数
+    const int         rows = 1, cols = 896; // total = 896 不是 256 倍数
     std::vector<half> data(static_cast<size_t>(rows) * cols, __float2half(1.0f));
     std::vector<half> bias(cols, __float2half(0.5f));
 

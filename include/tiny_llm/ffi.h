@@ -14,8 +14,10 @@
 //     （seq_lens 描述每序列切分，与 seq_ids 对齐）
 //   - block_tables 是扁平化数组；num_blocks[i] = 第 i 个序列的 block_tables
 //     长度，扁平化 block_tables 的总长为 sum(num_blocks)
-//   - logprobs_k == 0 不输出；否则 logprobs 为
-//     num_sequences * logprobs_k 的 (token_id, logprob) 交错数组
+//   - logprobs_k == 0 不输出；否则 logprobs 至少容纳
+//     num_sequences * logprobs_k * 2 个 float，按 (token_id, logprob) 交错；
+//     token_id 也以 float 表示。logprobs_k 必须位于 [0, vocab_size]，
+//     logprobs_k > 0 时 logprobs 不得为 nullptr
 #ifndef TINY_LLM_FFI_H
 #define TINY_LLM_FFI_H
 
@@ -32,15 +34,15 @@ typedef struct TinyLlmConfig {
     int num_kv_heads;
     int head_dim;
     int vocab_size;
-    int block_size;      // 分页块大小（策略 2 下忽略，保留对齐）
-    int max_batch_size;  // 引擎同时管理的最大序列数
-    int max_num_blocks;  // 分页 KV 池的物理块总数；0 = 策略 2（连续 KV）
+    int block_size;     // 分页块大小（策略 2 下忽略，保留对齐）
+    int max_batch_size; // 引擎同时管理的最大序列数
+    int max_num_blocks; // 分页 KV 池的物理块总数；0 = 策略 2（连续 KV）
     // ↑ 该字段使 TinyLlmConfig 变为 9 个 int 的 repr(C) 布局（ABI v2）。
 } TinyLlmConfig;
 
 // 加载 GGUF 模型；成功返回句柄，失败返回 NULL 并写入 err_buf。
-TinyLlmHandle *tinyllm_load(const char *model_path, const TinyLlmConfig *config,
-                            char *err_buf, int err_buf_len);
+TinyLlmHandle *tinyllm_load(const char *model_path, const TinyLlmConfig *config, char *err_buf,
+                            int err_buf_len);
 
 // 单步执行一个 batch（prefill/decode 混合），逐序列输出下一 token 与 logprobs。
 // seq_ids 显式给出每个序列的 id（由 tinyllm_allocate_sequence 分配），

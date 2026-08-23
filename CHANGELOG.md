@@ -5,15 +5,35 @@ All notable tracked releases of Tiny-LLM are recorded here.
 ## Unreleased
 
 ### Fixed
+- 修复 `tiny_llm_bench` 指标口径：TTFT 与 TPOT 改为从同一次 `generate()` 请求取样，
+  不再用独立 1-token 请求从另一条完整请求中相减；`GenerationStats` 新增
+  `time_to_first_token_ms`，真实模型 Graph on/off 测试断言该字段有效。
+- benchmark 不再把加载前/运行后的 `cudaMemGetInfo` 差值冒充“峰值显存”，统一改称
+  常驻显存差值；删除从未赋值的 `GenerationStats::peak_memory_bytes`。
+- 澄清并收紧 `tinyllm_step` 的 logprobs ABI：输出缓冲区至少为
+  `num_sequences * logprobs_k * 2` 个 `float`；拒绝负 `logprobs_k`、超过词表大小
+  或请求输出但传空缓冲区。新增双序列 stride 与首尾 canary 回归测试。
+- Unicode 类别表生成器固定并校验 Unicode 15.0.0，生成文件标注不再错误声称 15.1；
+  生成区间用 clang-format guard 保持确定性，格式 CI 明确豁免只读 tokenizer fixture。
 - GGUF 解析器健壮性加固（审计 llama.cpp#26366/#26978 同类问题时发现并修复）：
   - `readTensorInfoEntry`：`n_dims` 原无上限，文件可控的恶意值（如 0xFFFFFFFF）
     会使 `dimensions.resize` 尝试 ~32GB 分配，未捕获的 bad_alloc 直接 abort；
     现按 GGML_MAX_DIMS(4) 拒绝
   - `readTensorData`：`data_offset_ + tensor.offset` 无溢出检查，64 位回绕后
     seek 到错误偏移读垃圾数据（静默损坏）；现相加前拒绝
-  - 两个字节级构造的回归测试（`test_gguf_parser.cpp`）；全量 192 测试通过
+  - 两个字节级构造的回归测试（`test_gguf_parser.cpp`）；当前全量 193 测试通过
 
 ### Changed
+- `tiny_llm_bench --json` 升级为 schema v2：stdout 只输出一个合法 JSON 对象，包含
+  GPU、warmup/iterations、Graph 实际 enabled/captured 状态；单 token 场景的 TPOT/tok/s
+  输出 `null`。`--graphs` 现显式启用，且与 `--no-graphs` 冲突时失败。
+- 修正性能方法论：llama.cpp `-t` 是 CPU 线程数而非采样开关；`llama-bench pp1`
+  不再标为 TTFT；合成 decode 吞吐与同 prompt `llama-cli --temp 0` 行为核验分开报告。
+- 新增 2026-08-23 CUDA Graph schema v2 本地 A/B 报告，明确 dirty worktree、三组交错
+  重复、常驻显存口径与 ncu/nsys 限制，不替代 clean commit 的正式基准。
+- 更新 VitePress 文档依赖锁文件到兼容范围内的安全补丁版本，`npm audit` 从 12 项降至
+  4 项；剩余项均来自 VitePress 1.6.4 的 Vite 5/esbuild 链，当前无兼容修复，未强制
+  升级到 VitePress 2 alpha。
 - 面向用户的 GitHub 链接统一为 `github.com/open-infra-ai/...`（tokenizer 差分夹具原文不改）
 - 默认 CUDA 架构加入 sm_70（`CMAKE_CUDA_ARCHITECTURES` 非新版本路径下为 `70 75 80 86 89`）
 - `model_loader` 中 `data_t` 显式 `* sizeof(int8_t)`（显式以字节为单位的语义，避免换量化元素类型时踩坑）
