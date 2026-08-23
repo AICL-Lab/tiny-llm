@@ -142,9 +142,9 @@ TEST(FFITest, BatchedLogprobsBufferContract) {
 // "先 rmsnorm 再 fp16_matmul" 的两步调用逐元素比较（容差 1e-2）；
 // 并覆盖 final_norm_weight == nullptr 分支。
 TEST(ExecutionCommonTest, FinalNormAndComputeLogitsMatchesTwoStep) {
-    int device_count = 0;
-    ASSERT_EQ(cudaGetDeviceCount(&device_count), cudaSuccess);
-    if (device_count == 0) {
+    int         device_count = 0;
+    cudaError_t cuda_error = cudaGetDeviceCount(&device_count);
+    if (cuda_error != cudaSuccess || device_count == 0) {
         GTEST_SKIP() << "No CUDA device available";
     }
 

@@ -19,6 +19,8 @@ All notable tracked releases of Tiny-LLM are recorded here.
   消除本机缺少同版本格式器时未被发现的远端 Format 门禁失败。
 - CUDA 安装 Action 更新至 `Jimver/cuda-toolkit@v0.2.23`，并把版本写成完整的
   `11.8.0`，避免 Node.js 24 执行环境把 `11.8` 判为无效语义版本而阻断构建。
+- 补齐 `ExecutionCommon` 与超长输入回归测试的 GPU-less 门控；CUDA runtime 返回
+  `cudaErrorNoDevice` 时按其他 GPU 测试的既有约定跳过，而不是误判为功能失败。
 - GGUF 解析器健壮性加固（审计 llama.cpp#26366/#26978 同类问题时发现并修复）：
   - `readTensorInfoEntry`：`n_dims` 原无上限，文件可控的恶意值（如 0xFFFFFFFF）
     会使 `dimensions.resize` 尝试 ~32GB 分配，未捕获的 bad_alloc 直接 abort；

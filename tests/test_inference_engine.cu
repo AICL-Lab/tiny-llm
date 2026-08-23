@@ -478,6 +478,12 @@ TEST_F(InferenceEngineTest, CudaGraphsGenerateMatchesNonGraph) {
 // 任务 4.1：超长输入失败路径。prompt + max_new_tokens 超过 max_seq_len 时，
 // generate() 必须在分配 KV 之前返回验证错误，活跃序列数不增加、不崩溃。
 TEST_F(InferenceEngineTest, GenerateRejectsOverlongInput) {
+    int         device_count = 0;
+    cudaError_t cuda_error = cudaGetDeviceCount(&device_count);
+    if (cuda_error != cudaSuccess || device_count == 0) {
+        GTEST_SKIP() << "No CUDA device available";
+    }
+
     // 小型合成配置：1 层、max_seq_len=16
     ModelConfig config;
     config.vocab_size = 1000;
