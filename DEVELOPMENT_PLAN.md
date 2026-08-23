@@ -596,15 +596,16 @@ greedy 逐 token 对齐。Rust 侧启用 `tiny-llm` feature + build.rs 链接
 - [ ] `DEVELOPMENT_PLAN.md` 中阶段 1–3 任务全部完成并合并。
 - [x] `tiny_llm_bench` schema v2 能从同一次请求输出 TTFT / TPOT / tok/s / 常驻显存差值；
       单 token 的 TPOT/tok/s 为 `null`，stdout 是单个合法 JSON 对象。
-- [ ] 在 clean commit 上按 schema v2 重跑正式 A/B；若声称峰值显存，附外部采样器或
+- [x] 在 clean commit 上按 schema v2 重跑正式 A/B；报告归档 5 组配对、10 个进程的
+      原始 JSONL、机器可读聚合、模型哈希与限制。若声称峰值显存，仍须附外部采样器或
       profiler 的工具、版本与采样频率。
 - [ ] README 出现一张与 llama.cpp 的对比表（同模型、同 prompt、同 greedy、
       同硬件），并注明“W8A16 重量化 vs Q4_K_M 直接计算”的公平性声明。
 - [ ] 至少一份可导出的 nsys/ncu 报告归档在 `docs/performance/results/`，
       能解释 decode 瓶颈前三名；本机当前受 `ERR_NVGPUCTRPERM` 与 nsys importer 缺失阻塞，
       仓库内 kernel 微基准仅作为替代证据。
-- [x] CUDA Graphs 有 schema v2 dirty-worktree A/B 趋势验证，默认开启，
-      `--graphs` / `--no-graphs` 与 `TLLM_CUDA_GRAPHS=1/0` 可复现；正式数据待 clean commit 重跑。
+- [x] CUDA Graphs 有 schema v2 clean-commit 五组配对 A/B，默认开启，
+      `--graphs` / `--no-graphs` 与 `TLLM_CUDA_GRAPHS=1/0` 可复现；TPOT 5/5 组下降。
 - [x] `TLLM_CUDA_GRAPHS=1/0` 输出逐 token 一致。
 - [ ] 失败路径测试：损坏 GGUF / OOM / 超长输入 / KV 溢出。
 - [ ] 两个不同 GQA 配置（或一个 GQA + 一个 MQA）的真实模型验证记录。

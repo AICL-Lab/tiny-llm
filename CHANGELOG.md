@@ -29,8 +29,10 @@ All notable tracked releases of Tiny-LLM are recorded here.
   输出 `null`。`--graphs` 现显式启用，且与 `--no-graphs` 冲突时失败。
 - 修正性能方法论：llama.cpp `-t` 是 CPU 线程数而非采样开关；`llama-bench pp1`
   不再标为 TTFT；合成 decode 吞吐与同 prompt `llama-cli --temp 0` 行为核验分开报告。
-- 新增 2026-08-23 CUDA Graph schema v2 本地 A/B 报告，明确 dirty worktree、三组交错
-  重复、常驻显存口径与 ncu/nsys 限制，不替代 clean commit 的正式基准。
+- 新增 2026-08-23 CUDA Graph schema v2 clean-commit 正式 A/B：5 组交错配对、
+  10 个独立进程均归档原始 JSONL；TPOT 跨进程中位数 8.322→5.225 ms（-37.2%），
+  decode 吞吐 120.168→191.384 tok/s（+59.3%）。同时提供机器可读聚合、模型哈希、
+  常驻显存口径与 ncu/nsys 限制；TTFT 因配对波动不作改善声明。
 - 更新 VitePress 文档依赖锁文件到兼容范围内的安全补丁版本，`npm audit` 从 12 项降至
   4 项；剩余项均来自 VitePress 1.6.4 的 Vite 5/esbuild 链，当前无兼容修复，未强制
   升级到 VitePress 2 alpha。

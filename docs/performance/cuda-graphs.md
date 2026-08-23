@@ -126,17 +126,18 @@ warmup 5 / iters 20，`tiny_llm_bench` 墙钟。
 
 commit：`a2a9c58`（任务 3.2 实现）。复现命令见 `benchmark-methodology.md`。
 
-### 7.2 2026-08-23 current-worktree schema v2 验证
+### 7.2 2026-08-23 clean-commit schema v2 正式 A/B
 
 schema v2 改为在**同一次请求**内记录 TTFT/TPOT，并明确输出 Graph 实际状态。
-RTX 3060 Laptop 上 3 个独立进程、每进程 10 次 timed iteration 的聚合结果：
+clean commit `565da79` 在 RTX 3060 Laptop 上执行 5 组独立进程对、每进程
+3 warmup + 10 次 timed iteration：
 
 | 指标 | Graph off | Graph on | 变化 |
 |------|-----------|----------|------|
-| TTFT p50 的跨进程中位数 | 8.862 ms | 9.047 ms | +2.1% |
-| TPOT mean 的跨进程中位数 | 8.810 ms | 5.323 ms | **-39.6%** |
-| decode tok/s 的跨进程中位数 | 113.505 | 187.877 | **+65.5%** |
+| TTFT p50 的跨进程中位数 | 9.072 ms | 8.822 ms | -2.8%（配对口径无稳定改善） |
+| TPOT mean 的跨进程中位数 | 8.322 ms | 5.225 ms | **-37.2%** |
+| decode tok/s 的跨进程中位数 | 120.168 | 191.384 | **+59.3%** |
 
-工作区是 dirty，故本表只作为本地验证，不替换 clean commit 的简历基准。完整环境、六组原始
-汇总、常驻显存口径与 profiler 限制见
+TPOT 与吞吐 5/5 组方向一致；TTFT 配对变化范围 -8.5%～+14.6%，不作改善声明。
+完整环境、10 个进程的原始 JSONL、机器可读聚合、常驻显存口径与 profiler 限制见
 [`results/2026-08-23-cuda-graphs-ab.md`](results/2026-08-23-cuda-graphs-ab.md)。

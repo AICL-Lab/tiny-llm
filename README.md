@@ -50,27 +50,27 @@ Tiny-LLM 将仓库表面保持得尽量小：CUDA/C++17 内核、W8A16 量化、
 
 当前开发重点见 [ROADMAP](ROADMAP.md)。性能相关的文档只描述方法与计划，不引用未实测的数字。
 
-### 基准快照（2026-08-18）
+### 正式基准快照（2026-08-23，schema v2）
 
-| 指标 | 数值 |
-|------|------|
-| 硬件 | RTX 3060（6GB Laptop），CUDA 12.x，驱动 591.44 |
-| 模型 | Qwen2.5-0.5B-Instruct，GGUF Q4_K_M（本仓库重量化为 W8A16 后推理） |
-| commit | `f897084` |
-| 复现命令 | `./build/tiny_llm_bench model.gguf --prompt "你好" --max-tokens 64 --warmup 3 --iters 10` |
-| TTFT (mean) | 10.6 ms |
-| TPOT (mean) | 6.1 ms/token |
-| decode 吞吐 | 164.3 tok/s |
-| 常驻显存差值 | 3368 MB（加载前 vs 运行后，含 M==1 转置权重副本；非真实峰值） |
+| 环境 | 值 |
+|------|----|
+| 硬件 | RTX 3060 Laptop 6GB，驱动 610.88，CUDA runtime 12.0 |
+| 模型 | Qwen2.5-0.5B-Instruct GGUF Q4_K_M（加载后重量化为 W8A16） |
+| 被测 commit | `565da79`，每个进程启动前工作区 clean |
+| 协议 | 5 组独立进程对；每进程 3 warmup + 10 timed iterations；on/off 顺序交错 |
+
+| 指标 | Graph off | Graph on | 变化 |
+|------|-----------|----------|------|
+| TTFT p50 的跨进程中位数 | 9.072 ms | 8.822 ms | -2.8%（配对中位数 +3.4%，视为噪声） |
+| TPOT mean 的跨进程中位数 | 8.322 ms | 5.225 ms | **-37.2%** |
+| decode 吞吐的跨进程中位数 | 120.168 tok/s | 191.384 tok/s | **+59.3%** |
+| 常驻显存差值 | 3364 MB | 3368 MB | +4 MB（非峰值） |
 
 > CUDA Graphs decode 默认开启；`TLLM_CUDA_GRAPHS=0` 显式关闭。
-> kernel 级 microbench 与 llama.cpp 比值见
-> [2026-08-18-decode-optimization](docs/performance/results/2026-08-18-decode-optimization.md)。
-> 2026-08-23 起 benchmark schema v2 使用同一请求记录 TTFT/TPOT，并在 JSON 中报告
-> GPU、迭代数与 Graph 实际状态；旧快照保留为历史结果，不与新 schema 混算。
-> current-worktree Graph A/B 见
-> [`2026-08-23-cuda-graphs-ab.md`](docs/performance/results/2026-08-23-cuda-graphs-ab.md)，
-> 报告已明确标为 dirty 本地验证，不冒充 release 数字。
+> 正式报告包含 10 个进程的原始 JSONL、机器可读聚合、模型哈希、完整命令和限制：
+> [`2026-08-23-cuda-graphs-ab.md`](docs/performance/results/2026-08-23-cuda-graphs-ab.md)。
+> 2026-08-18 schema v1 与 kernel microbench 只保留为优化沿革，不和 schema v2 混算；
+> 见 [decode optimization](docs/performance/results/2026-08-18-decode-optimization.md)。
 
 ## 已实现能力
 

@@ -36,15 +36,16 @@
 - [x] 指标：TTFT、TPOT、decode 吞吐（tok/s）、常驻显存差值
 - [ ] 对比基线：llama.cpp（同硬件、同模型、可解释的量化差异）
       —— `docs/performance/results/2026-08-18-rtx3060.md` 是已审计的 schema v1
-      历史快照；clean commit 上的 schema v2 正式重跑仍待完成
+      历史快照；tiny-llm 自身 schema v2 clean A/B 已完成，llama.cpp 同口径正式复测仍待完成
 - [x] kernel 级瓶颈分析 —— ncu/nsys 本机不可用（`ERR_NVGPUCTRPERM` / importer
       缺失），改用仓库内微基准 `tiny_llm_kernel_bench`（C0）作为替代证据
 - [x] 将实测数字回填 docs/performance/（附硬件/软件版本/复现命令）
       —— 见 `docs/performance/results/2026-08-18-decode-optimization.md`
 
-**当前证据**：历史 schema v1 报告记录 TPOT 21.9 → **6.1 ms/token**、decode
-45.6 → **164.3 tok/s**，但 TPOT 使用跨请求估算；schema v2 已修正计时，需在
-clean commit 上重跑后才作为简历与 release 的正式数字。
+**当前证据**：clean commit `565da79` 的 schema v2 五组配对 A/B 中，CUDA Graph
+使 TPOT 跨进程中位数 8.322 → **5.225 ms/token**（-37.2%），decode 吞吐
+120.168 → **191.384 tok/s**（+59.3%）；10 个进程的原始 JSONL 与限制已归档。
+历史 schema v1 仅用于说明优化沿革，不与正式数字混算。
 
 ## 阶段 3：选一个推理加速主题做深（二选一）
 
@@ -52,8 +53,9 @@ clean commit 上重跑后才作为简历与 release 的正式数字。
 - [x] decode 阶段 graph capture/replay，配置开关
       —— 默认开启，`TLLM_CUDA_GRAPHS=0` opt-out（见 `cuda-graphs.md`）
 - [x] before/after 的 launch 开销与 TPOT 对比数字
-      —— schema v2 的 dirty-worktree 三组交错 A/B 仅作本地正确性与趋势验证；见
-      `docs/performance/results/2026-08-23-cuda-graphs-ab.md`，正式数字待 clean commit 重跑
+      —— schema v2 在 clean commit 上完成五组交错配对 A/B；TPOT 5/5 组下降，
+      原始 JSONL、聚合、复现命令与限制见
+      `docs/performance/results/2026-08-23-cuda-graphs-ab.md`
 
 **完成证据**：一个有数字、有 profiling 证据、能讲清取舍的优化故事。
 （C1 转置权重 M==1 快路径是本批另一个核心加速点，与 CUDA Graphs 叠加。）

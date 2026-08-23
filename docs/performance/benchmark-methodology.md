@@ -65,8 +65,9 @@ cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTS=ON
 cmake --build build -j$(nproc)
 
 ./build/tiny_llm_bench /path/to/qwen2.5-0.5b-instruct-q4_k_m.gguf \
-    --prompt "你好" --max-tokens 64 --warmup 3 --iters 10 --json
-# CUDA Graph A/B：另一组追加 --no-graphs；JSON 会记录实际 enabled/captured 状态。
+    --prompt "你好" --max-tokens 64 --warmup 3 --iters 10 --json --graphs
+# 配对运行把 --graphs 改为 --no-graphs；JSON 会记录实际 enabled/captured 状态。
+# 正式 A/B 至少做 5 个独立进程对，并交错 on/off 先后顺序。
 ```
 
 ### llama.cpp（合成 decode 吞吐）

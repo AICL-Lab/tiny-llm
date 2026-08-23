@@ -14,29 +14,26 @@
 | 真实模型端到端生成 | Qwen2.5-0.5B-Instruct（Q4_K_M）在 RTX 3060 上验证 | ✅ |
 | 吞吐 / 延迟 / 显存基准 | `tiny_llm_bench`（同请求 TTFT / TPOT / tok/s / 常驻显存差值） | ✅ |
 
-## 基准快照（2026-08-18，C0–C2 优化后）
+## 正式基准快照（2026-08-23，schema v2）
 
-| 指标 | 数值 |
-|------|------|
-| 硬件 | RTX 3060（6GB Laptop），CUDA 12.x，驱动 591.44 |
-| 模型 | Qwen2.5-0.5B-Instruct，GGUF Q4_K_M（重量化为 W8A16 后推理） |
-| commit | `f897084` |
-| TTFT (mean) | 10.6 ms |
-| TPOT (mean) | 6.1 ms/token |
-| decode 吞吐 | 164.3 tok/s |
-| 常驻显存差值 | 3368 MB（加载前 vs 运行后；非真实峰值） |
+| 环境 | 值 |
+|------|----|
+| 硬件 | RTX 3060 Laptop 6GB，CUDA runtime 12.0，驱动 610.88 |
+| 模型 | Qwen2.5-0.5B-Instruct GGUF Q4_K_M（重量化为 W8A16） |
+| commit | `565da79`（clean） |
+| 协议 | 5 组独立进程对，每进程 3 warmup + 10 timed iterations |
 
-复现：`./build/tiny_llm_bench model.gguf --prompt "你好" --max-tokens 64 --warmup 3 --iters 10`
-（CUDA Graphs decode 默认开启；`TLLM_CUDA_GRAPHS=0` 关闭）
+| 指标 | Graph off | Graph on | 变化 |
+|------|-----------|----------|------|
+| TTFT p50 跨进程中位数 | 9.072 ms | 8.822 ms | -2.8%（配对口径无稳定改善） |
+| TPOT mean 跨进程中位数 | 8.322 ms | 5.225 ms | **-37.2%** |
+| decode 吞吐跨进程中位数 | 120.168 tok/s | 191.384 tok/s | **+59.3%** |
+| 常驻显存差值 | 3364 MB | 3368 MB | +4 MB（非真实峰值） |
 
-> 上表是 schema v1 历史快照。2026-08-23 起 schema v2 在同一次请求内记录首 token
-> 时间，并输出 Graph 实际状态、GPU 与迭代元数据；不同 schema 不直接合并统计。
-
-> 数字会随优化更新，每次更新都会同步记录 commit 与命令。kernel 级证据见
-> [2026-08-18-decode-optimization](results/2026-08-18-decode-optimization.md)。
-> current-worktree Graph on/off 本地验证见
-> [2026-08-23-cuda-graphs-ab](results/2026-08-23-cuda-graphs-ab.md)；该报告明确标为
-> dirty worktree，不替代 clean commit 快照。
+复现命令、10 个进程的原始 JSONL、机器可读聚合、模型哈希与结论边界见
+[2026-08-23-cuda-graphs-ab](results/2026-08-23-cuda-graphs-ab.md)。
+2026-08-18 schema v1 和 kernel microbench 只保留为优化沿革，不与 schema v2 混算；
+见 [2026-08-18-decode-optimization](results/2026-08-18-decode-optimization.md)。
 
 ## 章节
 

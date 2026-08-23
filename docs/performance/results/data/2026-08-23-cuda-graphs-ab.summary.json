@@ -1,0 +1,40 @@
+{
+  "schema_version": 1,
+  "benchmark_schema_version": 2,
+  "date": "2026-08-23",
+  "commit": "565da79bd8f2d11005c04130dbe942c87e810586",
+  "worktree_clean": true,
+  "pairs": 5,
+  "processes": 10,
+  "order": ["on-off", "off-on", "on-off", "off-on", "on-off"],
+  "aggregation": "median of five per-process statistics",
+  "graph_off": {
+    "ttft_p50_ms": 9.07171,
+    "tpot_mean_ms": 8.32166,
+    "decode_tok_per_s": 120.168,
+    "resident_memory_delta_mb": 3364
+  },
+  "graph_on": {
+    "ttft_p50_ms": 8.82183,
+    "tpot_mean_ms": 5.2251,
+    "decode_tok_per_s": 191.384,
+    "resident_memory_delta_mb": 3368
+  },
+  "aggregate_delta_percent": {
+    "ttft_p50": -2.754497222684582,
+    "tpot_mean": -37.2108449516082,
+    "decode_tok_per_s": 59.26369749018039
+  },
+  "paired_delta_percent": [
+    {"pair": 1, "ttft_p50": 3.3823020295118633, "tpot_mean": -37.07632706196026, "decode_tok_per_s": 58.92249182070315},
+    {"pair": 2, "ttft_p50": -3.591384645232254, "tpot_mean": -39.14459374692068, "decode_tok_per_s": 64.32494507689235},
+    {"pair": 3, "ttft_p50": 14.58261562007599, "tpot_mean": -31.344730007365186, "decode_tok_per_s": 45.655375552282784},
+    {"pair": 4, "ttft_p50": -8.53145678541286, "tpot_mean": -38.210655924386494, "decode_tok_per_s": 61.83980914003424},
+    {"pair": 5, "ttft_p50": 4.17921944231483, "tpot_mean": -34.84196892781949, "decode_tok_per_s": 53.47327435935032}
+  ],
+  "paired_delta_percent_median": {
+    "ttft_p50": 3.3823020295118633,
+    "tpot_mean": -37.07632706196026,
+    "decode_tok_per_s": 58.92249182070315
+  }
+}
