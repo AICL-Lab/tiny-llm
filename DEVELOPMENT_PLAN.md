@@ -1,11 +1,15 @@
-# Tiny-LLM 后续开发执行计划
+# Tiny-LLM 历史开发计划（2026-08 快照）
 
-> 本文档是**逐任务实施清单**，与 `ROADMAP.md`（方向性路线图）配合使用。
-> 面向执行方（人或低成本模型）设计：每个任务有背景、改动点、参考代码、验收命令，
-> **一次只做一个任务**，验收通过再做下一个。
+> **归档说明（2026-08-24）**：本文保留当时的逐任务实施上下文、代码草案与验收命令，
+> 不再描述当前代码状态。文中“未实现”“待做”和测试数量均是历史快照，不能作为
+> README、简历或新开发任务的依据。
 >
-> 最后一次基线核验：147 个测试，141 通过，6 跳过（跳过项需要 `TLLM_GGUF_TEST_MODEL`
-> 指向真实 GGUF 文件）。
+> 当前能力与进行中的工作以 `README.md`、`ROADMAP.md` 和
+> `docs/performance/results/` 为准；可引用的 CUDA Graph 结果仅是
+> `2026-08-23-cuda-graphs-ab.md` 所定义的 **CUDA Graph decode A/B**，不代表整体推理加速。
+>
+> 本文写成时的基线核验：147 个测试，141 通过，6 跳过（跳过项需要
+> `TLLM_GGUF_TEST_MODEL` 指向真实 GGUF 文件）。
 
 ---
 
@@ -28,7 +32,7 @@
 
 ---
 
-## 1. 当前基线快照（2026-08 已核验）
+## 1. 历史基线快照（2026-08，非当前状态）
 
 ### 1.1 上一轮已完成的修复（不要重复做）
 
@@ -40,7 +44,7 @@
 | `advanceSeqLen` 溢出从静默 clamp 改为返回错误；`allocateSequence` 清零复用的 slot | `src/kv_cache.cpp` | `KVCacheTest` 全通过（测试已同步改为 `AdvanceSeqLenFailsOnOverflow`） |
 | 长序列 decode attention 数值测试 | `tests/test_kernels.cu` | 通过 |
 
-### 1.2 已知半成品（必须最先收尾）
+### 1.2 当时的已知半成品（后续已完成，保留实施背景）
 
 - `kernels/w8a16_matmul.cuh` **已经声明** `fp16_matmul(...)`，但 `.cu` 中**没有实现**，
   也没有任何调用方使用它。
