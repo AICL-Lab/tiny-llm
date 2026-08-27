@@ -83,8 +83,13 @@ void printDetailedDeviceInfo() {
                   << prop.maxGridSize[1] << ", " << prop.maxGridSize[2] << "]" << std::endl;
         std::cout << "  SM Count:               " << prop.multiProcessorCount << std::endl;
         std::cout << "  Max Threads per SM:     " << prop.maxThreadsPerMultiProcessor << std::endl;
-        std::cout << "  Clock Rate:             " << prop.clockRate / 1000 << " MHz" << std::endl;
-        std::cout << "  Memory Clock Rate:      " << prop.memoryClockRate / 1000 << " MHz"
+        // clockRate / memoryClockRate 在 CUDA 13 已从 cudaDeviceProp 移除,
+        // 改用 cudaDeviceGetAttribute 查询(对 CUDA 10+ 全兼容)
+        int clock_rate = 0, mem_clock_rate = 0;
+        cudaDeviceGetAttribute(&clock_rate, cudaDevAttrClockRate, dev);
+        cudaDeviceGetAttribute(&mem_clock_rate, cudaDevAttrMemoryClockRate, dev);
+        std::cout << "  Clock Rate:             " << clock_rate / 1000 << " MHz" << std::endl;
+        std::cout << "  Memory Clock Rate:      " << mem_clock_rate / 1000 << " MHz"
                   << std::endl;
         std::cout << "  Memory Bus Width:       " << prop.memoryBusWidth << " bits" << std::endl;
         std::cout << "  L2 Cache Size:          " << prop.l2CacheSize / 1024.0 << " KB"
