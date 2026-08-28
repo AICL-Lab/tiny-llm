@@ -1,12 +1,12 @@
-// C ABI 契约：paged-infer（Rust）与 tiny-llm（C++/CUDA）之间的执行后端桥接。
+// C ABI 契约：paged-serving（Rust）与 tiny-llm（C++/CUDA）之间的执行后端桥接。
 //
-// 契约定义与 paged-infer 的 `src/tiny_llm_ffi.rs` 保持逐字段一致：
+// 契约定义与 paged-serving 的 `src/tiny_llm_ffi.rs` 保持逐字段一致：
 //   - TinyLlmConfig 为 9 个 int 的 repr(C) 布局（ABI v2；Rust 侧有布局守卫测试）
 //   - 步进式执行：每步处理一个 batch（prefill/decode 混合）
 //   - KV 生命周期由本后端管理：
 //       策略 1（分页 KV，max_num_blocks > 0）：block_tables / num_blocks 生效
 //       策略 2（连续 KV，max_num_blocks == 0）：block_tables / num_blocks 忽略
-//   - 策略 1 已启用：paged-infer 默认走分页 KV（max_num_blocks = 引擎配置），
+//   - 策略 1 已启用：paged-serving 默认走分页 KV（max_num_blocks = 引擎配置），
 //     `PAGED_INFER_TINY_LLM_STRATEGY=2` 可回退到策略 2。
 //
 // 数据布局约定：

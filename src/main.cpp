@@ -89,8 +89,7 @@ void printDetailedDeviceInfo() {
         cudaDeviceGetAttribute(&clock_rate, cudaDevAttrClockRate, dev);
         cudaDeviceGetAttribute(&mem_clock_rate, cudaDevAttrMemoryClockRate, dev);
         std::cout << "  Clock Rate:             " << clock_rate / 1000 << " MHz" << std::endl;
-        std::cout << "  Memory Clock Rate:      " << mem_clock_rate / 1000 << " MHz"
-                  << std::endl;
+        std::cout << "  Memory Clock Rate:      " << mem_clock_rate / 1000 << " MHz" << std::endl;
         std::cout << "  Memory Bus Width:       " << prop.memoryBusWidth << " bits" << std::endl;
         std::cout << "  L2 Cache Size:          " << prop.l2CacheSize / 1024.0 << " KB"
                   << std::endl;

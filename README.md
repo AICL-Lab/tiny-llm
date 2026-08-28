@@ -27,12 +27,12 @@ Tiny-LLM 将仓库表面保持得尽量小：CUDA/C++17 内核、W8A16 量化、
 **IN（本仓库负责）**：
 - GGUF 加载与反量化（F16/F32/Q4_0/Q5_0/Q8_0/Q4_K/Q6_K）
 - W8A16 量化推理、KV Cache、tokenizer、采样、端到端生成
-- 分页 KV（策略 1：block_tables + scatter/gather；经 C ABI 供 paged-infer 使用）
+- 分页 KV（策略 1：block_tables + scatter/gather；经 C ABI 供 paged-serving 使用）
 - 性能基准（TTFT / TPOT / tok/s / 常驻显存差值）与 CUDA Graphs 加速 decode
 
 **OUT（明确不做，见对应仓库）**：
-- 调度 / 批处理 / continuous batching → [paged-infer](https://github.com/open-infra-ai/paged-infer)
-- FlashAttention 深挖与优化 → [cuflash-attn](https://github.com/open-infra-ai/cuflash-attn)
+- 调度 / 批处理 / continuous batching → [paged-serving](https://github.com/open-infra-ai/paged-serving)
+- FlashAttention 深挖与优化 → [cuflash](https://github.com/open-infra-ai/cuflash)
 - Triton 算子 → [triton-fused-ops](https://github.com/open-infra-ai/triton-fused-ops)
 
 ## 项目状态（诚实声明）
@@ -45,7 +45,7 @@ Tiny-LLM 将仓库表面保持得尽量小：CUDA/C++17 内核、W8A16 量化、
 | 架构感知配置提取（qwen2/llama/...） | ✅ 已实现，真实模型验证通过 |
 | tokenizer | ✅ 已实现，与 HuggingFace tokenizers 差分测试逐 id 对齐（30 例 417 token） |
 | 真实模型端到端生成 | ✅ Qwen2.5-0.5B-Instruct（Q4_K_M）在 RTX 3060 上验证通过 |
-| 分页 KV（策略 1） | ✅ block_tables + scatter/gather 池，与连续 KV 策略逐 token 差分一致，paged-infer 3 并发 e2e 与 llama.cpp 对齐 |
+| 分页 KV（策略 1） | ✅ block_tables + scatter/gather 池，与连续 KV 策略逐 token 差分一致，paged-serving 3 并发 e2e 与 llama.cpp 对齐 |
 | 端到端性能基准 | ✅ 已实现 `tiny_llm_bench`（同请求 TTFT / TPOT / tok/s / 常驻显存差值），见下方基准快照 |
 
 当前开发重点见 [ROADMAP](ROADMAP.md)。性能相关的文档只描述方法与计划，不引用未实测的数字。

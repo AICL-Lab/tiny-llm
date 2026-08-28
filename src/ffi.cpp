@@ -1,4 +1,4 @@
-// C ABI 实现：paged-infer 与 tiny-llm 的执行后端桥接。
+// C ABI 实现：paged-serving 与 tiny-llm 的执行后端桥接。
 //
 // 策略 2（连续 KV）：block_tables 忽略；序列位置由引擎内部跟踪
 // （KV 写入位置以 slot.current_len 为准，与调用方传入 position 解耦）。

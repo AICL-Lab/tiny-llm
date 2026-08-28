@@ -2,7 +2,7 @@
 
 All notable tracked releases of Tiny-LLM are recorded here.
 
-## Unreleased
+## [2.0.2] - 2026-08-28
 
 ### Fixed
 - 修复 `tiny_llm_bench` 指标口径：TTFT 与 TPOT 改为从同一次 `generate()` 请求取样，
@@ -120,7 +120,7 @@ All notable tracked releases of Tiny-LLM are recorded here.
 
 - C ABI 执行后端（`include/tiny_llm/ffi.h` + `src/ffi.cpp`）：`tinyllm_load` /
   `tinyllm_step` / `tinyllm_allocate_sequence` / `tinyllm_free_sequence` / `tinyllm_free`，
-  契约与 paged-infer `src/tiny_llm_ffi.rs` 逐字段对齐（策略 2：连续 KV，位置引擎内部跟踪）。
+  契约与 paged-serving `src/tiny_llm_ffi.rs` 逐字段对齐（策略 2：连续 KV，位置引擎内部跟踪）。
   真实模型端到端验证：prefill/decode 步进生成与 demo CLI 输出一致。
 
 ### Tests
