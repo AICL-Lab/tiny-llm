@@ -48,6 +48,9 @@ compile_commands.json
 # Local AI overrides
 CLAUDE.local.md
 
+# Local agent scratch/tool directory (user content, never commit)
+.zcode/
+
 # OS generated files
 .DS_Store
 .DS_Store?
