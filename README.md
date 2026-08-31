@@ -33,7 +33,7 @@ Tiny-LLM 将仓库表面保持得尽量小：CUDA/C++17 内核、W8A16 量化、
 **OUT（明确不做，见对应仓库）**：
 - 调度 / 批处理 / continuous batching → [paged-serving](https://github.com/open-infra-ai/paged-serving)
 - FlashAttention 深挖与优化 → [cuflash](https://github.com/open-infra-ai/cuflash)
-- Triton 算子 → [triton-fused-ops](https://github.com/open-infra-ai/triton-fused-ops)
+- Triton 算子 → [trifuse](https://github.com/open-infra-ai/trifuse)
 
 ## 项目状态（诚实声明）
 
