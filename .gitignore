@@ -47,6 +47,7 @@ compile_commands.json
 
 # Local AI overrides
 CLAUDE.local.md
+.qoder/
 
 # Local agent scratch/tool directory (user content, never commit)
 .zcode/

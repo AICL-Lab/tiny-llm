@@ -2,12 +2,10 @@ CompileFlags:
   # Fallback compilation flags for header analysis without compile_commands.json
   Add:
     - "-std=c++17"
-    - "-I/home/shane/dev/tiny-llm/include"
-    - "-I/home/shane/dev/tiny-llm/kernels"
+    - "-Iinclude"
+    - "-Ikernels"
     - "-Wall"
     - "-Wextra"
-    - "-DCUDA_VERSION=11080"
-    - "-D__CUDACC__"
 
   # When compile_commands.json exists, prefer it
   CompilationDatabase: build

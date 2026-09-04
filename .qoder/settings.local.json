@@ -1,8 +1,0 @@
-{
-  "permissions": {
-    "allow": [
-      "Bash(ls ~/.qoder-cn/ 2>/dev/null && echo \"---\" && cat ~/.qoder-cn/settings.json 2>/dev/null || echo \"no settings.json\")",
-      "Read(//home/shane/.qoder-cn/**)"
-    ]
-  }
-}
