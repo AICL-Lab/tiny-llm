@@ -2,6 +2,26 @@
 
 All notable tracked releases of Tiny-LLM are recorded here.
 
+## [Unreleased]
+
+### Changed
+
+- C ABI 正常 greedy 路径（`logprobs_k == 0`）现在在 device 侧完成 argmax，并在
+  `tinyllm_step` 末尾一次性回传该 batch 的 token。C ABI 布局、输出顺序与
+  `logprobs` 路径均未改变；请求 logprobs 时仍保留主机侧完整 logits / top-k 计算。
+  层前向仍逐序列执行，因此此改动不是 fused batch，也尚无新的 serving 性能结论。
+
+### Added
+
+- `kernels/sampling.cu`：单 block 的 GPU greedy argmax，保持 CPU 顺序扫描的同分 token
+  id 选择与首项 NaN 语义。
+
+### Tests
+
+- CUDA kernel 直接对照 CPU greedy（跨 block scan、同分 token、首项 NaN）；真实 GGUF
+  门控对照 device 与 host/logprobs 路径连续 4 token；paged-serving `tiny-llm` feature
+  的真实后端、文本与三并发分页 e2e 复验通过。
+
 ## [2.0.2] - 2026-08-28
 
 ### Fixed

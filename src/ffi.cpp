@@ -2,13 +2,15 @@
 //
 // 策略 2（连续 KV）：block_tables 忽略；序列位置由引擎内部跟踪
 // （KV 写入位置以 slot.current_len 为准，与调用方传入 position 解耦）。
-// 逐序列执行（step 的第 s 项对应 seq_id = s），多序列语义正确，
-// 并行 batch 优化留待后续里程碑。
+// 逐序列执行（step 的第 s 项对应 seq_id = s），多序列语义正确。
+// 正常 greedy 请求在 device 侧选 token，并在 step 末尾一次性回传；计算融合
+// 仍是后续里程碑。
 
 #include "tiny_llm/ffi.h"
 #include "elementwise.cuh"
 #include "rmsnorm.cuh"
 #include "rope.cuh"
+#include "sampling.cuh"
 #include "tiny_llm/cuda_utils.h"
 #include "tiny_llm/execution_common.h"
 #include "tiny_llm/gguf_parser.h"
@@ -51,6 +53,7 @@ struct TinyLlmHandleImpl {
     tiny_llm::DeviceBuffer<int> d_tokens;   // token ids 上传缓冲（gather 需 device 指针）
     tiny_llm::DeviceBuffer<int> decode_len; // 任务 3.1：decode 可见 KV 长度 (device int)
     tiny_llm::DeviceBuffer<int> rope_pos;   // 任务 3.2：RoPE 起始位置 (device int)
+    tiny_llm::DeviceBuffer<int> d_next_tokens; // normal greedy 的逐序列 device 输出
     std::unordered_map<int, SeqState> sequences;
 
     // ── 分页 KV（策略 1，max_num_blocks > 0）──
@@ -96,6 +99,13 @@ int sample_from_hidden(TinyLlmHandleImpl *h, half *hidden) {
                           static_cast<size_t>(h->config.vocab_size) * sizeof(half),
                           cudaMemcpyDeviceToHost));
     return tiny_llm::InferenceEngine::sampleGreedy(h_logits.data(), h->config.vocab_size);
+}
+
+// 正常 serving 不请求 logprobs 时使用：避免每序列同步 stream 并回传完整 logits。
+// 同一 stream 保证当前 logits 被 argmax 读取完后才可被下一序列覆盖。
+void sample_from_hidden_device(TinyLlmHandleImpl *h, half *hidden, int *token) {
+    tiny_llm::finalNormAndComputeLogits(hidden, h->weights, h->config, h->logits_buf, h->stream);
+    tiny_llm::kernels::greedy_argmax(h->logits_buf, h->config.vocab_size, token, h->stream);
 }
 
 /// 对最后一步采样的 logits 计算 top-k (token_id, logprob)，写入交错数组。
@@ -349,6 +359,17 @@ int tinyllm_step(TinyLlmHandle *handle, const int *seq_ids, const int *input_tok
         return TLLM_ERR;
     }
 
+    const bool defer_greedy_copy = logprobs_k == 0;
+    if (defer_greedy_copy) {
+        try {
+            if (h->d_next_tokens.size() < static_cast<size_t>(num_sequences)) {
+                h->d_next_tokens = tiny_llm::DeviceBuffer<int>(static_cast<size_t>(num_sequences));
+            }
+        } catch (...) {
+            return TLLM_ERR;
+        }
+    }
+
     int offset = 0;
     int table_offset = 0; // 扁平化 block_tables 中前面序列块数之和（策略 1）
     for (int s = 0; s < num_sequences; ++s) {
@@ -424,7 +445,12 @@ int tinyllm_step(TinyLlmHandle *handle, const int *seq_ids, const int *input_tok
                         }
                         ++li;
                     }
-                    next_tokens[s] = sample_from_hidden(h, h->hidden_buf + (len - 1) * hidden);
+                    if (defer_greedy_copy) {
+                        sample_from_hidden_device(h, h->hidden_buf + (len - 1) * hidden,
+                                                  h->d_next_tokens.data() + s);
+                    } else {
+                        next_tokens[s] = sample_from_hidden(h, h->hidden_buf + (len - 1) * hidden);
+                    }
                     st.position = len;
                 } else {
                     // Decode：单个新 token（绝对位置 = st.position）
@@ -452,7 +478,11 @@ int tinyllm_step(TinyLlmHandle *handle, const int *seq_ids, const int *input_tok
                         }
                         ++li;
                     }
-                    next_tokens[s] = sample_from_hidden(h, token_state);
+                    if (defer_greedy_copy) {
+                        sample_from_hidden_device(h, token_state, h->d_next_tokens.data() + s);
+                    } else {
+                        next_tokens[s] = sample_from_hidden(h, token_state);
+                    }
                     st.position = pos + 1;
                 }
             } else if (is_prefill[s]) {
@@ -502,7 +532,12 @@ int tinyllm_step(TinyLlmHandle *handle, const int *seq_ids, const int *input_tok
                 }
                 auto adv = h->kv_cache->advanceSeqLen(seq_id, len);
                 if (adv.isErr()) return TLLM_ERR;
-                next_tokens[s] = sample_from_hidden(h, h->hidden_buf + (len - 1) * hidden);
+                if (defer_greedy_copy) {
+                    sample_from_hidden_device(h, h->hidden_buf + (len - 1) * hidden,
+                                              h->d_next_tokens.data() + s);
+                } else {
+                    next_tokens[s] = sample_from_hidden(h, h->hidden_buf + (len - 1) * hidden);
+                }
                 st.position = len;
             } else {
                 // Decode：单个新 token（绝对位置由引擎跟踪，与 KV 写入一致）
@@ -525,7 +560,11 @@ int tinyllm_step(TinyLlmHandle *handle, const int *seq_ids, const int *input_tok
                 }
                 auto adv = h->kv_cache->advanceSeqLen(seq_id, 1);
                 if (adv.isErr()) return TLLM_ERR;
-                next_tokens[s] = sample_from_hidden(h, token_state);
+                if (defer_greedy_copy) {
+                    sample_from_hidden_device(h, token_state, h->d_next_tokens.data() + s);
+                } else {
+                    next_tokens[s] = sample_from_hidden(h, token_state);
+                }
                 st.position = pos + 1;
             }
         } catch (...) {
@@ -534,6 +573,17 @@ int tinyllm_step(TinyLlmHandle *handle, const int *seq_ids, const int *input_tok
 
         if (logprobs_k > 0 && logprobs != nullptr) {
             compute_logprobs(h, s, logprobs_k, logprobs);
+        }
+    }
+
+    if (defer_greedy_copy) {
+        try {
+            CUDA_CHECK(cudaMemcpyAsync(next_tokens, h->d_next_tokens.data(),
+                                       static_cast<size_t>(num_sequences) * sizeof(int),
+                                       cudaMemcpyDeviceToHost, h->stream));
+            CUDA_CHECK(cudaStreamSynchronize(h->stream));
+        } catch (...) {
+            return TLLM_ERR;
         }
     }
 

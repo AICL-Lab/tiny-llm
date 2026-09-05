@@ -61,6 +61,7 @@ list(FILTER SOURCES EXCLUDE REGEX "src/benchmark\\.cpp$")
 list(APPEND SOURCES src/execution_common.cpp)
 list(APPEND SOURCES kernels/transpose_weights.cu)
 list(APPEND SOURCES kernels/paged_kv.cu)
+list(APPEND SOURCES kernels/sampling.cu)
 
 add_library(tiny_llm STATIC ${SOURCES})
 add_library(tiny_llm::tiny_llm ALIAS tiny_llm)

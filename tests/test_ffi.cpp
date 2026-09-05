@@ -4,9 +4,11 @@
 // 门控：设置 TLLM_GGUF_TEST_MODEL 指向真实 GGUF 模型后启用。
 // 维度字段由 GGUF 提取，TinyLlmConfig 仅 max_batch_size 生效。
 #include "rmsnorm.cuh"
+#include "sampling.cuh"
 #include "tiny_llm/cuda_utils.h"
 #include "tiny_llm/execution_common.h"
 #include "tiny_llm/ffi.h"
+#include "tiny_llm/inference_engine.h"
 #include "w8a16_matmul.cuh"
 #include <array>
 #include <cmath>
@@ -15,7 +17,9 @@
 #include <cuda_fp16.h>
 #include <cuda_runtime.h>
 #include <gtest/gtest.h>
+#include <limits>
 #include <random>
+#include <utility>
 #include <vector>
 
 namespace {
@@ -26,6 +30,48 @@ const char *model_path() {
 }
 
 } // namespace
+
+TEST(DeviceSamplingTest, GreedyArgmaxMatchesHostBaseline) {
+    int         device_count = 0;
+    cudaError_t cuda_error = cudaGetDeviceCount(&device_count);
+    if (cuda_error != cudaSuccess || device_count == 0) {
+        GTEST_SKIP() << "No CUDA device available";
+    }
+
+    auto run = [](const std::vector<float> &values) {
+        std::vector<half> host_logits(values.size());
+        for (size_t i = 0; i < values.size(); ++i) {
+            host_logits[i] = __float2half(values[i]);
+        }
+
+        tiny_llm::DeviceBuffer<half> device_logits(host_logits.size());
+        tiny_llm::DeviceBuffer<int>  device_token(1);
+        device_logits.copyFromHost(host_logits.data(), host_logits.size());
+        tiny_llm::kernels::greedy_argmax(device_logits.data(), static_cast<int>(host_logits.size()),
+                                         device_token.data());
+
+        int device_result = -1;
+        device_token.copyToHost(&device_result, 1);
+        cudaDeviceSynchronize();
+        return std::pair{tiny_llm::InferenceEngine::sampleGreedy(
+                             host_logits.data(), static_cast<int>(host_logits.size())),
+                         device_result};
+    };
+
+    std::vector<float> long_logits(513, -10.0f);
+    long_logits[317] = 7.0f;
+    long_logits[401] = 7.0f; // 相同最大值必须取较小 token id。
+    const auto [host_tie, device_tie] = run(long_logits);
+    EXPECT_EQ(host_tie, 317);
+    EXPECT_EQ(device_tie, host_tie);
+
+    std::vector<float> nan_first(257, -1.0f);
+    nan_first[0] = std::numeric_limits<float>::quiet_NaN();
+    nan_first[128] = 100.0f;
+    const auto [host_nan, device_nan] = run(nan_first);
+    EXPECT_EQ(host_nan, 0);
+    EXPECT_EQ(device_nan, host_nan);
+}
 
 TEST(FFITest, LoadAllocateStepFree) {
     const char *path = model_path();
@@ -73,6 +119,69 @@ TEST(FFITest, LoadAllocateStepFree) {
 
     ASSERT_EQ(tinyllm_free_sequence(h, 0), 0);
     tinyllm_free(h);
+}
+
+TEST(FFITest, DeviceGreedyMatchesHostSampling) {
+    const char *path = model_path();
+    if (path == nullptr) {
+        GTEST_SKIP() << "set TLLM_GGUF_TEST_MODEL to a GGUF file to enable";
+    }
+
+    auto generate = [path](int logprobs_k) {
+        char           err[256] = {0};
+        TinyLlmConfig  cfg = {0, 0, 0, 0, 0, 0, 16, 1, 0};
+        TinyLlmHandle *h = tinyllm_load(path, &cfg, err, sizeof(err));
+        if (h == nullptr) {
+            ADD_FAILURE() << "load failed: " << err;
+            return std::vector<int>{};
+        }
+        if (tinyllm_allocate_sequence(h, 0, 64) != 0) {
+            ADD_FAILURE() << "allocate sequence failed";
+            tinyllm_free(h);
+            return std::vector<int>{};
+        }
+
+        int           prompt[] = {9707, 11, 1246, 525, 498, 30};
+        int           positions[] = {0, 1, 2, 3, 4, 5};
+        int           seq_lens[] = {6};
+        unsigned char pre[] = {1};
+        int           seq_ids[] = {0};
+        int           next = -1;
+        float         logprobs[2] = {0.0f, 0.0f};
+        float        *out_logprobs = logprobs_k > 0 ? logprobs : nullptr;
+
+        if (tinyllm_step(h, seq_ids, prompt, positions, seq_lens, nullptr, nullptr, pre, 1, &next,
+                         out_logprobs, logprobs_k) != 0) {
+            ADD_FAILURE() << "prefill failed";
+            tinyllm_free(h);
+            return std::vector<int>{};
+        }
+
+        std::vector<int> generated = {next};
+        int              pos = 6;
+        for (int step = 0; step < 3; ++step) {
+            int           input = next;
+            int           lens[] = {1};
+            unsigned char decode[] = {0};
+            if (tinyllm_step(h, seq_ids, &input, &pos, lens, nullptr, nullptr, decode, 1, &next,
+                             out_logprobs, logprobs_k) != 0) {
+                ADD_FAILURE() << "decode step " << step << " failed";
+                tinyllm_free(h);
+                return std::vector<int>{};
+            }
+            generated.push_back(next);
+            ++pos;
+        }
+
+        tinyllm_free(h);
+        return generated;
+    };
+
+    const std::vector<int> device_greedy = generate(0);
+    const std::vector<int> host_greedy = generate(1);
+    ASSERT_EQ(device_greedy.size(), 4U);
+    ASSERT_EQ(host_greedy.size(), 4U);
+    EXPECT_EQ(device_greedy, host_greedy);
 }
 
 TEST(FFITest, InvalidArgsReturnError) {
