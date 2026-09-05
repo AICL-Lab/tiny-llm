@@ -6,21 +6,25 @@ All notable tracked releases of Tiny-LLM are recorded here.
 
 ### Changed
 
-- C ABI 正常 greedy 路径（`logprobs_k == 0`）现在在 device 侧完成 argmax，并在
-  `tinyllm_step` 末尾一次性回传该 batch 的 token。C ABI 布局、输出顺序与
+- C ABI 正常 greedy 路径（`logprobs_k == 0`）现在在每个序列 layer forward 完成后把
+  末层 hidden 写入独立 GPU batch buffer；循环结束后批量执行 final RMSNorm、LM head 与
+  argmax，并由 `tinyllm_step` 一次性回传该 batch 的 token。C ABI 布局、输出顺序与
   `logprobs` 路径均未改变；请求 logprobs 时仍保留主机侧完整 logits / top-k 计算。
-  层前向仍逐序列执行，因此此改动不是 fused batch，也尚无新的 serving 性能结论。
+  Transformer layer forward 仍逐序列执行，因此这不是 fused batch，也尚无新的 serving
+  性能结论。
 
 ### Added
 
-- `kernels/sampling.cu`：单 block 的 GPU greedy argmax，保持 CPU 顺序扫描的同分 token
-  id 选择与首项 NaN 语义。
+- `kernels/sampling.cu`：多行 GPU greedy argmax，保持 CPU 顺序扫描的同分 token id 选择
+  与首项 NaN 语义。
+- FP16 转置 LM head 的每行 coalesced 路径，供批量末端输出阶段复用。
 
 ### Tests
 
-- CUDA kernel 直接对照 CPU greedy（跨 block scan、同分 token、首项 NaN）；真实 GGUF
-  门控对照 device 与 host/logprobs 路径连续 4 token；paged-serving `tiny-llm` feature
-  的真实后端、文本与三并发分页 e2e 复验通过。
+- CUDA kernel 直接对照 CPU greedy（跨 block scan、同分 token、首项 NaN 与双行 batch）；
+  batch final RMSNorm / LM head 对照逐行单 token 路径，转置 FP16 M=4 对照 reference。
+  真实 GGUF 门控对照 device 与 host/logprobs 路径连续 4 token、分页/连续 KV 差分；
+  paged-serving `tiny-llm` feature 的真实后端、文本与三并发分页 e2e 复验通过。
 
 ## [2.0.2] - 2026-08-28
 

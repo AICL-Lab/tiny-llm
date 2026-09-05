@@ -3,8 +3,8 @@
 // 策略 2（连续 KV）：block_tables 忽略；序列位置由引擎内部跟踪
 // （KV 写入位置以 slot.current_len 为准，与调用方传入 position 解耦）。
 // 逐序列执行（step 的第 s 项对应 seq_id = s），多序列语义正确。
-// 正常 greedy 请求在 device 侧选 token，并在 step 末尾一次性回传；计算融合
-// 仍是后续里程碑。
+// 正常 greedy 请求把末端 RMSNorm / LM head / argmax 组成 device batch，并在 step
+// 末尾一次性回传；Transformer layer 的计算融合仍是后续里程碑。
 
 #include "tiny_llm/ffi.h"
 #include "elementwise.cuh"
@@ -54,6 +54,8 @@ struct TinyLlmHandleImpl {
     tiny_llm::DeviceBuffer<int> decode_len; // 任务 3.1：decode 可见 KV 长度 (device int)
     tiny_llm::DeviceBuffer<int> rope_pos;   // 任务 3.2：RoPE 起始位置 (device int)
     tiny_llm::DeviceBuffer<int> d_next_tokens; // normal greedy 的逐序列 device 输出
+    tiny_llm::DeviceBuffer<half>      d_batch_hidden; // [batch, hidden] 的末层状态
+    tiny_llm::DeviceBuffer<half>      d_batch_logits; // [batch, vocab] 的末端 logits
     std::unordered_map<int, SeqState> sequences;
 
     // ── 分页 KV（策略 1，max_num_blocks > 0）──
@@ -101,11 +103,13 @@ int sample_from_hidden(TinyLlmHandleImpl *h, half *hidden) {
     return tiny_llm::InferenceEngine::sampleGreedy(h_logits.data(), h->config.vocab_size);
 }
 
-// 正常 serving 不请求 logprobs 时使用：避免每序列同步 stream 并回传完整 logits。
-// 同一 stream 保证当前 logits 被 argmax 读取完后才可被下一序列覆盖。
-void sample_from_hidden_device(TinyLlmHandleImpl *h, half *hidden, int *token) {
-    tiny_llm::finalNormAndComputeLogits(hidden, h->weights, h->config, h->logits_buf, h->stream);
-    tiny_llm::kernels::greedy_argmax(h->logits_buf, h->config.vocab_size, token, h->stream);
+// 每个序列 layer forward 完成后立即保存末层 hidden，避免同一 shared hidden_buf 被
+// 下一序列覆盖；同一 stream 保证后续 batch postprocess 读取到完整结果。
+void queue_hidden_for_batch(TinyLlmHandleImpl *h, half *hidden, int batch_index) {
+    const size_t offset = static_cast<size_t>(batch_index) * h->config.hidden_dim;
+    CUDA_CHECK(cudaMemcpyAsync(h->d_batch_hidden.data() + offset, hidden,
+                               static_cast<size_t>(h->config.hidden_dim) * sizeof(half),
+                               cudaMemcpyDeviceToDevice, h->stream));
 }
 
 /// 对最后一步采样的 logits 计算 top-k (token_id, logprob)，写入交错数组。
@@ -359,11 +363,18 @@ int tinyllm_step(TinyLlmHandle *handle, const int *seq_ids, const int *input_tok
         return TLLM_ERR;
     }
 
-    const bool defer_greedy_copy = logprobs_k == 0;
-    if (defer_greedy_copy) {
+    const bool batch_device_postprocess = logprobs_k == 0;
+    if (batch_device_postprocess) {
         try {
-            if (h->d_next_tokens.size() < static_cast<size_t>(num_sequences)) {
-                h->d_next_tokens = tiny_llm::DeviceBuffer<int>(static_cast<size_t>(num_sequences));
+            const size_t batch_size = static_cast<size_t>(num_sequences);
+            if (h->d_next_tokens.size() < batch_size) {
+                h->d_next_tokens = tiny_llm::DeviceBuffer<int>(batch_size);
+            }
+            if (h->d_batch_hidden.size() < batch_size * h->config.hidden_dim) {
+                h->d_batch_hidden = tiny_llm::DeviceBuffer<half>(batch_size * h->config.hidden_dim);
+            }
+            if (h->d_batch_logits.size() < batch_size * h->config.vocab_size) {
+                h->d_batch_logits = tiny_llm::DeviceBuffer<half>(batch_size * h->config.vocab_size);
             }
         } catch (...) {
             return TLLM_ERR;
@@ -445,9 +456,8 @@ int tinyllm_step(TinyLlmHandle *handle, const int *seq_ids, const int *input_tok
                         }
                         ++li;
                     }
-                    if (defer_greedy_copy) {
-                        sample_from_hidden_device(h, h->hidden_buf + (len - 1) * hidden,
-                                                  h->d_next_tokens.data() + s);
+                    if (batch_device_postprocess) {
+                        queue_hidden_for_batch(h, h->hidden_buf + (len - 1) * hidden, s);
                     } else {
                         next_tokens[s] = sample_from_hidden(h, h->hidden_buf + (len - 1) * hidden);
                     }
@@ -478,8 +488,8 @@ int tinyllm_step(TinyLlmHandle *handle, const int *seq_ids, const int *input_tok
                         }
                         ++li;
                     }
-                    if (defer_greedy_copy) {
-                        sample_from_hidden_device(h, token_state, h->d_next_tokens.data() + s);
+                    if (batch_device_postprocess) {
+                        queue_hidden_for_batch(h, token_state, s);
                     } else {
                         next_tokens[s] = sample_from_hidden(h, token_state);
                     }
@@ -532,9 +542,8 @@ int tinyllm_step(TinyLlmHandle *handle, const int *seq_ids, const int *input_tok
                 }
                 auto adv = h->kv_cache->advanceSeqLen(seq_id, len);
                 if (adv.isErr()) return TLLM_ERR;
-                if (defer_greedy_copy) {
-                    sample_from_hidden_device(h, h->hidden_buf + (len - 1) * hidden,
-                                              h->d_next_tokens.data() + s);
+                if (batch_device_postprocess) {
+                    queue_hidden_for_batch(h, h->hidden_buf + (len - 1) * hidden, s);
                 } else {
                     next_tokens[s] = sample_from_hidden(h, h->hidden_buf + (len - 1) * hidden);
                 }
@@ -560,8 +569,8 @@ int tinyllm_step(TinyLlmHandle *handle, const int *seq_ids, const int *input_tok
                 }
                 auto adv = h->kv_cache->advanceSeqLen(seq_id, 1);
                 if (adv.isErr()) return TLLM_ERR;
-                if (defer_greedy_copy) {
-                    sample_from_hidden_device(h, token_state, h->d_next_tokens.data() + s);
+                if (batch_device_postprocess) {
+                    queue_hidden_for_batch(h, token_state, s);
                 } else {
                     next_tokens[s] = sample_from_hidden(h, token_state);
                 }
@@ -576,8 +585,14 @@ int tinyllm_step(TinyLlmHandle *handle, const int *seq_ids, const int *input_tok
         }
     }
 
-    if (defer_greedy_copy) {
+    if (batch_device_postprocess) {
         try {
+            tiny_llm::finalNormAndComputeLogitsBatch(h->d_batch_hidden.data(), num_sequences,
+                                                     h->weights, h->config,
+                                                     h->d_batch_logits.data(), h->stream);
+            tiny_llm::kernels::greedy_argmax_batch(h->d_batch_logits.data(), num_sequences,
+                                                   h->config.vocab_size, h->d_next_tokens.data(),
+                                                   h->stream);
             CUDA_CHECK(cudaMemcpyAsync(next_tokens, h->d_next_tokens.data(),
                                        static_cast<size_t>(num_sequences) * sizeof(int),
                                        cudaMemcpyDeviceToHost, h->stream));

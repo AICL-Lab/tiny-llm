@@ -457,6 +457,42 @@ TEST_F(W8A16MatMulTest, Fp16MatmulM4FallsBackToReference) {
     EXPECT_LT(rel_error, 0.01f) << "M>1 fp16_matmul diverged from reference";
 }
 
+TEST_F(W8A16MatMulTest, Fp16MatmulTransposedM4MatchesReference) {
+    int M = 4, K = 128, N = 1024;
+
+    auto              input = randomFP16(M, K);
+    auto              weight = randomFP16(K, N);
+    std::vector<half> weight_t(static_cast<size_t>(N) * K);
+    for (int n = 0; n < N; ++n) {
+        for (int k = 0; k < K; ++k) {
+            weight_t[static_cast<size_t>(n) * K + k] = weight[static_cast<size_t>(k) * N + n];
+        }
+    }
+
+    DeviceBuffer<half> d_input(M * K);
+    DeviceBuffer<half> d_weight(K * N);
+    DeviceBuffer<half> d_weight_t(N * K);
+    DeviceBuffer<half> d_output(M * N);
+    DeviceBuffer<half> d_output_ref(M * N);
+
+    d_input.copyFromHost(input.data(), M * K);
+    d_weight.copyFromHost(weight.data(), K * N);
+    d_weight_t.copyFromHost(weight_t.data(), N * K);
+
+    fp16_matmul(d_input.data(), d_weight.data(), d_weight_t.data(), d_output.data(), M, N, K);
+    fp16_matmul_reference(d_input.data(), d_weight.data(), d_output_ref.data(), M, N, K);
+    cudaDeviceSynchronize();
+
+    std::vector<half> out(M * N);
+    std::vector<half> out_ref(M * N);
+    d_output.copyToHost(out.data(), M * N);
+    d_output_ref.copyToHost(out_ref.data(), M * N);
+    cudaDeviceSynchronize();
+
+    float rel_error = computeRelativeError(out, out_ref);
+    EXPECT_LT(rel_error, 0.01f) << "transposed M>1 fp16_matmul diverged from reference";
+}
+
 // ─────────────────────────────────────────────────────────────────
 // 任务 C1：转置权重 M==1 快路径
 // ─────────────────────────────────────────────────────────────────

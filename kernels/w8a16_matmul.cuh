@@ -43,13 +43,13 @@ void w8a16_matmul_reference(const half *input, const int8_t *weight, const half 
                             half *output, int M, int N, int K, int group_size,
                             cudaStream_t stream = 0);
 
-// FP16 matmul dispatch: decode-optimized fast path for M == 1, otherwise the
-// simple reference kernel (baseline / accuracy comparison).
+// FP16 matmul dispatch: 转置权重可走每行 coalesced 快路径；未提供转置权重时，
+// M == 1 走 decode 快路径，其余回退到 reference kernel。
 void fp16_matmul(const half *input, const half *weight, half *output, int M, int N, int K,
                  cudaStream_t stream = 0);
 
-// M==1 decode 快路径重载：额外接收 [N, K] 转置 FP16 权重（weight_t）。
-// 非空时 M==1 走 coalesced 转置 kernel；否则回退旧 m1 kernel。
+// 行并行 FP16 快路径重载：额外接收 [N, K] 转置 FP16 权重（weight_t）。
+// 非空时每个 batch row 走 coalesced 转置 kernel；M==1 仍是原 decode 形状。
 void fp16_matmul(const half *__restrict__ input,    // [M, K] FP16
                  const half *__restrict__ weight,   // [K, N] FP16
                  const half *__restrict__ weight_t, // [N, K] FP16（转置）

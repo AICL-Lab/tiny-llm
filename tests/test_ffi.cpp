@@ -71,6 +71,29 @@ TEST(DeviceSamplingTest, GreedyArgmaxMatchesHostBaseline) {
     const auto [host_nan, device_nan] = run(nan_first);
     EXPECT_EQ(host_nan, 0);
     EXPECT_EQ(device_nan, host_nan);
+
+    constexpr int     rows = 2;
+    constexpr int     vocab_size = 513;
+    std::vector<half> batch_logits(static_cast<size_t>(rows) * vocab_size, __float2half(-10.0f));
+    batch_logits[317] = __float2half(7.0f);
+    batch_logits[401] = __float2half(7.0f);
+    batch_logits[vocab_size] = __float2half(std::numeric_limits<float>::quiet_NaN());
+    batch_logits[vocab_size + 128] = __float2half(100.0f);
+
+    tiny_llm::DeviceBuffer<half> device_batch_logits(batch_logits.size());
+    tiny_llm::DeviceBuffer<int>  device_batch_tokens(rows);
+    device_batch_logits.copyFromHost(batch_logits.data(), batch_logits.size());
+    tiny_llm::kernels::greedy_argmax_batch(device_batch_logits.data(), rows, vocab_size,
+                                           device_batch_tokens.data());
+
+    std::array<int, rows> device_batch_result = {-1, -1};
+    device_batch_tokens.copyToHost(device_batch_result.data(), device_batch_result.size());
+    cudaDeviceSynchronize();
+    for (int row = 0; row < rows; ++row) {
+        const int host_result = tiny_llm::InferenceEngine::sampleGreedy(
+            batch_logits.data() + static_cast<size_t>(row) * vocab_size, vocab_size);
+        EXPECT_EQ(device_batch_result[row], host_result);
+    }
 }
 
 TEST(FFITest, LoadAllocateStepFree) {
@@ -356,6 +379,82 @@ TEST(ExecutionCommonTest, FinalNormAndComputeLogitsMatchesTwoStep) {
     for (int i = 0; i < vocab_size; ++i) {
         EXPECT_NEAR(__half2float(logits2[i]), __half2float(ref2[i]), 1e-2f)
             << "no-norm logits[" << i << "] differs";
+    }
+}
+
+TEST(ExecutionCommonTest, BatchFinalNormAndLogitsMatchPerRow) {
+    int         device_count = 0;
+    cudaError_t cuda_error = cudaGetDeviceCount(&device_count);
+    if (cuda_error != cudaSuccess || device_count == 0) {
+        GTEST_SKIP() << "No CUDA device available";
+    }
+
+    constexpr int rows = 3;
+    constexpr int hidden_dim = 64;
+    constexpr int vocab_size = 128;
+
+    tiny_llm::ModelConfig config;
+    config.hidden_dim = hidden_dim;
+    config.vocab_size = vocab_size;
+    config.rms_norm_eps = 1e-5f;
+
+    std::mt19937                          gen(7);
+    std::uniform_real_distribution<float> dist(-1.0f, 1.0f);
+
+    std::vector<half> final_norm(hidden_dim, __float2half(1.0f));
+    std::vector<half> lm_head(static_cast<size_t>(hidden_dim) * vocab_size);
+    std::vector<half> lm_head_t(static_cast<size_t>(vocab_size) * hidden_dim);
+    for (int k = 0; k < hidden_dim; ++k) {
+        for (int v = 0; v < vocab_size; ++v) {
+            const half value = __float2half(dist(gen));
+            lm_head[static_cast<size_t>(k) * vocab_size + v] = value;
+            lm_head_t[static_cast<size_t>(v) * hidden_dim + k] = value;
+        }
+    }
+
+    tiny_llm::DeviceBuffer<half> d_final_norm(hidden_dim);
+    tiny_llm::DeviceBuffer<half> d_lm_head(lm_head.size());
+    tiny_llm::DeviceBuffer<half> d_lm_head_t(lm_head_t.size());
+    d_final_norm.copyFromHost(final_norm.data(), final_norm.size());
+    d_lm_head.copyFromHost(lm_head.data(), lm_head.size());
+    d_lm_head_t.copyFromHost(lm_head_t.data(), lm_head_t.size());
+
+    tiny_llm::ModelWeights weights;
+    weights.final_norm_weight = d_final_norm.data();
+    weights.lm_head_fp16 = d_lm_head.data();
+    weights.lm_head_fp16_t = d_lm_head_t.data();
+
+    std::vector<half> host_hidden(static_cast<size_t>(rows) * hidden_dim);
+    for (auto &value : host_hidden) {
+        value = __float2half(dist(gen));
+    }
+
+    tiny_llm::DeviceBuffer<half> d_batch_hidden(host_hidden.size());
+    tiny_llm::DeviceBuffer<half> d_single_hidden(hidden_dim);
+    tiny_llm::DeviceBuffer<half> d_batch_logits(static_cast<size_t>(rows) * vocab_size);
+    tiny_llm::DeviceBuffer<half> d_row_logits(static_cast<size_t>(rows) * vocab_size);
+    d_batch_hidden.copyFromHost(host_hidden.data(), host_hidden.size());
+
+    tiny_llm::finalNormAndComputeLogitsBatch(d_batch_hidden.data(), rows, weights, config,
+                                             d_batch_logits.data());
+    for (int row = 0; row < rows; ++row) {
+        d_single_hidden.copyFromHost(host_hidden.data() + static_cast<size_t>(row) * hidden_dim,
+                                     hidden_dim);
+        tiny_llm::finalNormAndComputeLogits(d_single_hidden.data(), weights, config,
+                                            d_row_logits.data() +
+                                                static_cast<size_t>(row) * vocab_size);
+    }
+    cudaDeviceSynchronize();
+
+    std::vector<half> batch_logits(d_batch_logits.size());
+    std::vector<half> row_logits(d_row_logits.size());
+    d_batch_logits.copyToHost(batch_logits.data(), batch_logits.size());
+    d_row_logits.copyToHost(row_logits.data(), row_logits.size());
+    cudaDeviceSynchronize();
+
+    for (size_t i = 0; i < batch_logits.size(); ++i) {
+        EXPECT_NEAR(__half2float(batch_logits[i]), __half2float(row_logits[i]), 1e-2f)
+            << "batch logits[" << i << "] differs";
     }
 }
 

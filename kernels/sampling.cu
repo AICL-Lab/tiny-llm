@@ -13,8 +13,10 @@ __device__ bool is_better(float value, int index, float best_value, int best_ind
     return value > best_value || (value == best_value && index < best_index);
 }
 
-__global__ void greedy_argmax_kernel(const half *logits, int vocab_size, int *token) {
+__global__ void greedy_argmax_kernel(const half *logits, int vocab_size, int *tokens) {
     const int tid = threadIdx.x;
+    const int row = blockIdx.x;
+    logits += static_cast<size_t>(row) * vocab_size;
 
     // CPU 基线以 logits[0] 初始化；首项为 NaN 时，所有 `>` 比较都为 false，
     // 因而固定返回 0。显式保留这条边界语义，避免 device 归约改变 greedy 结果。
@@ -24,7 +26,7 @@ __global__ void greedy_argmax_kernel(const half *logits, int vocab_size, int *to
     }
     __syncthreads();
     if (first_is_nan != 0) {
-        if (tid == 0) token[0] = 0;
+        if (tid == 0) tokens[row] = 0;
         return;
     }
 
@@ -54,14 +56,19 @@ __global__ void greedy_argmax_kernel(const half *logits, int vocab_size, int *to
         __syncthreads();
     }
 
-    if (tid == 0) token[0] = indices[0];
+    if (tid == 0) tokens[row] = indices[0];
 }
 
 } // namespace
 
+void greedy_argmax_batch(const half *logits, int batch_size, int vocab_size, int *tokens,
+                         cudaStream_t stream) {
+    if (logits == nullptr || tokens == nullptr || batch_size <= 0 || vocab_size <= 0) return;
+    greedy_argmax_kernel<<<batch_size, kArgmaxThreads, 0, stream>>>(logits, vocab_size, tokens);
+}
+
 void greedy_argmax(const half *logits, int vocab_size, int *token, cudaStream_t stream) {
-    if (logits == nullptr || token == nullptr || vocab_size <= 0) return;
-    greedy_argmax_kernel<<<1, kArgmaxThreads, 0, stream>>>(logits, vocab_size, token);
+    greedy_argmax_batch(logits, 1, vocab_size, token, stream);
 }
 
 } // namespace kernels

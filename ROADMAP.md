@@ -78,11 +78,13 @@
 - [x] 与 [paged-serving](https://github.com/open-infra-ai/paged-serving) 的调度层对接：Rust `tiny-llm`
       feature + build.rs 链接 + `TinyLlmExecutor`；分页 KV 策略 1 默认启用，3 并发 e2e
       与 llama.cpp greedy 对齐（2026-08-18，`phase-2-e`）
-- [x] C ABI 正常 greedy 的 device-side argmax：`logprobs_k == 0` 时在 GPU 选 token，
-      并在 `tinyllm_step` 末尾一次回传整批 token；真实模型与保留的 host/logprobs 路径
-      连续 4 token 对齐，paged-serving feature e2e 复验通过。
-- [ ] 融合 batch compute：当前层前向仍逐序列执行；需先建立 ragged batch workspace 与
-      逐 token oracle，再批量化 final norm / LM head，不能把上述输出优化称为 fused batch。
+- [x] C ABI 正常 greedy 的批量末端后处理：`logprobs_k == 0` 时每序列完成 layer forward
+      后立即把末层 hidden 写入 GPU batch buffer；循环结束后批量执行 final RMSNorm、LM head
+      与 argmax，并在 `tinyllm_step` 末尾一次回传整批 token。真实模型与 host/logprobs
+      路径对照、分页/连续 KV 差分与 paged-serving 三并发 e2e 均已复验。
+- [ ] 融合 batch compute：当前 Transformer layer forward 仍逐序列执行；需建立 ragged
+      batch workspace 与逐 token oracle，并逐层批量化 layer compute，不能把已完成的末端
+      输出阶段批量化称为 fused batch。
 
 > **状态**：**active**。`phase-2-e` tag 记录 2026-08 面试就绪快照；其后的开发（正确性修复与功能打磨）在 CHANGELOG 中延续记录，未勾选项保留在「不做什么」清单供恢复开发时逐项评估。
 

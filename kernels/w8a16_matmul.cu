@@ -96,28 +96,29 @@ __global__ void fp16_matmul_m1_kernel(const half *__restrict__ input,
     }
 }
 
-// M==1 decode 快路径（转置权重布局 [N, K]）：每个 warp 负责一个输出列，
-// 32 个 lane 沿 K 并行 reduce；weight_t[col*K + k] 在 warp 内按 k 连续，
-// 访存完全 coalesced（对比旧 kernel 的 weight[k*N + col] 跨 lane stride=N）。
-__global__ void fp16_matmul_m1_transposed_kernel(const half *__restrict__ input,
-                                                 const half *__restrict__ weight_t,
-                                                 half *__restrict__ output, int N, int K) {
+// 行并行快路径（转置权重布局 [N, K]）：每个 warp 负责一个输出列，blockIdx.y
+// 选择 batch row。32 个 lane 沿 K 并行 reduce；weight_t[col*K + k] 在 warp 内按 k
+// 连续，访存完全 coalesced（对比旧 kernel 的 weight[k*N + col] 跨 lane stride=N）。
+__global__ void fp16_matmul_transposed_rows_kernel(const half *__restrict__ input,
+                                                   const half *__restrict__ weight_t,
+                                                   half *__restrict__ output, int M, int N, int K) {
+    const int row = blockIdx.y;
     const int warps_per_block = blockDim.x / 32;
     const int col = blockIdx.x * warps_per_block + (threadIdx.x / 32);
-    if (col >= N) return;
+    if (row >= M || col >= N) return;
 
     const int lane = threadIdx.x & 31;
     float     sum = 0.0f;
 
     for (int k = lane; k < K; k += 32) {
-        float a = __half2float(input[k]);
+        float a = __half2float(input[static_cast<size_t>(row) * K + k]);
         float w = __half2float(weight_t[(size_t)col * K + k]);
         sum += a * w;
     }
 
     sum = warp_reduce_sum(sum);
     if (lane == 0) {
-        output[col] = __float2half(sum);
+        output[static_cast<size_t>(row) * N + col] = __float2half(sum);
     }
 }
 
@@ -132,16 +133,18 @@ void fp16_matmul(const half *input, const half *weight, const half *weight_t, ha
         return;
     }
 
+    constexpr int WARPS_PER_BLOCK = 4; // 128 threads
+    dim3          block(WARPS_PER_BLOCK * 32);
+    dim3          grid((N + WARPS_PER_BLOCK - 1) / WARPS_PER_BLOCK, M);
+    if (weight_t != nullptr) {
+        fp16_matmul_transposed_rows_kernel<<<grid, block, 0, stream>>>(input, weight_t, output, M,
+                                                                       N, K);
+        return;
+    }
+
     if (M == 1) {
-        constexpr int WARPS_PER_BLOCK = 4; // 128 threads
-        dim3          block(WARPS_PER_BLOCK * 32);
-        dim3          grid((N + WARPS_PER_BLOCK - 1) / WARPS_PER_BLOCK);
-        if (weight_t != nullptr) {
-            fp16_matmul_m1_transposed_kernel<<<grid, block, 0, stream>>>(input, weight_t, output, N,
-                                                                         K);
-        } else {
-            fp16_matmul_m1_kernel<<<grid, block, 0, stream>>>(input, weight, output, N, K);
-        }
+        dim3 single_row_grid((N + WARPS_PER_BLOCK - 1) / WARPS_PER_BLOCK);
+        fp16_matmul_m1_kernel<<<single_row_grid, block, 0, stream>>>(input, weight, output, N, K);
         return;
     }
 
