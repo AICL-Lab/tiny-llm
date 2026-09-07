@@ -1420,6 +1420,99 @@ TEST(RoPETest, ApplyInplaceMatchesReference) {
     }
 }
 
+TEST(RoPETest, PerTokenPositionsMatchReference) {
+    if (!hasCudaDevice()) GTEST_SKIP() << "No CUDA device available";
+    cudaSetDevice(0);
+
+    const int              num_q_heads = 3;
+    const int              num_kv_heads = 2;
+    const int              num_tokens = 4;
+    const int              head_dim = 32;
+    const int              half_d = head_dim / 2;
+    const float            theta = 10000.0f;
+    const int              max_seq_len = 32;
+    const std::vector<int> positions = {17, 2, 23, 9};
+
+    std::vector<float> cos_cache(static_cast<size_t>(max_seq_len) * half_d);
+    std::vector<float> sin_cache(static_cast<size_t>(max_seq_len) * half_d);
+    for (int pos = 0; pos < max_seq_len; ++pos) {
+        for (int d = 0; d < half_d; ++d) {
+            float freq = 1.0f / std::pow(theta, (2.0f * d) / static_cast<float>(head_dim));
+            float angle = static_cast<float>(pos) * freq;
+            cos_cache[static_cast<size_t>(pos) * half_d + d] = std::cos(angle);
+            sin_cache[static_cast<size_t>(pos) * half_d + d] = std::sin(angle);
+        }
+    }
+
+    std::vector<half> q(static_cast<size_t>(num_tokens) * num_q_heads * head_dim);
+    std::vector<half> k(static_cast<size_t>(num_tokens) * num_kv_heads * head_dim);
+    {
+        std::mt19937                          gen(101);
+        std::uniform_real_distribution<float> dist(-0.5f, 0.5f);
+        for (auto &v : q)
+            v = __float2half(dist(gen));
+        for (auto &v : k)
+            v = __float2half(dist(gen));
+    }
+    const std::vector<half> q_ref = q;
+    const std::vector<half> k_ref = k;
+
+    DeviceBuffer<half>  d_q(num_tokens * num_q_heads * head_dim);
+    DeviceBuffer<half>  d_k(num_tokens * num_kv_heads * head_dim);
+    DeviceBuffer<float> d_cos(max_seq_len * half_d);
+    DeviceBuffer<float> d_sin(max_seq_len * half_d);
+    DeviceBuffer<int>   d_positions(num_tokens);
+    d_q.copyFromHost(q.data(), q.size());
+    d_k.copyFromHost(k.data(), k.size());
+    d_cos.copyFromHost(cos_cache.data(), cos_cache.size());
+    d_sin.copyFromHost(sin_cache.data(), sin_cache.size());
+    d_positions.copyFromHost(positions.data(), positions.size());
+
+    kernels::apply_rope_inplace_per_token_positions(d_q.data(), d_k.data(), d_cos.data(),
+                                                    d_sin.data(), num_tokens, d_positions.data(),
+                                                    num_q_heads, num_kv_heads, head_dim);
+    cudaDeviceSynchronize();
+
+    std::vector<half> q_out(static_cast<size_t>(num_tokens) * num_q_heads * head_dim);
+    std::vector<half> k_out(static_cast<size_t>(num_tokens) * num_kv_heads * head_dim);
+    d_q.copyToHost(q_out.data(), q_out.size());
+    d_k.copyToHost(k_out.data(), k_out.size());
+    cudaDeviceSynchronize();
+
+    for (int s = 0; s < num_tokens; ++s) {
+        const int pos = positions[s];
+        for (int h = 0; h < num_q_heads; ++h) {
+            for (int d = 0; d < half_d; ++d) {
+                const float c = cos_cache[static_cast<size_t>(pos) * half_d + d];
+                const float sn = sin_cache[static_cast<size_t>(pos) * half_d + d];
+                const float x1 = __half2float(q_ref[(s * num_q_heads + h) * head_dim + d]);
+                const float x2 = __half2float(q_ref[(s * num_q_heads + h) * head_dim + d + half_d]);
+                EXPECT_NEAR(__half2float(q_out[(s * num_q_heads + h) * head_dim + d]),
+                            x1 * c - x2 * sn, 1e-3f)
+                    << "Q s=" << s << " h=" << h << " d=" << d;
+                EXPECT_NEAR(__half2float(q_out[(s * num_q_heads + h) * head_dim + d + half_d]),
+                            x1 * sn + x2 * c, 1e-3f)
+                    << "Q s=" << s << " h=" << h << " d=" << d;
+            }
+        }
+        for (int kh = 0; kh < num_kv_heads; ++kh) {
+            for (int d = 0; d < half_d; ++d) {
+                const float c = cos_cache[static_cast<size_t>(pos) * half_d + d];
+                const float sn = sin_cache[static_cast<size_t>(pos) * half_d + d];
+                const float x1 = __half2float(k_ref[(s * num_kv_heads + kh) * head_dim + d]);
+                const float x2 =
+                    __half2float(k_ref[(s * num_kv_heads + kh) * head_dim + d + half_d]);
+                EXPECT_NEAR(__half2float(k_out[(s * num_kv_heads + kh) * head_dim + d]),
+                            x1 * c - x2 * sn, 1e-3f)
+                    << "K s=" << s << " kh=" << kh << " d=" << d;
+                EXPECT_NEAR(__half2float(k_out[(s * num_kv_heads + kh) * head_dim + d + half_d]),
+                            x1 * sn + x2 * c, 1e-3f)
+                    << "K s=" << s << " kh=" << kh << " d=" << d;
+            }
+        }
+    }
+}
+
 // ── 分页 KV：scatter/gather 原语 ────────────────────────────────
 // 第一版简单正确即可（一个元素一个线程），正确性优先、不做优化。
 

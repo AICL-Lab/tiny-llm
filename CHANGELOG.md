@@ -18,11 +18,14 @@ All notable tracked releases of Tiny-LLM are recorded here.
 - `kernels/sampling.cu`：多行 GPU greedy argmax，保持 CPU 顺序扫描的同分 token id 选择
   与首项 NaN 语义。
 - FP16 转置 LM head 的每行 coalesced 路径，供批量末端输出阶段复用。
+- RoPE 内部 CUDA API 新增 `[num_tokens]` device 绝对位置输入，支持 ragged sequence 的
+  非连续、非单调位置；现有连续位置 API 与 C ABI 均不变，尚未接入逐层 batch compute。
 
 ### Tests
 
 - CUDA kernel 直接对照 CPU greedy（跨 block scan、同分 token、首项 NaN 与双行 batch）；
   batch final RMSNorm / LM head 对照逐行单 token 路径，转置 FP16 M=4 对照 reference。
+  RoPE 每 token 位置数组以非连续、非单调位置逐元素对照 CPU half-split 参考。
   真实 GGUF 门控对照 device 与 host/logprobs 路径连续 4 token、分页/连续 KV 差分；
   paged-serving `tiny-llm` feature 的真实后端、文本与三并发分页 e2e 复验通过。
 

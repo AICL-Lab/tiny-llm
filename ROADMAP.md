@@ -82,6 +82,9 @@
       后立即把末层 hidden 写入 GPU batch buffer；循环结束后批量执行 final RMSNorm、LM head
       与 argmax，并在 `tinyllm_step` 末尾一次回传整批 token。真实模型与 host/logprobs
       路径对照、分页/连续 KV 差分与 paged-serving 三并发 e2e 均已复验。
+- [x] Ragged RoPE 位置前置原语：内部 CUDA API 可接收 `[num_tokens]` device 绝对位置数组，
+      非连续、非单调位置与 CPU half-split RoPE 参考逐元素对照通过；它没有改变 C ABI，也尚未
+      接入 FFI 的 Transformer layer forward。
 - [ ] 融合 batch compute：当前 Transformer layer forward 仍逐序列执行；需建立 ragged
       batch workspace 与逐 token oracle，并逐层批量化 layer compute，不能把已完成的末端
       输出阶段批量化称为 fused batch。

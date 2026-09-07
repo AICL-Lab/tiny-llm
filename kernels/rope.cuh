@@ -55,6 +55,15 @@ void apply_rope_inplace(half *q, half *k, const float *cos, const float *sin, in
                         const int *device_start_position, int num_q_heads, int num_kv_heads,
                         int head_dim, cudaStream_t stream = 0);
 
+// Apply RoPE in-place with one absolute position per token.
+// device_positions: [num_tokens] on device; positions may be non-contiguous or unordered.
+// This is an internal building block for future ragged decode batching. Callers must ensure every
+// position indexes the supplied RoPE cache and has been written in the same stream before launch.
+void apply_rope_inplace_per_token_positions(half *q, half *k, const float *cos, const float *sin,
+                                            int num_tokens, const int *device_positions,
+                                            int num_q_heads, int num_kv_heads, int head_dim,
+                                            cudaStream_t stream = 0);
+
 // 旧签名薄封装：host int 版本，复制到 device 后转发（测试/兼容用）。
 void apply_rope_inplace(half *q, half *k, const float *cos, const float *sin, int num_tokens,
                         int start_position, int num_q_heads, int num_kv_heads, int head_dim,

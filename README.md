@@ -47,6 +47,7 @@ Tiny-LLM 将仓库表面保持得尽量小：CUDA/C++17 内核、W8A16 量化、
 | 真实模型端到端生成 | ✅ Qwen2.5-0.5B-Instruct（Q4_K_M）在 RTX 3060 上验证通过 |
 | 分页 KV（策略 1） | ✅ block_tables + scatter/gather 池，与连续 KV 策略逐 token 差分一致，paged-serving 3 并发 e2e 与 llama.cpp 对齐 |
 | C ABI 正常 greedy 输出 | ✅ `logprobs_k == 0` 时每序列末层 hidden 先写入 GPU batch buffer，再批量执行 final RMSNorm、LM head 与 argmax，`tinyllm_step` 一次回传整批 token；Transformer layer 仍逐序列，logprobs 保持主机路径 |
+| Ragged RoPE 位置原语 | ✅ 内部 CUDA API 支持每个 token 独立 device 绝对位置，并与 CPU 参考逐元素对照；尚未接入 FFI 的逐层 batch compute |
 | 端到端性能基准 | ✅ 已实现 `tiny_llm_bench`（同请求 TTFT / TPOT / tok/s / 常驻显存差值），见下方基准快照 |
 
 当前开发重点见 [ROADMAP](ROADMAP.md)。性能相关的文档只描述方法与计划，不引用未实测的数字。

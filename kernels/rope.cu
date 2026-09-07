@@ -40,16 +40,19 @@ void rope_precompute_cache(float *cos_output, float *sin_output, int max_seq_len
         cos_output, sin_output, max_seq_len, head_dim, theta);
 }
 
-// Apply RoPE in-place to Q and K using half-split convention
+// Apply RoPE in-place to Q and K using half-split convention.
 // Q: [num_tokens, Hq, D]  (token-major)
 // K: [num_tokens, Hkv, D] (token-major)
-// start_position 从 device 端 int 读取，使 kernel 可被 CUDA Graph 重放。
+// The contiguous form reads one device start position for CUDA Graph replay. The per-token form
+// reads device_positions[s], which is the prerequisite needed by ragged decode batching.
+template <bool PerTokenPositions>
 __global__ void apply_rope_inplace_kernel(half *q, half *k, const float *cos, const float *sin,
-                                          int num_tokens, const int *device_start_position,
+                                          int num_tokens, const int *device_positions,
                                           int num_q_heads, int num_kv_heads, int head_dim) {
-    const int start_position = *device_start_position;
-    int       idx = blockIdx.x * blockDim.x + threadIdx.x;
-    int       half_d = head_dim / 2;
+    int start_position = 0;
+    if constexpr (!PerTokenPositions) start_position = *device_positions;
+    int idx = blockIdx.x * blockDim.x + threadIdx.x;
+    int half_d = head_dim / 2;
 
     // Each thread handles one (token, head, half_dim_index) pair for Q
     int q_total = num_tokens * num_q_heads * half_d;
@@ -59,7 +62,7 @@ __global__ void apply_rope_inplace_kernel(half *q, half *k, const float *cos, co
         int h = remaining % num_q_heads;
         int s = remaining / num_q_heads;
 
-        int pos = start_position + s;
+        int pos = PerTokenPositions ? device_positions[s] : start_position + s;
         int q_offset = (s * num_q_heads + h) * head_dim;
 
         float cos_val = cos[pos * half_d + d];
@@ -82,7 +85,7 @@ __global__ void apply_rope_inplace_kernel(half *q, half *k, const float *cos, co
         int kh = remaining % num_kv_heads;
         int s = remaining / num_kv_heads;
 
-        int pos = start_position + s;
+        int pos = PerTokenPositions ? device_positions[s] : start_position + s;
         int k_offset = (s * num_kv_heads + kh) * head_dim;
 
         float cos_val = cos[pos * half_d + d];
@@ -106,8 +109,23 @@ void apply_rope_inplace(half *q, half *k, const float *cos, const float *sin, in
     int block_size = 256;
     int grid_size = (total + block_size - 1) / block_size;
 
-    apply_rope_inplace_kernel<<<grid_size, block_size, 0, stream>>>(
+    apply_rope_inplace_kernel<false><<<grid_size, block_size, 0, stream>>>(
         q, k, cos, sin, num_tokens, device_start_position, num_q_heads, num_kv_heads, head_dim);
+}
+
+void apply_rope_inplace_per_token_positions(half *q, half *k, const float *cos, const float *sin,
+                                            int num_tokens, const int *device_positions,
+                                            int num_q_heads, int num_kv_heads, int head_dim,
+                                            cudaStream_t stream) {
+    if (num_tokens <= 0 || head_dim <= 0 || device_positions == nullptr) return;
+
+    int half_d = head_dim / 2;
+    int total = num_tokens * (num_q_heads + num_kv_heads) * half_d;
+    int block_size = 256;
+    int grid_size = (total + block_size - 1) / block_size;
+
+    apply_rope_inplace_kernel<true><<<grid_size, block_size, 0, stream>>>(
+        q, k, cos, sin, num_tokens, device_positions, num_q_heads, num_kv_heads, head_dim);
 }
 
 // 旧签名薄封装：把 host 端 start_position 复制到 device 后转发（测试/兼容用）。
